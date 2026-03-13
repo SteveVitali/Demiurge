@@ -1,18 +1,22 @@
 package lastmile.orchestrator
 
+import java.sql.Connection
+
 import lastmile.model._
 import lastmile.inspector.RepoInspector
 import lastmile.compiler.RequirementCompiler
 import lastmile.planner.EnvironmentPlanner
+import lastmile.runtime.RuntimeSupervisor
+import lastmile.persistence._
 
-// Spec §4.1: Minimal synchronous orchestrator loop for Phase 2.
+// Spec §4.1: Synchronous orchestrator loop for Phase 3.
 // Executes the path: Created → InspectingRepo → CompilingRequirements →
-// PlanningEnvironment → Exhausted using stubs for actual work.
+// PlanningEnvironment → BootstrappingEnvironment → SeedingFixtures → ReadyToVerify → Exhausted
 // All transitions enforce persist-before-side-effects (Spec §4.1).
 object RunOrchestrator {
 
   /**
-   * Execute the minimal Phase 2 orchestration path.
+   * Execute the Phase 3 orchestration path.
    * Returns the final TaskRun state after reaching a terminal status.
    */
   def execute(
@@ -20,15 +24,18 @@ object RunOrchestrator {
     inspector: RepoInspector,
     compiler: RequirementCompiler,
     planner: EnvironmentPlanner,
+    supervisor: RuntimeSupervisor,
   ): TaskRun = {
     // Register signal handler for interruption persistence (Spec §4.4)
     SignalHandler.register(ctx, ctx.repoRoot)
 
     var currentRun = ctx.run
     var currentCtx = ctx
+    implicit val conn: Connection = ctx.conn
 
-    // Spec §4.1: State machine — Phase 2 minimal path
-    // Created → InspectingRepo → CompilingRequirements → PlanningEnvironment → Exhausted
+    // Spec §4.1: State machine — Phase 3 path
+    // Created → InspectingRepo → CompilingRequirements → PlanningEnvironment →
+    // BootstrappingEnvironment → SeedingFixtures → ReadyToVerify → Exhausted
 
     // --- Transition: Created → InspectingRepo ---
     if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
@@ -39,11 +46,14 @@ object RunOrchestrator {
         currentCtx,
         RunStatus.InspectingRepo,
         sideEffect = { updatedCtx =>
-          inspectionResult = Some(inspector.inspect(
+          val report = inspector.inspect(
             currentRun.runId,
             currentCtx.repoRoot,
             currentRun.changedFiles,
-          ))
+          )
+          // Persist inspection report (Spec §7.2)
+          RepoInspectionReportRepo.insert(report)
+          inspectionResult = Some(report)
         },
       )
       currentCtx = currentCtx.copy(run = currentRun)
@@ -75,27 +85,89 @@ object RunOrchestrator {
         currentCtx,
         RunStatus.PlanningEnvironment,
         sideEffect = { updatedCtx =>
-          planResult = Some(planner.plan(
+          val plan = planner.plan(
             currentRun.runId,
             inspectionResult.get,
             requirementResult.get,
-          ))
+          )
+          // Persist runtime plan (Spec §7.2)
+          RuntimePlanRepo.insert(plan)
+          planResult = Some(plan)
         },
       )
       currentCtx = currentCtx.copy(run = currentRun)
       SignalHandler.updateContext(currentCtx)
 
-      // --- Transition: PlanningEnvironment → Exhausted ---
-      // Phase 2: No real environment boot or verification — go directly to Exhausted.
+      // --- Transition: PlanningEnvironment → BootstrappingEnvironment ---
       if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
+      var bootResult: Option[RuntimeSupervisor.BootResult] = None
 
-      currentRun = RunTransitionManager.transitionToTerminal(
+      currentRun = RunTransitionManager.transition(
         currentCtx,
-        RunStatus.Exhausted,
-        summary = Some("Phase 2 stub run — no real verification performed"),
+        RunStatus.BootstrappingEnvironment,
+        sideEffect = { updatedCtx =>
+          bootResult = Some(supervisor.bootEnvironment(planResult.get, currentCtx.repoRoot))
+        },
       )
       currentCtx = currentCtx.copy(run = currentRun)
       SignalHandler.updateContext(currentCtx)
+
+      bootResult.get match {
+        case RuntimeSupervisor.BootFailure(reason, partialSnapshot) =>
+          // Persist partial snapshot if available
+          partialSnapshot.foreach(RuntimeSnapshotRepo.insert(_))
+          // Teardown on failure
+          try { supervisor.teardown(planResult.get, currentCtx.repoRoot) } catch { case _: Exception => }
+
+          currentRun = RunTransitionManager.transitionToTerminal(
+            currentCtx,
+            RunStatus.Exhausted,
+            summary = Some(s"Environment bootstrap failed: $reason"),
+          )
+          currentCtx = currentCtx.copy(run = currentRun)
+          SignalHandler.updateContext(currentCtx)
+          return currentRun
+
+        case RuntimeSupervisor.BootSuccess(snapshot) =>
+          // Persist runtime snapshot (Spec §7.2)
+          RuntimeSnapshotRepo.insert(snapshot)
+
+          // --- Transition: BootstrappingEnvironment → SeedingFixtures ---
+          // Fixtures already ran inside bootEnvironment; this state records completion.
+          if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
+
+          currentRun = RunTransitionManager.transition(
+            currentCtx,
+            RunStatus.SeedingFixtures,
+            sideEffect = { _ => /* fixtures already executed in bootEnvironment */ },
+          )
+          currentCtx = currentCtx.copy(run = currentRun)
+          SignalHandler.updateContext(currentCtx)
+
+          // --- Transition: SeedingFixtures → ReadyToVerify ---
+          if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
+
+          currentRun = RunTransitionManager.transition(
+            currentCtx,
+            RunStatus.ReadyToVerify,
+            sideEffect = { _ => /* Phase 3: verification not yet implemented */ },
+          )
+          currentCtx = currentCtx.copy(run = currentRun)
+          SignalHandler.updateContext(currentCtx)
+
+          // Phase 3 terminal: teardown environment and mark Exhausted
+          if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
+
+          try { supervisor.teardown(planResult.get, currentCtx.repoRoot) } catch { case _: Exception => }
+
+          currentRun = RunTransitionManager.transitionToTerminal(
+            currentCtx,
+            RunStatus.Exhausted,
+            summary = Some("Phase 3 completed: environment ready, verification not yet implemented"),
+          )
+          currentCtx = currentCtx.copy(run = currentRun)
+          SignalHandler.updateContext(currentCtx)
+      }
     }
 
     currentRun

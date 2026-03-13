@@ -41,7 +41,7 @@ class RunOrchestratorSuite extends FunSuite with TestFixtures {
         TaskRunRepo.insert(run)
 
         val ctx = RunContext(run = run, repoRoot = repoRoot, worktreePath = worktreePath, conn = conn)
-        val finalRun = RunOrchestrator.execute(ctx, StubRepoInspector, StubRequirementCompiler, StubEnvironmentPlanner)
+        val finalRun = RunOrchestrator.execute(ctx, StubRepoInspector, StubRequirementCompiler, StubEnvironmentPlanner, StubRuntimeSupervisor)
 
         assertEquals(finalRun.status, RunStatus.Exhausted)
         assert(finalRun.endedAt.isDefined, "endedAt should be set for terminal state")
@@ -70,25 +70,31 @@ class RunOrchestratorSuite extends FunSuite with TestFixtures {
         TaskRunRepo.insert(run)
 
         val ctx = RunContext(run = run, repoRoot = repoRoot, worktreePath = worktreePath, conn = conn)
-        RunOrchestrator.execute(ctx, StubRepoInspector, StubRequirementCompiler, StubEnvironmentPlanner)
+        RunOrchestrator.execute(ctx, StubRepoInspector, StubRequirementCompiler, StubEnvironmentPlanner, StubRuntimeSupervisor)
 
         // Verify events were inserted for each transition
         val events = EventRepo.listByRunId(runId, limit = 100)
         val transitionEvents = events.filter(_.eventType == "state_transition")
 
-        // Should have 4 transitions:
+        // Should have 7 transitions (Phase 3 path):
         // Created → InspectingRepo
         // InspectingRepo → CompilingRequirements
         // CompilingRequirements → PlanningEnvironment
-        // PlanningEnvironment → Exhausted
-        assertEquals(transitionEvents.size, 4, s"Expected 4 transition events, got ${transitionEvents.size}")
+        // PlanningEnvironment → BootstrappingEnvironment
+        // BootstrappingEnvironment → SeedingFixtures
+        // SeedingFixtures → ReadyToVerify
+        // ReadyToVerify → Exhausted
+        assertEquals(transitionEvents.size, 7, s"Expected 7 transition events, got ${transitionEvents.size}")
 
         // Verify order
         val expectedTransitions = List(
           ("Created", "InspectingRepo"),
           ("InspectingRepo", "CompilingRequirements"),
           ("CompilingRequirements", "PlanningEnvironment"),
-          ("PlanningEnvironment", "Exhausted"),
+          ("PlanningEnvironment", "BootstrappingEnvironment"),
+          ("BootstrappingEnvironment", "SeedingFixtures"),
+          ("SeedingFixtures", "ReadyToVerify"),
+          ("ReadyToVerify", "Exhausted"),
         )
 
         transitionEvents.zip(expectedTransitions).foreach { case (event, (from, to)) =>
@@ -135,7 +141,75 @@ class RunOrchestratorSuite extends FunSuite with TestFixtures {
     }
   }
 
-  test("respects persist-before-side-effects invariant") {
+  test("runs through environment states to ReadyToVerify terminal placeholder") {
+    withTempGitRepoAndDb { (repoRoot, conn) =>
+      implicit val c: java.sql.Connection = conn
+      val runId = "orch-test-006"
+      val worktreePath = WorktreeManager.create(repoRoot, runId, gitRef = Some("HEAD"))
+      val lockPath = LockManager.acquire(repoRoot, runId, worktreePath)
+
+      try {
+        SignalHandler.reset()
+        val run = makeRun(runId, repoRoot, worktreePath, lockPath)
+        TaskRunRepo.insert(run)
+
+        val ctx = RunContext(run = run, repoRoot = repoRoot, worktreePath = worktreePath, conn = conn)
+        val finalRun = RunOrchestrator.execute(ctx, StubRepoInspector, StubRequirementCompiler, StubEnvironmentPlanner, StubRuntimeSupervisor)
+
+        assertEquals(finalRun.status, RunStatus.Exhausted)
+        assert(finalRun.finalSummary.exists(_.contains("Phase 3 completed")),
+          s"Summary should mention Phase 3: ${finalRun.finalSummary}")
+
+        // Verify we passed through ReadyToVerify by checking events
+        val events = EventRepo.listByRunId(runId, limit = 100)
+        val transitionEvents = events.filter(_.eventType == "state_transition")
+        val toStatuses = transitionEvents.flatMap(_.correlationFields.get("to_status"))
+        assert(toStatuses.contains("ReadyToVerify"),
+          s"Should have transitioned through ReadyToVerify: $toStatuses")
+      } finally {
+        LockManager.release(repoRoot)
+        WorktreeManager.remove(repoRoot, runId)
+      }
+    }
+  }
+
+  test("persists repo inspection report, runtime plan, and runtime snapshot") {
+    withTempGitRepoAndDb { (repoRoot, conn) =>
+      implicit val c: java.sql.Connection = conn
+      val runId = "orch-test-007"
+      val worktreePath = WorktreeManager.create(repoRoot, runId, gitRef = Some("HEAD"))
+      val lockPath = LockManager.acquire(repoRoot, runId, worktreePath)
+
+      try {
+        SignalHandler.reset()
+        val run = makeRun(runId, repoRoot, worktreePath, lockPath)
+        TaskRunRepo.insert(run)
+
+        val ctx = RunContext(run = run, repoRoot = repoRoot, worktreePath = worktreePath, conn = conn)
+        RunOrchestrator.execute(ctx, StubRepoInspector, StubRequirementCompiler, StubEnvironmentPlanner, StubRuntimeSupervisor)
+
+        // Verify inspection report was persisted
+        val report = RepoInspectionReportRepo.getByRunId(runId)
+        assert(report.isDefined, "Inspection report should be persisted")
+        assertEquals(report.get.runId, runId)
+
+        // Verify runtime plan was persisted
+        val plan = RuntimePlanRepo.getByRunId(runId)
+        assert(plan.isDefined, "Runtime plan should be persisted")
+        assertEquals(plan.get.runId, runId)
+
+        // Verify runtime snapshot was persisted
+        val snapshots = RuntimeSnapshotRepo.getByRunId(runId)
+        assert(snapshots.nonEmpty, "Runtime snapshot should be persisted")
+        assertEquals(snapshots.head.runId, runId)
+      } finally {
+        LockManager.release(repoRoot)
+        WorktreeManager.remove(repoRoot, runId)
+      }
+    }
+  }
+
+  test("persists state transitions before side effects") {
     withTempGitRepoAndDb { (repoRoot, conn) =>
       implicit val c: java.sql.Connection = conn
       val runId = "orch-test-005"
@@ -177,7 +251,7 @@ class RunOrchestratorSuite extends FunSuite with TestFixtures {
         }
 
         val ctx = RunContext(run = run, repoRoot = repoRoot, worktreePath = worktreePath, conn = conn)
-        RunOrchestrator.execute(ctx, checkingInspector, checkingCompiler, checkingPlanner)
+        RunOrchestrator.execute(ctx, checkingInspector, checkingCompiler, checkingPlanner, StubRuntimeSupervisor)
 
         // Verify: each side effect saw its target state already persisted in DB
         assertEquals(sideEffectDbStates.size, 3)

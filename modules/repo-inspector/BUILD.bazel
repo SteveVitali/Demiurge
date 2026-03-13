@@ -1,9 +1,25 @@
-load("@rules_scala//scala:scala.bzl", "scala_library")
+load("@rules_scala//scala:scala.bzl", "scala_junit_test", "scala_library")
 
-# Phase 2+: Repo inspection module
+# Phase 3: Repo inspection module — deterministic filesystem scanning
 scala_library(
     name = "repo-inspector",
     srcs = glob(["src/main/scala/**/*.scala"], allow_empty = True),
     visibility = ["//visibility:public"],
-    deps = ["//modules/core-model"],
+    deps = [
+        "//modules/core-model",
+        "//modules/manifest",
+    ],
+)
+
+scala_junit_test(
+    name = "repo-inspector-tests",
+    srcs = glob(["src/test/scala/**/*.scala"], allow_empty = True),
+    suffixes = ["Suite"],
+    deps = [
+        ":repo-inspector",
+        "//modules/core-model",
+        "//modules/manifest",
+        "@maven//:org_scalameta_munit_2_13",
+        "@maven//:org_scalameta_munit_diff_2_13",
+    ],
 )
