@@ -14,6 +14,24 @@ import lastmile.persistence._
 //   2. Only then executes target-state side effect
 object RunTransitionManager {
 
+  // Decoupled event listener hook for SSE streaming.
+  // CLI wires this to EventStream.publish at run start.
+  @volatile private var eventListener: Option[SystemEvent => Unit] = None
+
+  def setEventListener(listener: SystemEvent => Unit): Unit = {
+    eventListener = Some(listener)
+  }
+
+  def clearEventListener(): Unit = {
+    eventListener = None
+  }
+
+  private def publishEvent(event: SystemEvent): Unit = {
+    eventListener.foreach { listener =>
+      try { listener(event) } catch { case _: Exception => }
+    }
+  }
+
   /**
    * Transition a run from its current state to the target state.
    * Enforces the persist-before-side-effects invariant:
@@ -36,33 +54,36 @@ object RunTransitionManager {
       startedAt = ctx.run.startedAt.orElse(Some(now)),
     )
 
+    val event = SystemEvent(
+      eventId = UUID.randomUUID().toString,
+      runId = updatedRun.runId,
+      attemptNumber = None,
+      eventType = "state_transition",
+      component = "orchestrator",
+      severity = "info",
+      timestamp = now,
+      correlationFields = Map(
+        "from_status" -> ctx.run.status.toString,
+        "to_status" -> targetStatus.toString,
+      ),
+      payload = Map(
+        "from_status" -> Json.fromString(ctx.run.status.toString),
+        "to_status" -> Json.fromString(targetStatus.toString),
+      ),
+      humanMessage = s"Run ${updatedRun.runId} transitioned from ${ctx.run.status} to $targetStatus",
+    )
+
     // Step 1: Persist state change before any side effect (Spec §4.1)
     TransactionManager.atomic(conn) { implicit txn =>
       TaskRunRepo.updateStatus(updatedRun.runId, targetStatus)(txn)
-      // Also persist startedAt if this is the first transition from Created
       if (ctx.run.startedAt.isEmpty) {
         TaskRunRepo.setStartedAt(updatedRun.runId, now)(txn)
       }
-
-      EventRepo.insert(SystemEvent(
-        eventId = UUID.randomUUID().toString,
-        runId = updatedRun.runId,
-        attemptNumber = None,
-        eventType = "state_transition",
-        component = "orchestrator",
-        severity = "info",
-        timestamp = now,
-        correlationFields = Map(
-          "from_status" -> ctx.run.status.toString,
-          "to_status" -> targetStatus.toString,
-        ),
-        payload = Map(
-          "from_status" -> Json.fromString(ctx.run.status.toString),
-          "to_status" -> Json.fromString(targetStatus.toString),
-        ),
-        humanMessage = s"Run ${updatedRun.runId} transitioned from ${ctx.run.status} to $targetStatus",
-      ))(txn)
+      EventRepo.insert(event)(txn)
     }
+
+    // Publish to SSE listeners after DB commit
+    publishEvent(event)
 
     // Step 2: Execute side effect only after persistence succeeds
     val updatedCtx = ctx.copy(run = updatedRun)
@@ -91,35 +112,35 @@ object RunTransitionManager {
       finalVerdict = finalVerdict.orElse(ctx.run.finalVerdict),
     )
 
+    val termEvent = SystemEvent(
+      eventId = UUID.randomUUID().toString,
+      runId = updatedRun.runId,
+      attemptNumber = None,
+      eventType = "state_transition",
+      component = "orchestrator",
+      severity = if (targetStatus == RunStatus.Interrupted) "warn" else "info",
+      timestamp = now,
+      correlationFields = Map(
+        "from_status" -> ctx.run.status.toString,
+        "to_status" -> targetStatus.toString,
+      ),
+      payload = Map(
+        "from_status" -> Json.fromString(ctx.run.status.toString),
+        "to_status" -> Json.fromString(targetStatus.toString),
+      ),
+      humanMessage = s"Run ${updatedRun.runId} terminated: ${ctx.run.status} → $targetStatus",
+    )
+
     // Persist terminal state
     TransactionManager.atomic(conn) { implicit txn =>
       TaskRunRepo.updateStatus(updatedRun.runId, targetStatus, endedAt = Some(now))(txn)
-      summary.foreach { s =>
-        TaskRunRepo.setFinalSummary(updatedRun.runId, s)(txn)
-      }
-      finalVerdict.foreach { v =>
-        TaskRunRepo.setFinalVerdict(updatedRun.runId, v)(txn)
-      }
-
-      EventRepo.insert(SystemEvent(
-        eventId = UUID.randomUUID().toString,
-        runId = updatedRun.runId,
-        attemptNumber = None,
-        eventType = "state_transition",
-        component = "orchestrator",
-        severity = if (targetStatus == RunStatus.Interrupted) "warn" else "info",
-        timestamp = now,
-        correlationFields = Map(
-          "from_status" -> ctx.run.status.toString,
-          "to_status" -> targetStatus.toString,
-        ),
-        payload = Map(
-          "from_status" -> Json.fromString(ctx.run.status.toString),
-          "to_status" -> Json.fromString(targetStatus.toString),
-        ),
-        humanMessage = s"Run ${updatedRun.runId} terminated: ${ctx.run.status} → $targetStatus",
-      ))(txn)
+      summary.foreach(s => TaskRunRepo.setFinalSummary(updatedRun.runId, s)(txn))
+      finalVerdict.foreach(v => TaskRunRepo.setFinalVerdict(updatedRun.runId, v)(txn))
+      EventRepo.insert(termEvent)(txn)
     }
+
+    // Publish to SSE listeners after DB commit
+    publishEvent(termEvent)
 
     updatedRun
   }

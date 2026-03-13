@@ -1,0 +1,14 @@
+requirements:
+  - id: health-check
+    type: http
+    description: Health endpoint returns 200 OK
+    expected: http://localhost:3456/health
+    timeout_ms: 5000
+    retry: 2
+    severity: required
+  - id: root-responds
+    type: http
+    description: Root endpoint returns 200
+    expected: http://localhost:3456/
+    timeout_ms: 5000
+    severity: required

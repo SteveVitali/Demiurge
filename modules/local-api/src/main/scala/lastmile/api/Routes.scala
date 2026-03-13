@@ -236,6 +236,18 @@ object Routes {
     }
   }
 
+  // Phase 10: Decoupled run-starter callback for POST /runs
+  // CLI wires this to create a real TaskRun and start orchestration in a background thread.
+  @volatile private var runStarter: Option[(String, Connection) => Option[String]] = None
+
+  def setRunStarter(starter: (String, Connection) => Option[String]): Unit = {
+    runStarter = Some(starter)
+  }
+
+  def clearRunStarter(): Unit = {
+    runStarter = None
+  }
+
   def postRunHandler(connProvider: () => Connection): HttpHandler = exchange => {
     if (exchange.getRequestMethod != "POST") {
       sendJson(exchange, 405, ApiEnvelope.error(405, "Method not allowed"))
@@ -250,7 +262,27 @@ object Routes {
             case None =>
               sendJson(exchange, 400, ApiEnvelope.error(400, "Missing 'task' field"))
             case Some(t) =>
-              sendJson(exchange, 200, ApiEnvelope.success(Json.obj("task" -> Json.fromString(t), "status" -> Json.fromString("accepted"))))
+              runStarter match {
+                case Some(starter) =>
+                  implicit val conn: Connection = connProvider()
+                  try {
+                    starter(t, conn) match {
+                      case Some(runId) =>
+                        sendJson(exchange, 200, ApiEnvelope.success(Json.obj(
+                          "runId" -> Json.fromString(runId),
+                          "task" -> Json.fromString(t),
+                          "status" -> Json.fromString("started"),
+                        )))
+                      case None =>
+                        sendJson(exchange, 500, ApiEnvelope.error(500, "Failed to start run"))
+                    }
+                  } finally { conn.close() }
+                case None =>
+                  sendJson(exchange, 200, ApiEnvelope.success(Json.obj(
+                    "task" -> Json.fromString(t),
+                    "status" -> Json.fromString("accepted"),
+                  )))
+              }
           }
       }
     }

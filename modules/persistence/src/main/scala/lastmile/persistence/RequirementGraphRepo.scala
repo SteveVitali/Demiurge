@@ -25,6 +25,12 @@ object RequirementGraphRepo {
     }
   }
 
+  def deleteByRunId(runId: String)(implicit conn: Connection): Unit = {
+    val ps = conn.prepareStatement("DELETE FROM requirement_graphs WHERE run_id = ?")
+    try { ps.setString(1, runId); ps.executeUpdate() }
+    finally { ps.close() }
+  }
+
   def getByRunId(runId: String)(implicit conn: Connection): Option[RequirementGraph] = {
     val ps = conn.prepareStatement(
       "SELECT graph_json FROM requirement_graphs WHERE run_id = ? ORDER BY generated_at DESC LIMIT 1")

@@ -24,6 +24,12 @@ object RuntimePlanRepo {
     }
   }
 
+  def deleteByRunId(runId: String)(implicit conn: Connection): Unit = {
+    val ps = conn.prepareStatement("DELETE FROM runtime_plans WHERE run_id = ?")
+    try { ps.setString(1, runId); ps.executeUpdate() }
+    finally { ps.close() }
+  }
+
   def getById(planId: String)(implicit conn: Connection): Option[RuntimePlan] = {
     val ps = conn.prepareStatement("SELECT plan_json FROM runtime_plans WHERE plan_id = ?")
     try {

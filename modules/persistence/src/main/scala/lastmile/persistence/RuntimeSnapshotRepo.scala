@@ -24,6 +24,12 @@ object RuntimeSnapshotRepo {
     }
   }
 
+  def deleteByRunId(runId: String)(implicit conn: Connection): Unit = {
+    val ps = conn.prepareStatement("DELETE FROM runtime_snapshots WHERE run_id = ?")
+    try { ps.setString(1, runId); ps.executeUpdate() }
+    finally { ps.close() }
+  }
+
   def getById(snapshotId: String)(implicit conn: Connection): Option[RuntimeSnapshot] = {
     val ps = conn.prepareStatement("SELECT snapshot_json FROM runtime_snapshots WHERE snapshot_id = ?")
     try {

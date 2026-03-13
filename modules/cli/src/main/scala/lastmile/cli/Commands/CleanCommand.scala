@@ -50,9 +50,20 @@ object CleanCommand {
           deleteDirectoryRecursive(run.artifactRootPath)
         }
         if (cmd.includeDb) {
+          // Delete all FK-dependent child tables before the parent task_runs row
           VerdictRepo.deleteByRunId(run.runId)
           EventRepo.deleteByRunId(run.runId)
           ArtifactRecordRepo.deleteByRunId(run.runId)
+          FailurePacketRepo.deleteByRunId(run.runId)
+          PatchRepo.deleteByRunId(run.runId)
+          RequirementGraphRepo.deleteByRunId(run.runId)
+          RuntimePlanRepo.deleteByRunId(run.runId)
+          RuntimeSnapshotRepo.deleteByRunId(run.runId)
+          RepoInspectionReportRepo.deleteByRunId(run.runId)
+          deleteByRunIdRaw("policy_snapshots", run.runId)
+          deleteByRunIdRaw("usage_records", run.runId)
+          deleteByRunIdRaw("inference_cache", run.runId)
+          deleteByRunIdRaw("rerun_plans", run.runId)
           AttemptRepo.deleteByRunId(run.runId)
           TaskRunRepo.deleteById(run.runId)
         }
@@ -79,6 +90,12 @@ object CleanCommand {
     } catch {
       case _: NumberFormatException => -1L
     }
+  }
+
+  private def deleteByRunIdRaw(tableName: String, runId: String)(implicit conn: Connection): Unit = {
+    val ps = conn.prepareStatement(s"DELETE FROM $tableName WHERE run_id = ?")
+    try { ps.setString(1, runId); ps.executeUpdate() }
+    finally { ps.close() }
   }
 
   private def deleteDirectoryRecursive(path: Path): Unit = {
