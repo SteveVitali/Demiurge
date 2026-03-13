@@ -86,6 +86,13 @@ object VerdictRepo {
     }
   }
 
+  // Phase 7: Delete all verdicts for a run
+  def deleteByRunId(runId: String)(implicit conn: Connection): Unit = {
+    val ps = conn.prepareStatement("DELETE FROM requirement_verdicts WHERE run_id = ?")
+    try { ps.setString(1, runId); ps.executeUpdate() }
+    finally { ps.close() }
+  }
+
   private def rowToVerdict(rs: java.sql.ResultSet): RequirementVerdict = {
     val observationsJson = rs.getString("observations_json")
     val observations = decode[List[Observation]](observationsJson).getOrElse(Nil)

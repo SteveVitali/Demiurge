@@ -124,6 +124,13 @@ object AttemptRepo {
     }
   }
 
+  // Phase 7: Delete all attempts for a run
+  def deleteByRunId(runId: String)(implicit conn: Connection): Unit = {
+    val ps = conn.prepareStatement("DELETE FROM attempts WHERE run_id = ?")
+    try { ps.setString(1, runId); ps.executeUpdate() }
+    finally { ps.close() }
+  }
+
   private def rowToAttempt(rs: java.sql.ResultSet): Attempt = {
     val summaryJson = Option(rs.getString("verdict_summary_json"))
     val verdictSummary = summaryJson.flatMap { json =>

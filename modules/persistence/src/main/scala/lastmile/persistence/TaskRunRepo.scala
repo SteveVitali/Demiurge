@@ -221,6 +221,42 @@ object TaskRunRepo {
     }
   }
 
+  // Phase 7: List recent runs ordered by creation time descending
+  def listRecent(limit: Int = 20)(implicit conn: Connection): List[TaskRun] = {
+    val ps = conn.prepareStatement("SELECT * FROM task_runs ORDER BY created_at DESC LIMIT ?")
+    try {
+      ps.setInt(1, limit)
+      val rs = ps.executeQuery()
+      try {
+        val buf = scala.collection.mutable.ListBuffer[TaskRun]()
+        while (rs.next()) { buf += rowToTaskRun(rs) }
+        buf.toList
+      } finally { rs.close() }
+    } finally { ps.close() }
+  }
+
+  // Phase 7: List all runs (for clean --all)
+  def listAll()(implicit conn: Connection): List[TaskRun] = {
+    val ps = conn.prepareStatement("SELECT * FROM task_runs ORDER BY created_at DESC")
+    try {
+      val rs = ps.executeQuery()
+      try {
+        val buf = scala.collection.mutable.ListBuffer[TaskRun]()
+        while (rs.next()) { buf += rowToTaskRun(rs) }
+        buf.toList
+      } finally { rs.close() }
+    } finally { ps.close() }
+  }
+
+  // Phase 7: Delete a run record by ID
+  def deleteById(runId: String)(implicit conn: Connection): Unit = {
+    val ps = conn.prepareStatement("DELETE FROM task_runs WHERE run_id = ?")
+    try {
+      ps.setString(1, runId)
+      ps.executeUpdate()
+    } finally { ps.close() }
+  }
+
   private def rowToTaskRun(rs: java.sql.ResultSet): TaskRun = {
     val changedFilesJson = Option(rs.getString("changed_files_json"))
     val changedFiles = changedFilesJson.flatMap { json =>
