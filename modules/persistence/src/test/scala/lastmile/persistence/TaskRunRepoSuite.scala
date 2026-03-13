@@ -1,0 +1,116 @@
+package lastmile.persistence
+
+import munit.FunSuite
+import java.nio.file.{Files, Paths}
+import java.time.Instant
+import lastmile.model._
+
+class TaskRunRepoSuite extends FunSuite {
+
+  private def withDb(testFn: java.sql.Connection => Unit): Unit = {
+    val tmp = Files.createTempFile("lastmile-test-", ".db")
+    Files.delete(tmp)
+    val conn = Database.open(tmp)
+    try {
+      Migrator.migrate(conn)
+      testFn(conn)
+    } finally {
+      conn.close()
+      Files.deleteIfExists(tmp)
+      Files.deleteIfExists(tmp.resolveSibling(tmp.getFileName.toString + "-wal"))
+      Files.deleteIfExists(tmp.resolveSibling(tmp.getFileName.toString + "-shm"))
+    }
+  }
+
+  private def makeRun(id: String, repoPath: String = "/home/user/project"): TaskRun = TaskRun(
+    runId = id,
+    repoPath = Paths.get(repoPath),
+    worktreePath = Paths.get(s"/home/user/.lastmile/worktrees/$id"),
+    gitRef = Some("abc123"),
+    taskText = "Add login button",
+    changedFiles = Some(List("src/App.tsx")),
+    status = RunStatus.Created,
+    runMode = RunMode.Full,
+    createdAt = Instant.parse("2025-01-01T00:00:00Z"),
+    startedAt = None,
+    endedAt = None,
+    maxAttempts = 5,
+    attemptCount = 0,
+    envBootAttempts = 0,
+    currentAttemptId = None,
+    finalVerdict = None,
+    finalSummary = None,
+    policySnapshotId = "ps-001",
+    lockFilePath = Paths.get(s"$repoPath/.lastmile/run.lock"),
+    artifactRootPath = Paths.get(s"$repoPath/.runs/$id"),
+  )
+
+  test("TaskRunRepo insert and read by ID") {
+    withDb { implicit conn =>
+      val run = makeRun("run-001")
+      TaskRunRepo.insert(run)
+
+      val loaded = TaskRunRepo.getById("run-001")
+      assert(loaded.isDefined)
+      assertEquals(loaded.get.runId, run.runId)
+      assertEquals(loaded.get.repoPath, run.repoPath)
+      assertEquals(loaded.get.taskText, run.taskText)
+      assertEquals(loaded.get.status, RunStatus.Created)
+      assertEquals(loaded.get.runMode, RunMode.Full)
+      assertEquals(loaded.get.changedFiles, Some(List("src/App.tsx")))
+      assertEquals(loaded.get.maxAttempts, 5)
+      assertEquals(loaded.get.policySnapshotId, "ps-001")
+    }
+  }
+
+  test("TaskRunRepo updateStatus") {
+    withDb { implicit conn =>
+      val run = makeRun("run-002")
+      TaskRunRepo.insert(run)
+
+      TaskRunRepo.updateStatus("run-002", RunStatus.InspectingRepo)
+
+      val loaded = TaskRunRepo.getById("run-002")
+      assert(loaded.isDefined)
+      assertEquals(loaded.get.status, RunStatus.InspectingRepo)
+      assertEquals(loaded.get.endedAt, None)
+    }
+  }
+
+  test("TaskRunRepo getById returns None for nonexistent ID") {
+    withDb { implicit conn =>
+      val loaded = TaskRunRepo.getById("nonexistent")
+      assert(loaded.isEmpty)
+    }
+  }
+
+  test("TaskRunRepo updateStatus with endedAt") {
+    withDb { implicit conn =>
+      TaskRunRepo.insert(makeRun("run-003"))
+
+      val endTime = Instant.parse("2025-01-01T01:00:00Z")
+      TaskRunRepo.updateStatus("run-003", RunStatus.Succeeded, Some(endTime))
+
+      val loaded = TaskRunRepo.getById("run-003")
+      assert(loaded.isDefined)
+      assertEquals(loaded.get.status, RunStatus.Succeeded)
+      assertEquals(loaded.get.endedAt, Some(endTime))
+    }
+  }
+
+  test("TaskRunRepo listByRepoPath filters correctly") {
+    withDb { implicit conn =>
+      TaskRunRepo.insert(makeRun("run-a1", "/home/user/projectA"))
+      TaskRunRepo.insert(makeRun("run-a2", "/home/user/projectA"))
+      TaskRunRepo.insert(makeRun("run-b1", "/home/user/projectB"))
+
+      val projectARuns = TaskRunRepo.listByRepoPath("/home/user/projectA")
+      assertEquals(projectARuns.size, 2)
+      assert(projectARuns.map(_.runId).toSet == Set("run-a1", "run-a2"))
+
+      val projectBRuns = TaskRunRepo.listByRepoPath("/home/user/projectB")
+      assertEquals(projectBRuns.size, 1)
+      assertEquals(projectBRuns.head.runId, "run-b1")
+    }
+  }
+}

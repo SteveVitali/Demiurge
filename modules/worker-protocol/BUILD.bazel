@@ -1,0 +1,9 @@
+load("@rules_scala//scala:scala.bzl", "scala_library")
+
+# Phase 2+: Worker protocol module
+scala_library(
+    name = "worker-protocol",
+    srcs = glob(["src/main/scala/**/*.scala"], allow_empty = True),
+    visibility = ["//visibility:public"],
+    deps = ["//modules/core-model"],
+)

@@ -1,0 +1,134 @@
+package lastmile.persistence
+
+import java.nio.file.Paths
+import java.sql.Connection
+import java.time.Instant
+import io.circe.syntax._
+import io.circe.parser._
+import lastmile.model._
+import lastmile.model.JsonCodecs._
+
+object TaskRunRepo {
+
+  def insert(run: TaskRun)(implicit conn: Connection): Unit = {
+    val ps = conn.prepareStatement(
+      """INSERT INTO task_runs (
+        |  run_id, repo_path, worktree_path, git_ref, task_text, changed_files_json,
+        |  status, run_mode, created_at, started_at, ended_at,
+        |  max_attempts, attempt_count, env_boot_attempts, current_attempt_id,
+        |  final_verdict, final_summary, policy_snapshot_id, lock_file_path, artifact_root_path
+        |) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      """.stripMargin)
+    try {
+      ps.setString(1, run.runId)
+      ps.setString(2, run.repoPath.toString)
+      ps.setString(3, run.worktreePath.toString)
+      ps.setString(4, run.gitRef.orNull)
+      ps.setString(5, run.taskText)
+      ps.setString(6, run.changedFiles.map(_.asJson.noSpaces).orNull)
+      ps.setString(7, run.status.toString)
+      ps.setString(8, run.runMode.toString)
+      ps.setString(9, run.createdAt.toString)
+      ps.setString(10, run.startedAt.map(_.toString).orNull)
+      ps.setString(11, run.endedAt.map(_.toString).orNull)
+      ps.setInt(12, run.maxAttempts)
+      ps.setInt(13, run.attemptCount)
+      ps.setInt(14, run.envBootAttempts)
+      ps.setString(15, run.currentAttemptId.orNull)
+      ps.setString(16, run.finalVerdict.map(_.toString).orNull)
+      ps.setString(17, run.finalSummary.orNull)
+      ps.setString(18, run.policySnapshotId)
+      ps.setString(19, run.lockFilePath.toString)
+      ps.setString(20, run.artifactRootPath.toString)
+      ps.executeUpdate()
+    } finally {
+      ps.close()
+    }
+  }
+
+  def getById(runId: String)(implicit conn: Connection): Option[TaskRun] = {
+    val ps = conn.prepareStatement("SELECT * FROM task_runs WHERE run_id = ?")
+    try {
+      ps.setString(1, runId)
+      val rs = ps.executeQuery()
+      try {
+        if (rs.next()) Some(rowToTaskRun(rs)) else None
+      } finally {
+        rs.close()
+      }
+    } finally {
+      ps.close()
+    }
+  }
+
+  def updateStatus(runId: String, status: RunStatus, endedAt: Option[Instant] = None)(implicit conn: Connection): Unit = {
+    val ps = conn.prepareStatement("UPDATE task_runs SET status = ?, ended_at = ? WHERE run_id = ?")
+    try {
+      ps.setString(1, status.toString)
+      ps.setString(2, endedAt.map(_.toString).orNull)
+      ps.setString(3, runId)
+      ps.executeUpdate()
+    } finally {
+      ps.close()
+    }
+  }
+
+  def listByRepoPath(repoPath: String)(implicit conn: Connection): List[TaskRun] = {
+    val ps = conn.prepareStatement("SELECT * FROM task_runs WHERE repo_path = ?")
+    try {
+      ps.setString(1, repoPath)
+      val rs = ps.executeQuery()
+      try {
+        val buf = scala.collection.mutable.ListBuffer[TaskRun]()
+        while (rs.next()) {
+          buf += rowToTaskRun(rs)
+        }
+        buf.toList
+      } finally {
+        rs.close()
+      }
+    } finally {
+      ps.close()
+    }
+  }
+
+  private def rowToTaskRun(rs: java.sql.ResultSet): TaskRun = {
+    val changedFilesJson = Option(rs.getString("changed_files_json"))
+    val changedFiles = changedFilesJson.flatMap { json =>
+      decode[List[String]](json).toOption
+    }
+    val finalVerdictStr = Option(rs.getString("final_verdict"))
+    val finalVerdict = finalVerdictStr.flatMap(s => VerdictStatus.values.find(_.toString == s))
+
+    TaskRun(
+      runId = rs.getString("run_id"),
+      repoPath = Paths.get(rs.getString("repo_path")),
+      worktreePath = Paths.get(rs.getString("worktree_path")),
+      gitRef = Option(rs.getString("git_ref")),
+      taskText = rs.getString("task_text"),
+      changedFiles = changedFiles,
+      status = {
+        val s = rs.getString("status")
+        RunStatus.values.find(_.toString == s)
+          .getOrElse(throw new IllegalStateException(s"Unknown RunStatus in DB: $s"))
+      },
+      runMode = {
+        val s = rs.getString("run_mode")
+        RunMode.values.find(_.toString == s)
+          .getOrElse(throw new IllegalStateException(s"Unknown RunMode in DB: $s"))
+      },
+      createdAt = Instant.parse(rs.getString("created_at")),
+      startedAt = Option(rs.getString("started_at")).map(Instant.parse),
+      endedAt = Option(rs.getString("ended_at")).map(Instant.parse),
+      maxAttempts = rs.getInt("max_attempts"),
+      attemptCount = rs.getInt("attempt_count"),
+      envBootAttempts = rs.getInt("env_boot_attempts"),
+      currentAttemptId = Option(rs.getString("current_attempt_id")),
+      finalVerdict = finalVerdict,
+      finalSummary = Option(rs.getString("final_summary")),
+      policySnapshotId = rs.getString("policy_snapshot_id"),
+      lockFilePath = Paths.get(rs.getString("lock_file_path")),
+      artifactRootPath = Paths.get(rs.getString("artifact_root_path")),
+    )
+  }
+}
