@@ -109,4 +109,38 @@ class AttemptRepoSuite extends FunSuite {
       assertEquals(loaded.get.endedAt, Some(endTime))
     }
   }
+
+  test("AttemptRepo listByRunId returns all attempts in order") {
+    withDb { implicit conn =>
+      AttemptRepo.insert(makeAttempt("att-list-2", 2))
+      AttemptRepo.insert(makeAttempt("att-list-1", 1))
+      AttemptRepo.insert(makeAttempt("att-list-3", 3))
+
+      val attempts = AttemptRepo.listByRunId("run-001")
+      assertEquals(attempts.size, 3)
+      assertEquals(attempts.map(_.attemptNumber), List(1, 2, 3))
+      assertEquals(attempts.map(_.attemptId), List("att-list-1", "att-list-2", "att-list-3"))
+    }
+  }
+
+  test("AttemptRepo listByRunId returns empty for unknown run") {
+    withDb { implicit conn =>
+      val attempts = AttemptRepo.listByRunId("nonexistent-run")
+      assert(attempts.isEmpty)
+    }
+  }
+
+  test("AttemptRepo markAborted sets status and endedAt") {
+    withDb { implicit conn =>
+      AttemptRepo.insert(makeAttempt("att-abort", 1))
+
+      val endTime = Instant.parse("2025-01-01T00:15:00Z")
+      AttemptRepo.markAborted("att-abort", endTime)
+
+      val loaded = AttemptRepo.getById("att-abort")
+      assert(loaded.isDefined)
+      assertEquals(loaded.get.status, AttemptStatus.Aborted)
+      assertEquals(loaded.get.endedAt, Some(endTime))
+    }
+  }
 }
