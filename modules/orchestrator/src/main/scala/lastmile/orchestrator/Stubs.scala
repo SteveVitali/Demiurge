@@ -75,9 +75,12 @@ object StubEnvironmentPlanner extends EnvironmentPlanner {
 }
 
 object StubRuntimeSupervisor extends RuntimeSupervisor {
+  private val bootCount = new java.util.concurrent.atomic.AtomicInteger(0)
+
   override def bootEnvironment(plan: RuntimePlan, repoRoot: Path): RuntimeSupervisor.BootResult = {
+    val seq = bootCount.incrementAndGet()
     val snapshot = RuntimeSnapshot(
-      snapshotId = s"stub-snapshot-${plan.runId}",
+      snapshotId = s"stub-snapshot-${plan.runId}-$seq",
       runId = plan.runId,
       capturedAt = Instant.EPOCH,
       environmentStatus = EnvironmentStatus.Ready,
