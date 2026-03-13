@@ -79,6 +79,7 @@ object RunTransitionManager {
     ctx: RunContext,
     targetStatus: RunStatus,
     summary: Option[String] = None,
+    finalVerdict: Option[VerdictStatus] = None,
   ): TaskRun = {
     implicit val conn: Connection = ctx.conn
 
@@ -87,6 +88,7 @@ object RunTransitionManager {
       status = targetStatus,
       endedAt = Some(now),
       finalSummary = summary.orElse(ctx.run.finalSummary),
+      finalVerdict = finalVerdict.orElse(ctx.run.finalVerdict),
     )
 
     // Persist terminal state
@@ -94,6 +96,9 @@ object RunTransitionManager {
       TaskRunRepo.updateStatus(updatedRun.runId, targetStatus, endedAt = Some(now))(txn)
       summary.foreach { s =>
         TaskRunRepo.setFinalSummary(updatedRun.runId, s)(txn)
+      }
+      finalVerdict.foreach { v =>
+        TaskRunRepo.setFinalVerdict(updatedRun.runId, v)(txn)
       }
 
       EventRepo.insert(SystemEvent(

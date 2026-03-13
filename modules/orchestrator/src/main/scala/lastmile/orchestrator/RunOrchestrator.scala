@@ -7,16 +7,18 @@ import lastmile.inspector.RepoInspector
 import lastmile.compiler.RequirementCompiler
 import lastmile.planner.EnvironmentPlanner
 import lastmile.runtime.RuntimeSupervisor
+import lastmile.verification.VerificationEngine
 import lastmile.persistence._
 
-// Spec §4.1: Synchronous orchestrator loop for Phase 3.
+// Spec §4.1: Synchronous orchestrator loop for Phase 4.
 // Executes the path: Created → InspectingRepo → CompilingRequirements →
-// PlanningEnvironment → BootstrappingEnvironment → SeedingFixtures → ReadyToVerify → Exhausted
+// PlanningEnvironment → BootstrappingEnvironment → SeedingFixtures → ReadyToVerify →
+// Verifying → (Succeeded | Exhausted)
 // All transitions enforce persist-before-side-effects (Spec §4.1).
 object RunOrchestrator {
 
   /**
-   * Execute the Phase 3 orchestration path.
+   * Execute the Phase 4 orchestration path.
    * Returns the final TaskRun state after reaching a terminal status.
    */
   def execute(
@@ -32,10 +34,6 @@ object RunOrchestrator {
     var currentRun = ctx.run
     var currentCtx = ctx
     implicit val conn: Connection = ctx.conn
-
-    // Spec §4.1: State machine — Phase 3 path
-    // Created → InspectingRepo → CompilingRequirements → PlanningEnvironment →
-    // BootstrappingEnvironment → SeedingFixtures → ReadyToVerify → Exhausted
 
     // --- Transition: Created → InspectingRepo ---
     if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
@@ -67,11 +65,13 @@ object RunOrchestrator {
         currentCtx,
         RunStatus.CompilingRequirements,
         sideEffect = { updatedCtx =>
-          requirementResult = Some(compiler.compile(
+          val graph = compiler.compile(
             currentRun.runId,
             inspectionResult.get,
             currentRun.taskText,
-          ))
+          )
+          RequirementGraphRepo.insert(graph)
+          requirementResult = Some(graph)
         },
       )
       currentCtx = currentCtx.copy(run = currentRun)
@@ -133,7 +133,6 @@ object RunOrchestrator {
           RuntimeSnapshotRepo.insert(snapshot)
 
           // --- Transition: BootstrappingEnvironment → SeedingFixtures ---
-          // Fixtures already ran inside bootEnvironment; this state records completion.
           if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
 
           currentRun = RunTransitionManager.transition(
@@ -150,21 +149,68 @@ object RunOrchestrator {
           currentRun = RunTransitionManager.transition(
             currentCtx,
             RunStatus.ReadyToVerify,
-            sideEffect = { _ => /* Phase 3: verification not yet implemented */ },
+            sideEffect = { _ => },
           )
           currentCtx = currentCtx.copy(run = currentRun)
           SignalHandler.updateContext(currentCtx)
 
-          // Phase 3 terminal: teardown environment and mark Exhausted
+          // --- Phase 4: Verification loop (single attempt, no repair) ---
           if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
+
+          // Transition: ReadyToVerify → Verifying
+          var verificationResult: Option[VerificationEngine.VerificationResult] = None
+
+          currentRun = RunTransitionManager.transition(
+            currentCtx,
+            RunStatus.Verifying,
+            sideEffect = { _ =>
+              // Create attempt
+              val attempt = AttemptManager.createAttempt(currentRun.runId, 1)
+              val verifying = AttemptManager.startVerifying(attempt)
+
+              // Execute verifiers
+              val result = VerificationEngine.runVerification(
+                currentRun.runId,
+                1,
+                requirementResult.get,
+              )
+              verificationResult = Some(result)
+
+              // Complete the attempt
+              AttemptManager.completeAttempt(
+                verifying,
+                result.verdicts,
+                result.aggregate.overallVerdict,
+              )
+            },
+          )
+          currentCtx = currentCtx.copy(run = currentRun)
+          SignalHandler.updateContext(currentCtx)
+
+          // --- Evaluate verdict ---
+          if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
+
+          val verdict = verificationResult.get.aggregate.overallVerdict
+          val agg = verificationResult.get.aggregate
 
           try { supervisor.teardown(planResult.get, currentCtx.repoRoot) } catch { case _: Exception => }
 
-          currentRun = RunTransitionManager.transitionToTerminal(
-            currentCtx,
-            RunStatus.Exhausted,
-            summary = Some("Phase 3 completed: environment ready, verification not yet implemented"),
-          )
+          if (verdict == VerdictStatus.Pass) {
+            currentRun = RunTransitionManager.transitionToTerminal(
+              currentCtx,
+              RunStatus.Succeeded,
+              summary = Some(s"All ${agg.total} verifiers passed"),
+              finalVerdict = Some(VerdictStatus.Pass),
+            )
+          } else {
+            // Phase 4: no repair — go straight to Exhausted
+            currentRun = RunTransitionManager.transitionToTerminal(
+              currentCtx,
+              RunStatus.Exhausted,
+              summary = Some(s"Verification failed: ${agg.failCount} failed, ${agg.errorCount} errors, ${agg.timeoutCount} timeouts out of ${agg.total}"),
+              finalVerdict = Some(VerdictStatus.Fail),
+            )
+          }
           currentCtx = currentCtx.copy(run = currentRun)
           SignalHandler.updateContext(currentCtx)
       }
