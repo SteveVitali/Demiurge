@@ -1,9 +1,21 @@
-load("@rules_scala//scala:scala.bzl", "scala_library")
+load("@rules_scala//scala:scala.bzl", "scala_junit_test", "scala_library")
 
-# Phase 2+: Artifact store module
+# Phase 6: Artifact store module — ArtifactSink, EvidenceCollector, ArtifactPaths
 scala_library(
     name = "artifact-store",
     srcs = glob(["src/main/scala/**/*.scala"], allow_empty = True),
     visibility = ["//visibility:public"],
     deps = ["//modules/core-model"],
+)
+
+scala_junit_test(
+    name = "artifact-store-tests",
+    srcs = glob(["src/test/scala/**/*.scala"], allow_empty = True),
+    suffixes = ["Suite"],
+    deps = [
+        ":artifact-store",
+        "//modules/core-model",
+        "@maven//:org_scalameta_munit_2_13",
+        "@maven//:org_scalameta_munit_diff_2_13",
+    ],
 )

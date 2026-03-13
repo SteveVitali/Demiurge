@@ -7,7 +7,7 @@ import lastmile.inspector.RepoInspector
 import lastmile.compiler.RequirementCompiler
 import lastmile.planner.EnvironmentPlanner
 import lastmile.runtime.RuntimeSupervisor
-import lastmile.verification.VerificationEngine
+import lastmile.verification.{VerificationEngine, BrowserFlowVerifier, BrowserVerifierResult}
 import lastmile.persistence._
 import lastmile.repair._
 
@@ -26,6 +26,8 @@ object RunOrchestrator {
    * Execute the Phase 5 orchestration path with single repair attempt.
    * Returns the final TaskRun state after reaching a terminal status.
    */
+  // Phase 6: Optional browserExecutor for dispatching BrowserFlowVerifiers through the worker.
+  // Worker persists across attempts. Orchestrator spawns worker only when browser verification is needed.
   def execute(
     ctx: RunContext,
     inspector: RepoInspector,
@@ -33,6 +35,7 @@ object RunOrchestrator {
     planner: EnvironmentPlanner,
     supervisor: RuntimeSupervisor,
     repairBackend: Option[RepairBackend] = None,
+    browserExecutor: Option[VerificationEngine.BrowserVerifierExecutor] = None,
   ): TaskRun = {
     // Register signal handler for interruption persistence (Spec §4.4)
     SignalHandler.register(ctx, ctx.repoRoot)
@@ -181,6 +184,7 @@ object RunOrchestrator {
                 currentRun.runId,
                 1,
                 requirementResult.get,
+                browserExecutor,
               )
               verificationResult = Some(result)
 
@@ -348,6 +352,7 @@ object RunOrchestrator {
                           currentRun.runId,
                           2,
                           requirementResult.get,
+                          browserExecutor,
                         )
                         rerunResult = Some(result2)
 
