@@ -80,7 +80,39 @@ object ManifestParser {
         None
     }
 
-    // observability (optional, parsed but no behavior in Phase 3)
+    // auth (optional, Spec §11.3)
+    val auth = root.get("auth") match {
+      case Some(m: java.util.Map[_, _]) => parseAuth(toScalaMap(m.asInstanceOf[java.util.Map[String, Any]]), errors)
+      case Some(m: Map[_, _]) => parseAuth(m.asInstanceOf[Map[String, Any]], errors)
+      case None => None
+      case _ => None
+    }
+
+    // verification (optional, Spec §11.3)
+    val verification = root.get("verification") match {
+      case Some(m: java.util.Map[_, _]) => Some(parseVerification(toScalaMap(m.asInstanceOf[java.util.Map[String, Any]])))
+      case Some(m: Map[_, _]) => Some(parseVerification(m.asInstanceOf[Map[String, Any]]))
+      case None => None
+      case _ => None
+    }
+
+    // inference (optional, Spec §11.3)
+    val inference = root.get("inference") match {
+      case Some(m: java.util.Map[_, _]) => Some(parseInference(toScalaMap(m.asInstanceOf[java.util.Map[String, Any]])))
+      case Some(m: Map[_, _]) => Some(parseInference(m.asInstanceOf[Map[String, Any]]))
+      case None => None
+      case _ => None
+    }
+
+    // policies (optional, Spec §11.3)
+    val policies = root.get("policies") match {
+      case Some(m: java.util.Map[_, _]) => Some(parsePolicies(toScalaMap(m.asInstanceOf[java.util.Map[String, Any]])))
+      case Some(m: Map[_, _]) => Some(parsePolicies(m.asInstanceOf[Map[String, Any]]))
+      case None => None
+      case _ => None
+    }
+
+    // observability (optional, Spec §11.3)
     val observability = root.get("observability") match {
       case Some(m: java.util.Map[_, _]) => Some(parseObservability(toScalaMap(m.asInstanceOf[java.util.Map[String, Any]]), errors))
       case Some(m: Map[_, _]) => Some(parseObservability(m.asInstanceOf[Map[String, Any]], errors))
@@ -90,7 +122,7 @@ object ManifestParser {
 
     if (errors.nonEmpty) ParseFailure(errors.toList)
     else app match {
-      case Some(a) => ParseSuccess(LastmileManifest(version, a, services, fixtures, observability))
+      case Some(a) => ParseSuccess(LastmileManifest(version, a, services, fixtures, auth, verification, inference, policies, observability))
       case None => ParseFailure(errors.toList :+ "Failed to parse app config")
     }
   }
@@ -277,6 +309,70 @@ object ManifestParser {
     }
   }
 
+  // Spec §11.3: Parse auth section
+  private def parseAuth(m: Map[String, Any], errors: scala.collection.mutable.ListBuffer[String]): Option[AuthConfig] = {
+    val mode = getRequiredString(m, "mode", "auth.mode", errors)
+    mode.map { md =>
+      AuthConfig(
+        mode = md,
+        loginUrl = getOptionalString(m, "login_url"),
+        credentials = getOptionalStringMap(m, "credentials"),
+        tokenEndpoint = getOptionalString(m, "token_endpoint"),
+        staticToken = getOptionalString(m, "static_token"),
+        devBypassHeader = getOptionalStringMap(m, "dev_bypass_header"),
+        storageStateOutput = getOptionalString(m, "storage_state_output"),
+      )
+    }
+  }
+
+  // Spec §11.3: Parse verification section
+  private def parseVerification(m: Map[String, Any]): VerificationConfig = {
+    VerificationConfig(
+      defaultVerifierTimeoutMs = getOptionalInt(m, "default_verifier_timeout_ms"),
+      defaultBrowserActionTimeoutMs = getOptionalInt(m, "default_browser_action_timeout_ms"),
+      maxRetries = getOptionalInt(m, "max_retries"),
+      retryDelayMs = getOptionalInt(m, "retry_delay_ms"),
+      screenshotOnFailure = getOptionalBoolean(m, "screenshot_on_failure"),
+      screenshotOnComplete = getOptionalBoolean(m, "screenshot_on_complete"),
+      traceEnabled = getOptionalBoolean(m, "trace_enabled"),
+    )
+  }
+
+  // Spec §11.3: Parse inference section
+  private def parseInference(m: Map[String, Any]): InferenceConfig = {
+    val models = m.get("models") match {
+      case Some(mm: java.util.Map[_, _]) =>
+        val sm = toScalaMap(mm.asInstanceOf[java.util.Map[String, Any]])
+        Some(InferenceModelsConfig(
+          requirementCompiler = getOptionalString(sm, "requirement_compiler"),
+          verifierGenerator = getOptionalString(sm, "verifier_generator"),
+          failureAnalyzer = getOptionalString(sm, "failure_analyzer"),
+          impactAnalysis = getOptionalString(sm, "impact_analysis"),
+          exploratoryVerifier = getOptionalString(sm, "exploratory_verifier"),
+        ))
+      case _ => None
+    }
+    InferenceConfig(
+      defaultProvider = getOptionalString(m, "default_provider"),
+      models = models,
+    )
+  }
+
+  // Spec §11.3: Parse policies section
+  private def parsePolicies(m: Map[String, Any]): PoliciesConfig = {
+    PoliciesConfig(
+      maxAttempts = getOptionalInt(m, "max_attempts"),
+      runTimeoutMs = getOptionalLong(m, "run_timeout_ms"),
+      attemptTimeoutMs = getOptionalLong(m, "attempt_timeout_ms"),
+      maxPatchLines = getOptionalInt(m, "max_patch_lines"),
+      maxArtifactDiskBytes = getOptionalLong(m, "max_artifact_disk_bytes"),
+      allowedHosts = getOptionalStringList(m, "allowed_hosts"),
+      browserAllowedOrigins = getOptionalStringList(m, "browser_allowed_origins"),
+      allowGitPush = getOptionalBoolean(m, "allow_git_push"),
+      allowDbDrop = getOptionalBoolean(m, "allow_db_drop"),
+    )
+  }
+
   private def parseObservability(m: Map[String, Any], errors: scala.collection.mutable.ListBuffer[String]): ObservabilityConfig = {
     val taps = m.get("taps") match {
       case Some(lst: java.util.List[_]) =>
@@ -292,7 +388,21 @@ object ManifestParser {
         })
       case _ => None
     }
-    ObservabilityConfig(taps)
+    val logQueries = m.get("log_queries") match {
+      case Some(lst: java.util.List[_]) =>
+        Some(lst.asScala.toList.flatMap {
+          case qm: java.util.Map[_, _] =>
+            val sm = toScalaMap(qm.asInstanceOf[java.util.Map[String, Any]])
+            for {
+              id <- getOptionalString(sm, "id")
+              serviceId <- getOptionalString(sm, "service_id")
+              query <- getOptionalString(sm, "query")
+            } yield LogQueryConfig(id, serviceId, query, getOptionalString(sm, "description"))
+          case _ => None
+        })
+      case _ => None
+    }
+    ObservabilityConfig(taps, logQueries)
   }
 
   // --- Helper methods ---
@@ -355,6 +465,14 @@ object ManifestParser {
   private def getOptionalStringList(m: Map[String, Any], key: String): Option[List[String]] =
     m.get(key).collect {
       case lst: java.util.List[_] => lst.asScala.toList.collect { case s: String => s }
+    }
+
+  private def getOptionalLong(m: Map[String, Any], key: String): Option[Long] =
+    m.get(key).collect {
+      case v: java.lang.Long => v.longValue()
+      case v: java.lang.Integer => v.longValue()
+      case v: Long => v
+      case v: Int => v.toLong
     }
 
   private def getOptionalStringMap(m: Map[String, Any], key: String): Option[Map[String, String]] =

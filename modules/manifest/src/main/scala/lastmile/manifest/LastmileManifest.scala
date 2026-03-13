@@ -1,13 +1,17 @@
 package lastmile.manifest
 
-// Spec §5: LastmileManifest — parsed representation of lastmile.yaml
-// Phase 3 subset: version, app, services, fixtures, observability (parsed but no behavior)
+// Spec §11.3: LastmileManifest — parsed representation of lastmile.yaml
+// Phase 8: All MVP sections: version, app, services, fixtures, auth, verification, inference, policies, observability
 
 case class LastmileManifest(
   version:        Int,
   app:            AppConfig,
   services:       Map[String, ServiceConfig],
   fixtures:       Option[FixturesConfig],
+  auth:           Option[AuthConfig],
+  verification:   Option[VerificationConfig],
+  inference:      Option[InferenceConfig],
+  policies:       Option[PoliciesConfig],
   observability:  Option[ObservabilityConfig],
 )
 
@@ -80,8 +84,58 @@ case class SeedStepConfig(
   order:             Option[Int],
 )
 
+// Spec §11.3: auth section
+case class AuthConfig(
+  mode:                String,
+  loginUrl:            Option[String],
+  credentials:         Option[Map[String, String]],
+  tokenEndpoint:       Option[String],
+  staticToken:         Option[String],
+  devBypassHeader:     Option[Map[String, String]],
+  storageStateOutput:  Option[String],
+)
+
+// Spec §11.3: verification section
+case class VerificationConfig(
+  defaultVerifierTimeoutMs:       Option[Int],
+  defaultBrowserActionTimeoutMs:  Option[Int],
+  maxRetries:                     Option[Int],
+  retryDelayMs:                   Option[Int],
+  screenshotOnFailure:            Option[Boolean],
+  screenshotOnComplete:           Option[Boolean],
+  traceEnabled:                   Option[Boolean],
+)
+
+// Spec §11.3: inference section
+case class InferenceConfig(
+  defaultProvider: Option[String],
+  models:          Option[InferenceModelsConfig],
+)
+
+case class InferenceModelsConfig(
+  requirementCompiler:  Option[String],
+  verifierGenerator:    Option[String],
+  failureAnalyzer:      Option[String],
+  impactAnalysis:       Option[String],
+  exploratoryVerifier:  Option[String],
+)
+
+// Spec §11.3: policies section
+case class PoliciesConfig(
+  maxAttempts:           Option[Int],
+  runTimeoutMs:          Option[Long],
+  attemptTimeoutMs:      Option[Long],
+  maxPatchLines:         Option[Int],
+  maxArtifactDiskBytes:  Option[Long],
+  allowedHosts:          Option[List[String]],
+  browserAllowedOrigins: Option[List[String]],
+  allowGitPush:          Option[Boolean],
+  allowDbDrop:           Option[Boolean],
+)
+
 case class ObservabilityConfig(
-  taps: Option[List[ObservabilityTapConfig]],
+  taps:       Option[List[ObservabilityTapConfig]],
+  logQueries: Option[List[LogQueryConfig]],
 )
 
 case class ObservabilityTapConfig(
@@ -89,4 +143,12 @@ case class ObservabilityTapConfig(
   serviceId: String,
   tapType:   String,
   config:    Option[Map[String, String]],
+)
+
+// Spec §11.3: observability.log_queries
+case class LogQueryConfig(
+  id:          String,
+  serviceId:   String,
+  query:       String,
+  description: Option[String],
 )
