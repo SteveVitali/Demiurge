@@ -1,4 +1,4 @@
-load("@rules_scala//scala:scala.bzl", "scala_library", "scala_test")
+load("@rules_scala//scala:scala.bzl", "scala_junit_test", "scala_library")
 
 scala_library(
     name = "persistence",
@@ -17,9 +17,10 @@ scala_library(
     ],
 )
 
-scala_test(
+scala_junit_test(
     name = "persistence-tests",
     srcs = glob(["src/test/scala/**/*.scala"], allow_empty = True),
+    suffixes = ["Suite"],
     deps = [
         ":persistence",
         "//modules/core-model",

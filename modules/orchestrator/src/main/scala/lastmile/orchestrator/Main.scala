@@ -1,39 +1,60 @@
 package lastmile.orchestrator
 
-import java.nio.file.{Files, Paths}
+import java.nio.file.{Files, Path, Paths}
 import java.time.Instant
+import java.util.UUID
 import lastmile.model._
 import lastmile.persistence._
 
+// Spec §4: Phase 2 smoke entrypoint (not a real CLI).
+// Opens DB, runs migrations, acquires lock, creates worktree,
+// creates TaskRun, invokes orchestrator, prints final status, releases lock.
 object Main {
 
   def main(args: Array[String]): Unit = {
-    println("Demiurge Phase 1 — Smoke Test")
+    println("Demiurge Phase 2 — Orchestrator Smoke Entrypoint")
 
-    // Create temp DB file
-    val tmpDir = Files.createTempDirectory("demiurge-test")
-    val dbPath = tmpDir.resolve("lastmile.db")
+    // Resolve repo root from current working directory
+    val cwd = Paths.get(System.getProperty("user.dir"))
+    val repoRoot = WorktreeManager.resolveRepoRoot(cwd)
+    println(s"Repo root: $repoRoot")
+
+    // Open DB under .lastmile/
+    val lastmileDir = repoRoot.resolve(".lastmile")
+    Files.createDirectories(lastmileDir)
+    val dbPath = lastmileDir.resolve("lastmile.db")
     println(s"DB path: $dbPath")
 
     val conn = Database.open(dbPath)
+    var lockAcquired = false
+
     try {
       // Run migrations
       Migrator.migrate(conn)
       println(s"Schema version: ${Migrator.currentVersion(conn)}")
 
-      // Create a default PolicySnapshot (budget only — no state machine logic)
       val budget = ExecutionBudgetDefaults.defaults
-      println(s"Default budget: maxAttempts=${budget.maxAttempts}, runTimeoutMs=${budget.runTimeoutMs}")
+      val runId = UUID.randomUUID().toString
+      val taskText = if (args.nonEmpty) args.mkString(" ") else "Phase 2 smoke test task"
 
-      // Insert a test TaskRun
+      // Create worktree (Spec §4.2)
+      val worktreePath = WorktreeManager.create(repoRoot, runId, gitRef = Some("HEAD"))
+      println(s"Worktree created: $worktreePath")
+
+      // Acquire lock (Spec §4.3)
+      val lockPath = LockManager.acquire(repoRoot, runId, worktreePath)
+      lockAcquired = true
+      println(s"Lock acquired: $lockPath")
+
+      // Create and persist TaskRun (Spec §3.2)
       implicit val c: java.sql.Connection = conn
       val run = TaskRun(
-        runId = "test-run-001",
-        repoPath = Paths.get("/tmp/test-repo"),
-        worktreePath = Paths.get("/tmp/test-worktree"),
+        runId = runId,
+        repoPath = repoRoot,
+        worktreePath = worktreePath,
         gitRef = Some("HEAD"),
-        taskText = "Phase 1 smoke test",
-        changedFiles = Some(List("README.md")),
+        taskText = taskText,
+        changedFiles = None,
         status = RunStatus.Created,
         runMode = RunMode.Full,
         createdAt = Instant.now(),
@@ -45,36 +66,51 @@ object Main {
         currentAttemptId = None,
         finalVerdict = None,
         finalSummary = None,
-        policySnapshotId = "ps-test-001",
-        lockFilePath = Paths.get("/tmp/test-repo/.lastmile/run.lock"),
-        artifactRootPath = Paths.get("/tmp/test-repo/.runs/test-run-001"),
+        policySnapshotId = s"ps-$runId",
+        lockFilePath = lockPath,
+        artifactRootPath = repoRoot.resolve(".runs").resolve(runId),
       )
 
       TaskRunRepo.insert(run)
-      println("Inserted TaskRun: test-run-001")
+      println(s"TaskRun created: $runId")
 
-      // Read it back
-      val loaded = TaskRunRepo.getById("test-run-001")
-      loaded match {
-        case Some(r) =>
-          println(s"Read back: runId=${r.runId}, status=${r.status}, taskText=${r.taskText}")
-          assert(r.runId == run.runId)
-          assert(r.status == RunStatus.Created)
-          assert(r.taskText == "Phase 1 smoke test")
-          println("All assertions passed!")
-        case None =>
-          System.err.println("ERROR: Failed to read back TaskRun!")
-          System.exit(1)
-      }
+      // Build run context and invoke orchestrator
+      val ctx = RunContext(
+        run = run,
+        repoRoot = repoRoot,
+        worktreePath = worktreePath,
+        conn = conn,
+      )
 
-      println("Phase 1 smoke test completed successfully.")
+      val finalRun = RunOrchestrator.execute(
+        ctx,
+        StubRepoInspector,
+        StubRequirementCompiler,
+        StubEnvironmentPlanner,
+      )
+
+      println(s"Run completed: status=${finalRun.status}, summary=${finalRun.finalSummary.getOrElse("none")}")
+
+      // Release lock on success (Spec §4.3)
+      LockManager.release(repoRoot)
+      lockAcquired = false
+      println("Lock released.")
+
+      // Clean up worktree for smoke test
+      WorktreeManager.remove(repoRoot, runId)
+      println("Worktree cleaned up.")
+
+      println("Phase 2 smoke entrypoint completed successfully.")
+    } catch {
+      case e: Exception =>
+        System.err.println(s"ERROR: ${e.getMessage}")
+        e.printStackTrace()
+        System.exit(1)
     } finally {
+      if (lockAcquired) {
+        LockManager.release(repoRoot)
+      }
       conn.close()
-      // Cleanup
-      Files.deleteIfExists(dbPath)
-      Files.deleteIfExists(dbPath.resolveSibling(dbPath.getFileName.toString + "-wal"))
-      Files.deleteIfExists(dbPath.resolveSibling(dbPath.getFileName.toString + "-shm"))
-      Files.deleteIfExists(tmpDir)
     }
   }
 }
