@@ -20,7 +20,7 @@ Demiurge is a **Scala 2.13 + TypeScript** dual-stack project built with **Bazel*
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                    CLI (lastmile)                    │
+│                    CLI (demiurge)                    │
 │  run · plan · resume · status · inspect-run · ...   │
 ├─────────────────────────────────────────────────────┤
 │                   Orchestrator                       │
@@ -51,7 +51,7 @@ Demiurge is a **Scala 2.13 + TypeScript** dual-stack project built with **Bazel*
 | `modules/orchestrator` | Scala | Run state machine, transition manager, signal handler, timeout enforcer, resume manager |
 | `modules/cli` | Scala | 11 CLI commands, arg parsing, output formatting (human/JSON) |
 | `modules/local-api` | Scala | HTTP server (127.0.0.1:19440), REST + SSE event streaming |
-| `modules/manifest` | Scala | `lastmile.yaml` parser (SnakeYAML) |
+| `modules/manifest` | Scala | `demiurge.yaml` parser (SnakeYAML) |
 | `modules/repo-inspector` | Scala | Repository analysis, changed-file impact mapping |
 | `modules/requirement-compiler` | Scala | Requirements + selectors → RequirementGraph with VerifierSpecs |
 | `modules/requirements` | Scala | `requirements.yaml` parser and validator |
@@ -77,7 +77,7 @@ Demiurge is a **Scala 2.13 + TypeScript** dual-stack project built with **Bazel*
 - **Docker + Docker Compose V2** (optional, for compose-based services)
 - **Playwright browsers** (optional, for browser flow verification)
 
-Run `lastmile doctor` to check all prerequisites.
+Run `demiurge doctor` to check all prerequisites.
 
 ## Quick Start
 
@@ -101,27 +101,27 @@ cd worker && npm install && npm test
 
 ```bash
 # Execute a verification run
-lastmile run --task "Verify the login flow works end-to-end"
+demiurge run --task "Verify the login flow works end-to-end"
 
 # Plan without executing
-lastmile plan --task "Add user registration" --changed-files "src/auth.ts,src/pages/register.tsx"
+demiurge plan --task "Add user registration" --changed-files "src/auth.ts,src/pages/register.tsx"
 
 # Check run status
-lastmile status --run-id <run-id>
+demiurge status --run-id <run-id>
 
 # Resume an interrupted run
-lastmile resume --run-id <run-id>
+demiurge resume --run-id <run-id>
 
 # Check system prerequisites
-lastmile doctor
+demiurge doctor
 ```
 
 ## Configuration
 
-Demiurge is configured via a `lastmile.yaml` manifest in your repository root. Generate a starter manifest:
+Demiurge is configured via a `demiurge.yaml` manifest in your repository root. Generate a starter manifest:
 
 ```bash
-lastmile init-manifest
+demiurge init-manifest
 ```
 
 See [docs/configuration.md](docs/configuration.md) for the full manifest schema reference.
@@ -137,7 +137,7 @@ See [docs/configuration.md](docs/configuration.md) for the full manifest schema 
 - [Architecture](docs/architecture.md) — system design, module responsibilities, state machine, data flow
 - [CLI Reference](docs/cli-reference.md) — all commands, flags, exit codes, output formats
 - [API Reference](docs/api-reference.md) — local HTTP API endpoints, SSE event streaming
-- [Configuration](docs/configuration.md) — `lastmile.yaml` manifest, `requirements.yaml`, `selectors.yaml`
+- [Configuration](docs/configuration.md) — `demiurge.yaml` manifest, `requirements.yaml`, `selectors.yaml`
 - [Development Guide](docs/development.md) — building, testing, contributing, module structure
 
 ## License

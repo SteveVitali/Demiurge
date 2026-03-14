@@ -1,6 +1,6 @@
 load("@rules_scala//scala:scala.bzl", "scala_junit_test", "scala_library")
 
-# Phase 3: Manifest parsing module — lastmile.yaml
+# Phase 3: Manifest parsing module — demiurge.yaml
 scala_library(
     name = "manifest",
     srcs = glob(["src/main/scala/**/*.scala"], allow_empty = True),
