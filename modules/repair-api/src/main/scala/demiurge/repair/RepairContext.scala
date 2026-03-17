@@ -21,4 +21,5 @@ case class RepairContext(
   generationMode:     GenerationMode = GenerationMode.Repair,
   featureSpec:        Option[String] = None,
   featurePlan:        Option[FeaturePlan] = None,
+  logs:               Option[String] = None,
 )

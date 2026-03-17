@@ -31,6 +31,7 @@ object VerificationEngine {
     browserExecutor: Option[BrowserVerifierExecutor] = None,
     inferenceService: Option[InferenceService] = None,
     resolvedConfig: Option[ResolvedConfig] = None,
+    storageStatePath: Option[String] = None,
   ): VerificationResult = {
     val verifiers = VerifierGenerator.generate(graph)
     val outcomes = verifiers.map { v =>
@@ -41,7 +42,13 @@ object VerificationEngine {
           browserExecutor match {
             case Some(executor) =>
               // Phase E: Discover missing selectors before execution
-              val resolvedBv = discoverSelectorsIfNeeded(bv, executor, runId, inferenceService, resolvedConfig)
+              val discoveredBv = discoverSelectorsIfNeeded(bv, executor, runId, inferenceService, resolvedConfig)
+              // Gap 4: Apply storage state path from auth bootstrap if available
+              val resolvedBv = storageStatePath match {
+                case Some(path) if discoveredBv.storageStatePath.isEmpty =>
+                  discoveredBv.copy(storageStatePath = Some(path))
+                case _ => discoveredBv
+              }
               val browserResult = executor.execute(resolvedBv)
               val durationMs = System.currentTimeMillis() - startTime
               (v, browserResult.outcome, durationMs, browserResult.observations, browserResult.artifactRefs)
