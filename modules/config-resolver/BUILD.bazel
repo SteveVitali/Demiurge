@@ -1,0 +1,34 @@
+load("@rules_scala//scala:scala.bzl", "scala_junit_test", "scala_library")
+
+# Phase A: Config resolution module — layered config inference pipeline
+scala_library(
+    name = "config-resolver",
+    srcs = glob(["src/main/scala/**/*.scala"], allow_empty = True),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//modules/core-model",
+        "//modules/manifest",
+        "//modules/requirements",
+        "//modules/selectors",
+        "//modules/repo-inspector",
+        "//modules/inference",
+        "@maven//:org_yaml_snakeyaml",
+    ],
+)
+
+scala_junit_test(
+    name = "config-resolver-tests",
+    srcs = glob(["src/test/scala/**/*.scala"], allow_empty = True),
+    suffixes = ["Suite"],
+    deps = [
+        ":config-resolver",
+        "//modules/core-model",
+        "//modules/manifest",
+        "//modules/requirements",
+        "//modules/selectors",
+        "//modules/repo-inspector",
+        "//modules/inference",
+        "@maven//:org_scalameta_munit_2_13",
+        "@maven//:org_scalameta_munit_diff_2_13",
+    ],
+)
