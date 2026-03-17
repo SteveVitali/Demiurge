@@ -47,6 +47,25 @@ object CommandParsers {
     runId: Option[String]          = None,
     replayInference: Boolean       = false,
     headless: Boolean              = true,
+    branch: Option[String]         = None,
+    openPr: Boolean                = false,
+    yes: Boolean                   = false,
+  ) extends ParsedCommand
+
+  case class BuildCmd(
+    task: String,
+    maxAttempts: Option[Int]        = None,
+    runTimeout: Option[Long]        = None,
+    attemptTimeout: Option[Long]    = None,
+    maxPatchLines: Option[Int]      = None,
+    changedFiles: Option[List[String]] = None,
+    gitRef: Option[String]          = None,
+    branch: Option[String]          = None,
+    openPr: Boolean                 = false,
+    yes: Boolean                    = false,
+    runId: Option[String]           = None,
+    replayInference: Boolean        = false,
+    headless: Boolean               = true,
   ) extends ParsedCommand
 
   case class PlanCmd(
@@ -128,6 +147,7 @@ object CommandParsers {
   private def parseCommand(cmd: String, args: List[String], global: GlobalOpts): Either[String, ParseResult] = {
     cmd match {
       case "run"              => parseRunCmd(args, global)
+      case "build"            => parseBuildCmd(args, global)
       case "plan"             => parsePlanCmd(args, global)
       case "resume"           => parseResumeCmd(args, global)
       case "status"           => parseStatusCmd(args, global)
@@ -168,6 +188,10 @@ object CommandParsers {
         case "--replay-inference" :: rest  => cmd = cmd.copy(replayInference = true); remaining = rest
         case "--headless" :: rest          => cmd = cmd.copy(headless = true); remaining = rest
         case "--no-headless" :: rest       => cmd = cmd.copy(headless = false); remaining = rest
+        case "--branch" :: v :: rest       => cmd = cmd.copy(branch = Some(v)); remaining = rest
+        case "--open-pr" :: rest           => cmd = cmd.copy(openPr = true); remaining = rest
+        case "--yes" :: rest               => cmd = cmd.copy(yes = true); remaining = rest
+        case "-y" :: rest                  => cmd = cmd.copy(yes = true); remaining = rest
         case unknown :: _                  => return Left(s"Unknown flag for run: $unknown")
       }
     }
@@ -175,6 +199,38 @@ object CommandParsers {
     task match {
       case Some(t) => Right(ParseResult(global, cmd.copy(task = t)))
       case None    => Left("run requires --task")
+    }
+  }
+
+  private def parseBuildCmd(args: List[String], global: GlobalOpts): Either[String, ParseResult] = {
+    var task: Option[String] = None
+    var cmd = BuildCmd(task = "")
+    var remaining = args
+
+    while (remaining.nonEmpty) {
+      remaining match {
+        case "--task" :: v :: rest          => task = Some(v); remaining = rest
+        case "--max-attempts" :: v :: rest  => parseInt(v, "--max-attempts").map(n => cmd = cmd.copy(maxAttempts = Some(n))) match { case Left(e) => return Left(e); case _ => }; remaining = rest
+        case "--run-timeout" :: v :: rest   => parseDuration(v, "--run-timeout").map(n => cmd = cmd.copy(runTimeout = Some(n))) match { case Left(e) => return Left(e); case _ => }; remaining = rest
+        case "--attempt-timeout" :: v :: rest => parseDuration(v, "--attempt-timeout").map(n => cmd = cmd.copy(attemptTimeout = Some(n))) match { case Left(e) => return Left(e); case _ => }; remaining = rest
+        case "--max-patch-lines" :: v :: rest => parseInt(v, "--max-patch-lines").map(n => cmd = cmd.copy(maxPatchLines = Some(n))) match { case Left(e) => return Left(e); case _ => }; remaining = rest
+        case "--changed-files" :: v :: rest => cmd = cmd.copy(changedFiles = Some(v.split(",").toList)); remaining = rest
+        case "--git-ref" :: v :: rest      => cmd = cmd.copy(gitRef = Some(v)); remaining = rest
+        case "--branch" :: v :: rest       => cmd = cmd.copy(branch = Some(v)); remaining = rest
+        case "--open-pr" :: rest           => cmd = cmd.copy(openPr = true); remaining = rest
+        case "--yes" :: rest               => cmd = cmd.copy(yes = true); remaining = rest
+        case "-y" :: rest                  => cmd = cmd.copy(yes = true); remaining = rest
+        case "--run-id" :: v :: rest       => cmd = cmd.copy(runId = Some(v)); remaining = rest
+        case "--replay-inference" :: rest  => cmd = cmd.copy(replayInference = true); remaining = rest
+        case "--headless" :: rest          => cmd = cmd.copy(headless = true); remaining = rest
+        case "--no-headless" :: rest       => cmd = cmd.copy(headless = false); remaining = rest
+        case unknown :: _                  => return Left(s"Unknown flag for build: $unknown")
+      }
+    }
+
+    task match {
+      case Some(t) => Right(ParseResult(global, cmd.copy(task = t)))
+      case None    => Left("build requires --task")
     }
   }
 
