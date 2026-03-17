@@ -4,7 +4,10 @@ scala_library(
     name = "verification-engine",
     srcs = glob(["src/main/scala/**/*.scala"]),
     visibility = ["//visibility:public"],
-    deps = ["//modules/core-model"],
+    deps = [
+        "//modules/core-model",
+        "//modules/inference",
+    ],
 )
 
 scala_junit_test(
@@ -14,6 +17,7 @@ scala_junit_test(
     deps = [
         ":verification-engine",
         "//modules/core-model",
+        "//modules/inference",
         "@maven//:org_scalameta_munit_2_13",
         "@maven//:org_scalameta_munit_diff_2_13",
     ],
