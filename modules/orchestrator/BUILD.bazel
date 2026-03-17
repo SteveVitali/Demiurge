@@ -17,6 +17,7 @@ scala_library(
         "//modules/selectors",
         "//modules/repair-api",
         "//modules/inference",
+        "//modules/config-resolver",
         "@maven//:io_circe_circe_core_2_13",
         "@maven//:io_circe_circe_generic_2_13",
         "@maven//:io_circe_circe_parser_2_13",

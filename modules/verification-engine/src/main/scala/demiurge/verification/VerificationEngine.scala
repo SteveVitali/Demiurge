@@ -4,6 +4,7 @@ import java.time.Instant
 import java.util.UUID
 
 import demiurge.model._
+import demiurge.inference.InferenceService
 
 // Phase 4+6: VerificationEngine — orchestrates verifier generation, execution, and verdict aggregation.
 // Phase 6: Supports optional WorkerProcessManager for browser verifier dispatch.
@@ -18,6 +19,9 @@ object VerificationEngine {
   // Phase 6: Browser verifier executor — injected by orchestrator when worker is available
   trait BrowserVerifierExecutor {
     def execute(verifier: BrowserFlowVerifier): BrowserVerifierResult
+
+    /** Phase E: Capture a page snapshot (DOM/accessibility tree) for selector discovery. */
+    def capturePageSnapshot(url: String): Either[String, String] = Left("capturePageSnapshot not implemented")
   }
 
   def runVerification(
@@ -25,16 +29,20 @@ object VerificationEngine {
     attemptNumber: Int,
     graph: RequirementGraph,
     browserExecutor: Option[BrowserVerifierExecutor] = None,
+    inferenceService: Option[InferenceService] = None,
+    resolvedConfig: Option[ResolvedConfig] = None,
   ): VerificationResult = {
     val verifiers = VerifierGenerator.generate(graph)
     val outcomes = verifiers.map { v =>
       val startTime = System.currentTimeMillis()
       v match {
-        // Phase 6: Browser verifiers dispatched through worker
+        // Phase 6+E: Browser verifiers dispatched through worker, with selector discovery
         case bv: BrowserFlowVerifier =>
           browserExecutor match {
             case Some(executor) =>
-              val browserResult = executor.execute(bv)
+              // Phase E: Discover missing selectors before execution
+              val resolvedBv = discoverSelectorsIfNeeded(bv, executor, runId, inferenceService, resolvedConfig)
+              val browserResult = executor.execute(resolvedBv)
               val durationMs = System.currentTimeMillis() - startTime
               (v, browserResult.outcome, durationMs, browserResult.observations, browserResult.artifactRefs)
             case None =>
@@ -91,5 +99,43 @@ object VerificationEngine {
     val aggregate = VerdictAggregator.aggregate(outcomeList)
 
     VerificationResult(verdicts = verdicts, aggregate = aggregate)
+  }
+
+  /** Phase E: Discover missing selectors via LLM before browser flow execution. */
+  private def discoverSelectorsIfNeeded(
+    bv: BrowserFlowVerifier,
+    executor: BrowserVerifierExecutor,
+    runId: String,
+    inferenceService: Option[InferenceService],
+    resolvedConfig: Option[ResolvedConfig],
+  ): BrowserFlowVerifier = {
+    (inferenceService, resolvedConfig) match {
+      case (Some(svc), Some(config)) =>
+        // Build a BrowserFlowVerifierSpec from the verifier's fields to check for missing selectors
+        val spec = demiurge.model.BrowserFlowVerifierSpec(
+          entryUrl = bv.entryUrl,
+          selectorMapRef = None,
+          entryConditions = Nil,
+          actions = bv.actions,
+          assertions = bv.assertions,
+          artifactPlan = bv.artifactPlan,
+          cleanup = Nil,
+        )
+        if (!SelectorDiscovery.needsDiscovery(spec)) return bv
+
+        // Capture page snapshot from the worker
+        executor.capturePageSnapshot(bv.entryUrl) match {
+          case Right(snapshot) =>
+            val updatedSpec = SelectorDiscovery.discoverSelectors(spec, snapshot, runId, config, svc)
+            bv.copy(
+              actions = updatedSpec.actions,
+              assertions = updatedSpec.assertions,
+            )
+          case Left(err) =>
+            System.err.println(s"[SelectorDiscovery] Page snapshot failed for ${bv.entryUrl}: $err")
+            bv
+        }
+      case _ => bv // no inference available
+    }
   }
 }

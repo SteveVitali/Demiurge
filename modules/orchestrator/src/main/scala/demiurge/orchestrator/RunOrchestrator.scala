@@ -10,6 +10,8 @@ import demiurge.runtime.RuntimeSupervisor
 import demiurge.verification.{VerificationEngine, BrowserFlowVerifier, BrowserVerifierResult}
 import demiurge.persistence._
 import demiurge.repair._
+import demiurge.config.{ConfigResolver, ConfigResolverImpl}
+import demiurge.inference.InferenceService
 
 // Spec §4.1: Synchronous orchestrator loop for Phase 5.
 // Executes the path: Created → InspectingRepo → CompilingRequirements →
@@ -36,6 +38,8 @@ object RunOrchestrator {
     supervisor: RuntimeSupervisor,
     repairBackend: Option[RepairBackend] = None,
     browserExecutor: Option[VerificationEngine.BrowserVerifierExecutor] = None,
+    configResolver: Option[ConfigResolver] = None,
+    inferenceService: Option[InferenceService] = None,
   ): TaskRun = {
     // Register signal handler for interruption persistence (Spec §4.4)
     SignalHandler.register(ctx, ctx.repoRoot)
@@ -48,6 +52,7 @@ object RunOrchestrator {
     if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
     if (currentRun.status == RunStatus.Created) {
       var inspectionResult: Option[RepoInspectionReport] = None
+      var resolvedConfig: Option[ResolvedConfig] = None
 
       currentRun = RunTransitionManager.transition(
         currentCtx,
@@ -61,6 +66,18 @@ object RunOrchestrator {
           // Persist inspection report (Spec §7.2)
           RepoInspectionReportRepo.insert(report)
           inspectionResult = Some(report)
+
+          // Phase E: Resolve config (explicit YAML → cached → inferred)
+          resolvedConfig = configResolver.map(_.resolve(
+            repoPath = currentCtx.repoRoot,
+            taskText = currentRun.taskText,
+            changedFiles = currentRun.changedFiles,
+            inspection = report,
+            inferenceService = inferenceService,
+          ))
+          // Cache for future runs
+          resolvedConfig.foreach(cfg =>
+            ConfigResolverImpl.cacheResolvedConfig(currentCtx.repoRoot, cfg))
         },
       )
       currentCtx = currentCtx.copy(run = currentRun)
@@ -74,10 +91,13 @@ object RunOrchestrator {
         currentCtx,
         RunStatus.CompilingRequirements,
         sideEffect = { updatedCtx =>
-          val graph = compiler.compile(
+          // Phase E: Use compileWithInference when available
+          val graph = compiler.compileWithInference(
             currentRun.runId,
             inspectionResult.get,
             currentRun.taskText,
+            resolvedConfig = resolvedConfig,
+            inferenceService = inferenceService,
           )
           RequirementGraphRepo.insert(graph)
           requirementResult = Some(graph)
@@ -185,6 +205,8 @@ object RunOrchestrator {
                 1,
                 requirementResult.get,
                 browserExecutor,
+                inferenceService,
+                resolvedConfig,
               )
               verificationResult = Some(result)
 
@@ -353,6 +375,8 @@ object RunOrchestrator {
                           2,
                           requirementResult.get,
                           browserExecutor,
+                          inferenceService,
+                          resolvedConfig,
                         )
                         rerunResult = Some(result2)
 

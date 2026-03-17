@@ -16,6 +16,8 @@ import demiurge.inspector.RepoInspectorImpl
 import demiurge.planner.EnvironmentPlannerImpl
 import demiurge.runtime.RuntimeSupervisorImpl
 import demiurge.artifact.{ArtifactSinkImpl, EvidenceCollectorImpl}
+import demiurge.config.ConfigResolverImpl
+import demiurge.inference.{InferenceServiceImpl, InferenceBudgetState, InMemoryInferenceCache, MockInferenceBackend}
 
 // Shared orchestration runner used by both RunCommand and ResumeCommand.
 // Encapsulates: API server lifecycle, SSE wiring, compiler construction,
@@ -57,6 +59,9 @@ object OrchestrationRunner {
     val artifactSink = new ArtifactSinkImpl(artifactRoot)
     val evidenceCollector = new EvidenceCollectorImpl(artifactSink)
 
+    // Phase E: Build InferenceService if API key is available
+    val inferenceServiceOpt = buildInferenceService()
+
     val ctx = RunContext(
       run = taskRun,
       repoRoot = global.repo,
@@ -73,6 +78,8 @@ object OrchestrationRunner {
         RuntimeSupervisorImpl,
         repairBackend = repairBackend,
         browserExecutor = browserExecutor,
+        configResolver = Some(ConfigResolverImpl),
+        inferenceService = inferenceServiceOpt,
       )
 
       writeFinalReport(evidenceCollector, runId, finalRun, conn)
@@ -83,6 +90,30 @@ object OrchestrationRunner {
       EventStream.markRunEnded(runId)
       LocalApiServer.stop()
     }
+  }
+
+  /**
+   * Phase E: Build InferenceService if ANTHROPIC_API_KEY is available.
+   * Currently uses MockInferenceBackend — real AnthropicBackend will be
+   * swapped in when the HTTP client integration is complete.
+   * The mock backend still exercises the full pipeline (budget, cache, prompts)
+   * which is useful for testing the wiring end-to-end.
+   */
+  private def buildInferenceService(): Option[demiurge.inference.InferenceService] = {
+    val apiKey = System.getenv("ANTHROPIC_API_KEY")
+    if (apiKey != null && apiKey.nonEmpty) {
+      try {
+        // TODO(inference): Replace MockInferenceBackend with AnthropicBackend(apiKey)
+        // when the HTTP client integration is complete. The mock still validates
+        // budget enforcement, caching, and prompt construction.
+        val backend = new MockInferenceBackend()
+        val budgetState = new InferenceBudgetState()
+        val cache = new InMemoryInferenceCache()
+        Some(new InferenceServiceImpl(backend, budgetState, cache))
+      } catch {
+        case _: Exception => None
+      }
+    } else None
   }
 
   private def writeFinalReport(
