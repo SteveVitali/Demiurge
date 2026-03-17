@@ -38,6 +38,7 @@ class MigratorSuite extends FunSuite {
         "attempts",
         "events",
         "failure_packets",
+        "feature_plans",
         "inference_cache",
         "patch_records",
         "policy_snapshots",
@@ -60,7 +61,7 @@ class MigratorSuite extends FunSuite {
     withDb { implicit conn =>
       Migrator.migrate
       val version = Migrator.currentVersion
-      assertEquals(version, 1)
+      assertEquals(version, 2)
     }
   }
 }

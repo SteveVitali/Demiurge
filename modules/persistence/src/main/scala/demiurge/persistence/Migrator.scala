@@ -63,18 +63,18 @@ object Migrator {
     }
   }
 
+  // Known migration file suffixes per version
+  private val migrationFiles: Map[Int, String] = Map(
+    1 -> "V001__initial.sql",
+    2 -> "V002__build_mode.sql",
+  )
+
   private def availableMigrations(): List[(Int, String)] = {
     val resourceDir = "migrations/"
-
-    // Read the index of migration files
     val migrations = scala.collection.mutable.ListBuffer[(Int, String)]()
 
-    // Try to load known migrations
-    var version = 1
-    var found = true
-    while (found) {
-      val prefix = s"V${"%03d".format(version)}"
-      val resourcePath = s"${resourceDir}${prefix}__initial.sql"
+    migrationFiles.toList.sortBy(_._1).foreach { case (version, filename) =>
+      val resourcePath = s"$resourceDir$filename"
       val stream = getClass.getClassLoader.getResourceAsStream(resourcePath)
       if (stream != null) {
         try {
@@ -83,9 +83,6 @@ object Migrator {
         } finally {
           stream.close()
         }
-        version += 1
-      } else {
-        found = false
       }
     }
 

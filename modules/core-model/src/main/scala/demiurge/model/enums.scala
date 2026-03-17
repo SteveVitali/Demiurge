@@ -24,6 +24,8 @@ object RunStatus {
   case object Exhausted extends RunStatus
   case object Cancelled extends RunStatus
   case object Interrupted extends RunStatus
+  case object PlanningFeature extends RunStatus     // Build mode: LLM plans implementation
+  case object GeneratingCode extends RunStatus      // Build mode: LLM generates initial code
 
   val values: List[RunStatus] = List(
     Created, InspectingRepo, CompilingRequirements, PlanningEnvironment,
@@ -31,7 +33,8 @@ object RunStatus {
     BootstrappingAuth, ReadyToVerify, Verifying, AnalyzingFailure,
     PlanningRepair, Repairing, RepairFailed, PlanningRerun,
     SoftResettingEnvironment, RebuildingEnvironment,
-    Succeeded, Exhausted, Cancelled, Interrupted
+    Succeeded, Exhausted, Cancelled, Interrupted,
+    PlanningFeature, GeneratingCode
   )
 }
 
@@ -264,15 +267,16 @@ object ArtifactType {
   )
 }
 
-// Spec §3.1: RunMode enum — 4 values
+// Spec §3.1: RunMode enum — 5 values
 sealed trait RunMode
 object RunMode {
   case object Full extends RunMode
   case object PlanOnly extends RunMode
   case object VerifyOnly extends RunMode
   case object RepairOnly extends RunMode
+  case object Build extends RunMode       // Phase B: generate + verify + repair loop
 
-  val values: List[RunMode] = List(Full, PlanOnly, VerifyOnly, RepairOnly)
+  val values: List[RunMode] = List(Full, PlanOnly, VerifyOnly, RepairOnly, Build)
 }
 
 // Spec §3.1: ResetStrategy enum — 3 values
