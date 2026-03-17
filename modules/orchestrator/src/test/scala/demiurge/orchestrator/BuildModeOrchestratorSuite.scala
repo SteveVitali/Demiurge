@@ -32,119 +32,78 @@ class BuildModeOrchestratorSuite extends FunSuite with TestFixtures {
     def stop(): Unit = server.stop(0)
   }
 
-  // Compiler that produces an HTTP verifier against a given port
-  private def httpCompiler(port: Int): demiurge.compiler.RequirementCompiler = {
-    new demiurge.compiler.RequirementCompiler {
-      override def compile(runId: String, inspection: RepoInspectionReport, taskText: String): RequirementGraph = {
-        val node = RequirementNode(
-          requirementId = "req-http",
-          humanDescription = "HTTP check",
-          machineDescription = "HTTP check",
-          priority = RequirementPriority.Required,
-          category = RequirementCategory.ApiContract,
-          dependencies = Set.empty,
-          verifiers = List(VerifierSpec(
-            verifierId = "v-http",
-            verifierType = VerifierType.HttpApiContract,
-            displayName = "HTTP check",
-            requirementId = "req-http",
-            executionLayer = 0,
-            parallelSafe = true,
-            timeout = Duration.ofSeconds(5),
-            maxRetries = 0,
-            retryDelayMs = 100,
-            browserFlowSpec = None,
-            apiContractSpec = Some(ApiContractVerifierSpec(
-              method = "GET",
-              urlTemplate = s"http://localhost:$port/check",
-              headers = Map.empty,
-              bodyTemplate = None,
-              expectedStatus = 200,
-              responseAssertions = Nil,
-              artifactPlan = Nil,
-            )),
-            stateAssertionSpec = None,
-            envReadinessSpec = None,
-            consoleLogSpec = None,
-            networkSpec = None,
-            queueJobSpec = None,
-            persistenceSpec = None,
-            regressionSpec = None,
-          )),
-          evidenceRequired = Nil,
-          destructiveRiskLevel = 0,
-          inferredFrom = Nil,
-          confidence = 1.0,
-          stopOnFailure = true,
-        )
-        RequirementGraph(
-          graphId = s"graph-$runId",
-          runId = runId,
-          nodes = List(node),
-          edges = Nil,
-          generatedAt = Instant.now(),
-          inferenceRequestId = None,
-          warnings = Nil,
-        )
-      }
-    }
+  // Build a single-requirement graph with a given HTTP verifier spec
+  private def makeHttpGraph(
+    runId: String,
+    reqId: String,
+    url: String,
+    displayName: String,
+    timeout: Duration = Duration.ofSeconds(5),
+  ): RequirementGraph = {
+    val node = RequirementNode(
+      requirementId = reqId,
+      humanDescription = displayName,
+      machineDescription = displayName,
+      priority = RequirementPriority.Required,
+      category = RequirementCategory.ApiContract,
+      dependencies = Set.empty,
+      verifiers = List(VerifierSpec(
+        verifierId = s"v-$reqId",
+        verifierType = VerifierType.HttpApiContract,
+        displayName = displayName,
+        requirementId = reqId,
+        executionLayer = 0,
+        parallelSafe = true,
+        timeout = timeout,
+        maxRetries = 0,
+        retryDelayMs = 100,
+        browserFlowSpec = None,
+        apiContractSpec = Some(ApiContractVerifierSpec(
+          method = "GET",
+          urlTemplate = url,
+          headers = Map.empty,
+          bodyTemplate = None,
+          expectedStatus = 200,
+          responseAssertions = Nil,
+          artifactPlan = Nil,
+        )),
+        stateAssertionSpec = None,
+        envReadinessSpec = None,
+        consoleLogSpec = None,
+        networkSpec = None,
+        queueJobSpec = None,
+        persistenceSpec = None,
+        regressionSpec = None,
+      )),
+      evidenceRequired = Nil,
+      destructiveRiskLevel = 0,
+      inferredFrom = Nil,
+      confidence = 1.0,
+      stopOnFailure = true,
+    )
+    RequirementGraph(
+      graphId = s"graph-$runId",
+      runId = runId,
+      nodes = List(node),
+      edges = Nil,
+      generatedAt = Instant.now(),
+      inferenceRequestId = None,
+      warnings = Nil,
+    )
   }
 
-  // Always-failing compiler
+  // Compiler that produces an HTTP verifier against a given port
+  private def httpCompiler(port: Int): demiurge.compiler.RequirementCompiler =
+    new demiurge.compiler.RequirementCompiler {
+      override def compile(runId: String, inspection: RepoInspectionReport, taskText: String): RequirementGraph =
+        makeHttpGraph(runId, "req-http", s"http://localhost:$port/check", "HTTP check")
+    }
+
+  // Compiler that always produces a failing HTTP verifier (connection refused)
   private def alwaysFailingCompiler: demiurge.compiler.RequirementCompiler =
     new demiurge.compiler.RequirementCompiler {
-      override def compile(runId: String, inspection: RepoInspectionReport, taskText: String): RequirementGraph = {
-        val node = RequirementNode(
-          requirementId = "req-fail",
-          humanDescription = "Failing requirement",
-          machineDescription = "Failing requirement",
-          priority = RequirementPriority.Required,
-          category = RequirementCategory.ApiContract,
-          dependencies = Set.empty,
-          verifiers = List(VerifierSpec(
-            verifierId = "v-fail",
-            verifierType = VerifierType.HttpApiContract,
-            displayName = "Failing HTTP check",
-            requirementId = "req-fail",
-            executionLayer = 0,
-            parallelSafe = true,
-            timeout = Duration.ofSeconds(2),
-            maxRetries = 0,
-            retryDelayMs = 100,
-            browserFlowSpec = None,
-            apiContractSpec = Some(ApiContractVerifierSpec(
-              method = "GET",
-              urlTemplate = "http://localhost:19999/nonexistent",
-              headers = Map.empty,
-              bodyTemplate = None,
-              expectedStatus = 200,
-              responseAssertions = Nil,
-              artifactPlan = Nil,
-            )),
-            stateAssertionSpec = None,
-            envReadinessSpec = None,
-            consoleLogSpec = None,
-            networkSpec = None,
-            queueJobSpec = None,
-            persistenceSpec = None,
-            regressionSpec = None,
-          )),
-          evidenceRequired = Nil,
-          destructiveRiskLevel = 0,
-          inferredFrom = Nil,
-          confidence = 1.0,
-          stopOnFailure = true,
-        )
-        RequirementGraph(
-          graphId = s"graph-$runId",
-          runId = runId,
-          nodes = List(node),
-          edges = Nil,
-          generatedAt = Instant.now(),
-          inferenceRequestId = None,
-          warnings = Nil,
-        )
-      }
+      override def compile(runId: String, inspection: RepoInspectionReport, taskText: String): RequirementGraph =
+        makeHttpGraph(runId, "req-fail", "http://localhost:19999/nonexistent", "Failing HTTP check", Duration.ofSeconds(2))
     }
 
   // Repair backend that always produces a successful patch
@@ -203,7 +162,7 @@ class BuildModeOrchestratorSuite extends FunSuite with TestFixtures {
 
         val ctx = RunContext(run = run, repoRoot = repoRoot, worktreePath = worktreePath, conn = conn)
         val backend = new SuccessfulCodeGenBackend()
-        val finalRun = RunOrchestrator.execute(
+        RunOrchestrator.execute(
           ctx, StubRepoInspector, httpCompiler(server.port), StubEnvironmentPlanner, StubRuntimeSupervisor,
           repairBackend = Some(backend),
         )

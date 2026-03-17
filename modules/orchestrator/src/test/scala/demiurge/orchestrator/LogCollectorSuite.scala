@@ -1,7 +1,6 @@
 package demiurge.orchestrator
 
 import munit.FunSuite
-import java.nio.file.{Files, Path}
 import java.time.Instant
 
 import demiurge.model._
@@ -153,7 +152,7 @@ class LogCollectorSuite extends FunSuite {
       logs = Some(logText),
     )
 
-    val packet = demiurge.model.FailurePacket(
+    val packet = FailurePacket(
       failurePacketId = "fp1",
       runId = "test-run",
       attemptNumber = 1,

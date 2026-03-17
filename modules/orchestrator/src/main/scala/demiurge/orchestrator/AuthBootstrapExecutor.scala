@@ -6,7 +6,6 @@ import io.circe.Json
 import io.circe.syntax._
 import demiurge.model._
 import demiurge.worker.{WorkerProcessManager, WorkerMessages}
-import demiurge.verification.VerificationEngine
 
 // Gap 4: AuthBootstrapExecutor — executes auth bootstrap between SeedingFixtures
 // and ReadyToVerify. For browser-based modes, delegates to the worker process.

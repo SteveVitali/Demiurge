@@ -2,11 +2,10 @@ package demiurge.orchestrator
 
 import munit.FunSuite
 import java.nio.file.{Files, Path}
-import java.time.{Duration, Instant}
+import java.time.Instant
 
 import demiurge.model._
 import demiurge.persistence._
-import demiurge.repair._
 
 class AuthBootstrapSuite extends FunSuite with TestFixtures {
 

@@ -7,7 +7,7 @@ import demiurge.inspector.RepoInspector
 import demiurge.compiler.RequirementCompiler
 import demiurge.planner.EnvironmentPlanner
 import demiurge.runtime.RuntimeSupervisor
-import demiurge.verification.{VerificationEngine, BrowserFlowVerifier, BrowserVerifierResult}
+import demiurge.verification.VerificationEngine
 import demiurge.persistence._
 import demiurge.repair._
 import demiurge.config.{ConfigResolver, ConfigResolverImpl}
@@ -265,9 +265,9 @@ object RunOrchestrator {
             authResult.foreach {
               case AuthBootstrapExecutor.AuthResult(true, path, _, _) =>
                 storageStatePath = path
-              case AuthBootstrapExecutor.AuthResult(false, _, _, Some(err)) =>
-                System.err.println(s"[orchestrator] Auth bootstrap failed (non-fatal): $err")
-              case _ =>
+              case AuthBootstrapExecutor.AuthResult(false, _, _, errOpt) =>
+                val msg = errOpt.getOrElse("unknown reason")
+                System.err.println(s"[orchestrator] Auth bootstrap failed (non-fatal): $msg")
             }
           }
 
