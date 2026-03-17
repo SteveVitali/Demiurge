@@ -5,7 +5,14 @@ scala_library(
     name = "repair-api",
     srcs = glob(["src/main/scala/**/*.scala"]),
     visibility = ["//visibility:public"],
-    deps = ["//modules/core-model"],
+    deps = [
+        "//modules/core-model",
+        "//modules/inference",
+        "@maven//:io_circe_circe_core_2_13",
+        "@maven//:io_circe_circe_parser_2_13",
+        "@maven//:org_typelevel_cats_core_2_13",
+        "@maven//:org_typelevel_cats_kernel_2_13",
+    ],
 )
 
 scala_junit_test(
@@ -15,6 +22,11 @@ scala_junit_test(
     deps = [
         ":repair-api",
         "//modules/core-model",
+        "//modules/inference",
+        "@maven//:io_circe_circe_core_2_13",
+        "@maven//:io_circe_circe_parser_2_13",
+        "@maven//:org_typelevel_cats_core_2_13",
+        "@maven//:org_typelevel_cats_kernel_2_13",
         "@maven//:org_scalameta_munit_2_13",
         "@maven//:org_scalameta_munit_diff_2_13",
     ],
