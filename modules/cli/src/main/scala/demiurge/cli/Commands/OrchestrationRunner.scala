@@ -36,6 +36,7 @@ object OrchestrationRunner {
     global: GlobalOpts,
     worktreePath: Path,
     conn: Connection,
+    resumeFromStatus: Option[RunStatus] = None,
   ): TaskRun = {
     implicit val c: Connection = conn
     val runId = taskRun.runId
@@ -87,6 +88,7 @@ object OrchestrationRunner {
         browserExecutor = browserExecutor,
         configResolver = Some(ConfigResolverImpl),
         inferenceService = inferenceServiceOpt,
+        resumeFromStatus = resumeFromStatus,
       )
 
       writeFinalReport(evidenceCollector, runId, finalRun, conn)
