@@ -26,7 +26,7 @@ export async function handleExecuteApiRequest(
   }
 
   if (state.activeTaskId) {
-    throw Object.assign(new Error(`Task already active: ${state.activeTaskId}`), { code: ErrorCodes.BROWSER_LAUNCH_FAILED });
+    throw Object.assign(new Error(`Task already active: ${state.activeTaskId}`), { code: ErrorCodes.INTERNAL_ERROR });
   }
 
   state.activeTaskId = p.taskId;

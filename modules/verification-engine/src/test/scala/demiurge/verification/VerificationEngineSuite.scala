@@ -141,4 +141,130 @@ class VerificationEngineSuite extends FunSuite {
 
     assert(result.verdicts.head.executionDurationMs >= 0)
   }
+
+  test("stopOnFailure blocks later verifiers for the same requirement") {
+    // Two verifiers on the same requirement across layers:
+    //   Layer 0: HTTP verifier (will fail — unreachable URL)
+    //   Layer 2: StateAssertion verifier (should be blocked by stopOnFailure)
+    val reqId = "req-stop"
+    val node = RequirementNode(
+      requirementId = reqId,
+      humanDescription = "Stop on failure test",
+      machineDescription = "Stop on failure test",
+      priority = RequirementPriority.Required,
+      category = RequirementCategory.ApiContract,
+      dependencies = Set.empty,
+      verifiers = List(
+        VerifierSpec(
+          verifierId = "v-stop-http",
+          verifierType = VerifierType.HttpApiContract,
+          displayName = "Failing HTTP",
+          requirementId = reqId,
+          executionLayer = 0,
+          parallelSafe = true,
+          timeout = Duration.ofSeconds(2),
+          maxRetries = 0,
+          retryDelayMs = 0,
+          browserFlowSpec = None,
+          apiContractSpec = Some(ApiContractVerifierSpec(
+            method = "GET",
+            path = "http://localhost:19999/nonexistent",
+            expectedStatus = 200,
+          )),
+          stateAssertionSpec = None,
+          envReadinessSpec = None,
+          consoleLogSpec = None,
+          networkSpec = None,
+          queueJobSpec = None,
+          persistenceSpec = None,
+          regressionSpec = None,
+        ),
+        VerifierSpec(
+          verifierId = "v-stop-state",
+          verifierType = VerifierType.StateAssertion,
+          displayName = "Should be blocked",
+          requirementId = reqId,
+          executionLayer = 2,
+          parallelSafe = true,
+          timeout = Duration.ofSeconds(2),
+          maxRetries = 0,
+          retryDelayMs = 0,
+          browserFlowSpec = None,
+          apiContractSpec = None,
+          stateAssertionSpec = None,
+          envReadinessSpec = None,
+          consoleLogSpec = None,
+          networkSpec = None,
+          queueJobSpec = None,
+          persistenceSpec = None,
+          regressionSpec = None,
+        ),
+      ),
+      evidenceRequired = Nil,
+      destructiveRiskLevel = 0,
+      inferredFrom = Nil,
+      confidence = 1.0,
+      stopOnFailure = true,
+    )
+    val graph = makeGraph(List(node))
+    val result = VerificationEngine.runVerification("run-1", 1, graph)
+
+    assertEquals(result.verdicts.size, 2)
+    // First verifier fails (HTTP to unreachable URL)
+    val httpVerdict = result.verdicts.find(_.verifierId == "v-stop-http").get
+    assert(httpVerdict.status == VerdictStatus.Fail || httpVerdict.status == VerdictStatus.Timeout,
+      s"Expected Fail or Timeout, got ${httpVerdict.status}")
+    // Second verifier should be Blocked due to stopOnFailure
+    val stateVerdict = result.verdicts.find(_.verifierId == "v-stop-state").get
+    assertEquals(stateVerdict.status, VerdictStatus.Blocked)
+    assert(stateVerdict.failureMessage.exists(_.contains("stopped_on_failure")))
+  }
+
+  test("Important-priority failure does not block overall success") {
+    // Required req passes, Important req fails → overall should still pass
+    val requiredNode = makeStateNode("req-required")
+    val importantNode = RequirementNode(
+      requirementId = "req-important",
+      humanDescription = "Important failing HTTP",
+      machineDescription = "Important failing HTTP",
+      priority = RequirementPriority.Important,
+      category = RequirementCategory.ApiContract,
+      dependencies = Set.empty,
+      verifiers = List(VerifierSpec(
+        verifierId = "v-important",
+        verifierType = VerifierType.HttpApiContract,
+        displayName = "Important HTTP",
+        requirementId = "req-important",
+        executionLayer = 0,
+        parallelSafe = true,
+        timeout = Duration.ofSeconds(2),
+        maxRetries = 0,
+        retryDelayMs = 0,
+        browserFlowSpec = None,
+        apiContractSpec = Some(ApiContractVerifierSpec(
+          method = "GET",
+          path = "http://localhost:19999/nonexistent",
+          expectedStatus = 200,
+        )),
+        stateAssertionSpec = None,
+        envReadinessSpec = None,
+        consoleLogSpec = None,
+        networkSpec = None,
+        queueJobSpec = None,
+        persistenceSpec = None,
+        regressionSpec = None,
+      )),
+      evidenceRequired = Nil,
+      destructiveRiskLevel = 0,
+      inferredFrom = Nil,
+      confidence = 1.0,
+      stopOnFailure = false,
+    )
+    val graph = makeGraph(List(requiredNode, importantNode))
+    val result = VerificationEngine.runVerification("run-1", 1, graph)
+
+    // Required passes (StateVerifier always passes), Important fails
+    assertEquals(result.aggregate.overallVerdict, VerdictStatus.Pass,
+      "Important-priority failure should not block success when Required passes")
+  }
 }

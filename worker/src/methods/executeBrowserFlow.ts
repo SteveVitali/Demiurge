@@ -372,7 +372,7 @@ async function checkAssertion(page: Page, assertion: AssertionSpec): Promise<Obs
     }
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : String(err);
-    // Spec §9.13: Map assertion errors to ASSERTION_ERROR code for structured handling
+    // Spec §9.13: Map assertion errors to observation results for structured handling
     if (errorMessage.includes('waiting for locator') || errorMessage.includes('locator resolved to')) {
       return { observationType: 'assertion_error', message: `Selector not found in assertion: ${assertion.description}: ${errorMessage}`, timestamp };
     }

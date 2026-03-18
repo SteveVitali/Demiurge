@@ -269,6 +269,20 @@ class VerdictAggregatorSuite extends FunSuite {
     assertEquals(result.overallVerdict, VerdictStatus.Flake)
   }
 
+  test("requirementVerdict: Flake + Blocked → Blocked") {
+    assertEquals(
+      VerdictAggregator.requirementVerdict(List(VerdictStatus.Flake, VerdictStatus.Blocked)),
+      VerdictStatus.Blocked,
+    )
+  }
+
+  test("requirementVerdict: all Flake → Flake") {
+    assertEquals(
+      VerdictAggregator.requirementVerdict(List(VerdictStatus.Flake, VerdictStatus.Flake)),
+      VerdictStatus.Flake,
+    )
+  }
+
   test("aggregateWithGraph counts blockedCount") {
     val graph = makeGraph(List(
       makeNode("req-r", RequirementPriority.Required),

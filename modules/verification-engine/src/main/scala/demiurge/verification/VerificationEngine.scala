@@ -56,6 +56,9 @@ object VerificationEngine {
 
         if (group.verifierIds.size > 1) {
           // Parallel execution
+          // Note: stopOnFailure only blocks verifiers in subsequent groups/layers for the
+          // same requirement. Within a single parallel group, all verifiers execute concurrently
+          // and stopOnFailure is checked at submission time (before results are collected).
           val maxParallel = 4
           val pool = Executors.newFixedThreadPool(group.verifierIds.size.min(maxParallel))
           try {
@@ -285,16 +288,6 @@ object VerificationEngine {
         }
         (VerdictStatus.Timeout, fc, Some("Verifier timed out"))
     }
-  }
-
-  /** Convert VerdictStatus back to VerifierOutcome for aggregation. */
-  private def verdictToOutcome(status: VerdictStatus, msg: Option[String]): VerifierOutcome = status match {
-    case VerdictStatus.Pass  => VerifierOutcome.Passed
-    case VerdictStatus.Flake => VerifierOutcome.Passed // Flakes count as pass for aggregation
-    case VerdictStatus.Fail  => VerifierOutcome.Failed(msg.getOrElse("failed"))
-    case VerdictStatus.Blocked => VerifierOutcome.Error(msg.getOrElse("blocked"))
-    case VerdictStatus.Timeout => VerifierOutcome.TimedOut
-    case VerdictStatus.Inconclusive => VerifierOutcome.Error(msg.getOrElse("inconclusive"))
   }
 
   /** Spec §4.3: Check if a verdict triggers stopOnFailure for its requirement. */
