@@ -144,7 +144,7 @@ object EnvironmentHealthMonitor {
           true
 
         case StartupMode.ScriptNative =>
-          // Kill existing process via PID file, then re-run startup command
+          // Re-run startup command (assumes previous process exited or will be replaced)
           svc.startupCommand.foreach { cmd =>
             val process = new ProcessBuilder("sh", "-c", cmd)
               .directory(repoRoot.resolve(svc.cwd).toFile)

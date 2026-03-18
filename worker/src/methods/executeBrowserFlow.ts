@@ -78,11 +78,13 @@ export async function handleExecuteBrowserFlow(
       }
     });
     page.on('pageerror', (error) => {
-      consoleLogs.push({
-        type: 'pageerror',
-        text: error.message.substring(0, MAX_CONSOLE_CHAR_LENGTH),
-        timestamp: new Date().toISOString(),
-      });
+      if (consoleLogs.length < MAX_CONSOLE_ENTRIES) {
+        consoleLogs.push({
+          type: 'pageerror',
+          text: error.message.substring(0, MAX_CONSOLE_CHAR_LENGTH),
+          timestamp: new Date().toISOString(),
+        });
+      }
     });
 
     // Spec §9.9: Capture network requests with limit of 500

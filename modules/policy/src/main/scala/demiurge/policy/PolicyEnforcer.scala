@@ -1,6 +1,6 @@
 package demiurge.policy
 
-import java.nio.file.{Path, Paths}
+import java.nio.file.Paths
 import demiurge.model._
 
 // Spec §6: Policy enforcement engine.
@@ -198,7 +198,12 @@ object PolicyEnforcer {
     if (pattern.endsWith("/**")) {
       path.startsWith(pattern.dropRight(3))
     } else if (pattern.contains("*")) {
-      val regex = pattern.replace(".", "\\.").replace("**", ".*").replace("*", "[^/]*")
+      // Use sentinel to prevent * replacement from corrupting ** → .*
+      val regex = pattern
+        .replace(".", "\\.")
+        .replace("**", "\u0000GLOBSTAR\u0000")
+        .replace("*", "[^/]*")
+        .replace("\u0000GLOBSTAR\u0000", ".*")
       path.matches(regex)
     } else {
       path == pattern || path.startsWith(pattern + "/")

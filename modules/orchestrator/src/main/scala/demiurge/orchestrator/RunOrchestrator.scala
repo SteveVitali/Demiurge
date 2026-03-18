@@ -380,7 +380,9 @@ object RunOrchestrator {
                 case RuntimeSupervisor.BootFailure(r, _) =>
                   System.err.println(s"[orchestrator] Environment restart failed: $r")
               }
-            } catch { case _: Exception => }
+            } catch { case e: Exception =>
+              System.err.println(s"[orchestrator] Environment restart threw exception: ${e.getMessage}")
+            }
           case EnvironmentHealthMonitor.Healthy => // OK
         }
       }

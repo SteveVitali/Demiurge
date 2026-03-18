@@ -37,6 +37,7 @@ object VerificationPlanner {
   def buildPlan(graph: RequirementGraph): OrderedVerifierPlan = {
     val allSpecs = graph.nodes.flatMap(_.verifiers)
     val edgeMap = buildDependencyMap(graph)
+    val reqMap = graph.nodes.map(n => n.requirementId -> n).toMap
 
     // Group by layer
     val byLayer = allSpecs.groupBy(effectiveLayer).toList.sortBy(_._1)
@@ -48,7 +49,7 @@ object VerificationPlanner {
 
     // Compute parallel groups per layer
     val parallelGroups = layers.flatMap { layer =>
-      computeParallelGroups(layer, edgeMap, graph)
+      computeParallelGroups(layer, edgeMap, reqMap)
     }
 
     OrderedVerifierPlan(
@@ -89,11 +90,9 @@ object VerificationPlanner {
   private def computeParallelGroups(
     layer:    VerifierLayer,
     edgeMap:  Map[String, Set[String]],
-    graph:    RequirementGraph,
+    reqMap:   Map[String, RequirementNode],
   ): List[ParallelGroup] = {
     if (layer.verifiers.isEmpty) return Nil
-
-    val reqMap = graph.nodes.map(n => n.requirementId -> n).toMap
 
     // Partition into parallel-safe and sequential
     val (safe, sequential) = layer.verifiers.partition { spec =>

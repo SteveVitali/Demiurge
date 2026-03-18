@@ -26,18 +26,6 @@ object VerificationEngine {
     def capturePageSnapshot(url: String): Either[String, String] = Left("capturePageSnapshot not implemented")
   }
 
-  // Internal result type for a single verifier execution (including retry/flake info)
-  private case class VerifierExecutionResult(
-    verifier:     Verifier,
-    spec:         VerifierSpec,
-    outcome:      VerifierOutcome,
-    durationMs:   Long,
-    observations: List[Observation],
-    artifactRefs: List[String],
-    retryCount:   Int,
-    isFlake:      Boolean,
-  )
-
   def runVerification(
     runId: String,
     attemptNumber: Int,
@@ -65,25 +53,48 @@ object VerificationEngine {
 
         if (group.verifierIds.size > 1) {
           // Parallel execution
-          val pool = Executors.newFixedThreadPool(group.verifierIds.size.min(4))
+          val maxParallel = 4
+          val pool = Executors.newFixedThreadPool(group.verifierIds.size.min(maxParallel))
           try {
-            val futures: List[JFuture[RequirementVerdict]] = groupSpecs.zip(groupVerifiers).map { case (spec, verifier) =>
-              pool.submit(new Callable[RequirementVerdict] {
-                override def call(): RequirementVerdict = {
-                  executeOneVerifier(
-                    spec, verifier, runId, attemptNumber, graph, reqVerdicts.toMap,
-                    browserExecutor, inferenceService, resolvedConfig, storageStatePath,
+            val futuresWithMeta: List[(JFuture[RequirementVerdict], VerifierSpec, Verifier)] =
+              groupSpecs.zip(groupVerifiers).map { case (spec, verifier) =>
+                val future = pool.submit(new Callable[RequirementVerdict] {
+                  override def call(): RequirementVerdict = {
+                    executeOneVerifier(
+                      spec, verifier, runId, attemptNumber, graph, reqVerdicts.toMap,
+                      browserExecutor, inferenceService, resolvedConfig, storageStatePath,
+                    )
+                  }
+                })
+                (future, spec, verifier)
+              }
+            futuresWithMeta.foreach { case (f, _, verifier) =>
+              val verdict = try {
+                f.get(120, TimeUnit.SECONDS)
+              } catch {
+                case _: Exception =>
+                  f.cancel(true)
+                  RequirementVerdict(
+                    verdictId = UUID.randomUUID().toString,
+                    runId = runId,
+                    attemptNumber = attemptNumber,
+                    requirementId = verifier.requirementId,
+                    verifierId = verifier.id,
+                    status = VerdictStatus.Timeout,
+                    executionDurationMs = 120000,
+                    retryCount = 0,
+                    observations = Nil,
+                    evidenceRefs = Nil,
+                    failureClass = None,
+                    failureMessage = Some("Parallel verifier timed out after 120s"),
+                    suggestedRerunScope = None,
+                    confidence = 1.0,
+                    producedAt = Instant.now(),
                   )
-                }
-              })
-            }
-            futures.foreach { f =>
-              val verdict = f.get(120, TimeUnit.SECONDS)
+              }
               reqVerdicts(verdict.requirementId) = verdict.status
               allVerdicts += verdict
             }
-          } catch {
-            case _: Exception => // timeouts handled per-verifier
           } finally {
             pool.shutdownNow()
           }

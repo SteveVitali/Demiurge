@@ -170,6 +170,28 @@ class PolicyEnforcerSuite extends FunSuite {
     assertEquals(result, None)
   }
 
+  // --- Glob pattern edge cases ---
+
+  test("glob pattern with ** in middle matches deeply nested paths") {
+    val policy = FilesystemPolicy(
+      allowedWritePaths = List("/work/src/**/*.scala"),
+      forbiddenWritePaths = Nil,
+      allowDeletePaths = Nil,
+    )
+    val result = PolicyEnforcer.validateFilesystemWrite("/work/src/main/scala/Foo.scala", policy, "/work")
+    assertEquals(result, None)
+  }
+
+  test("glob pattern with single * does not match across directories") {
+    val policy = FilesystemPolicy(
+      allowedWritePaths = List("/work/*.txt"),
+      forbiddenWritePaths = Nil,
+      allowDeletePaths = Nil,
+    )
+    val result = PolicyEnforcer.validateFilesystemWrite("/work/sub/file.txt", policy, "/work")
+    assert(result.isDefined, "Single * should not match across directory separators")
+  }
+
   // --- Default policy snapshot ---
 
   test("defaultPolicySnapshot creates valid snapshot") {

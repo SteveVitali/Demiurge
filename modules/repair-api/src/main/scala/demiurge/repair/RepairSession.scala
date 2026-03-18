@@ -159,7 +159,8 @@ object RepairSession {
         .directory(worktreePath.toFile)
         .redirectErrorStream(true)
         .start()
-      val output = scala.io.Source.fromInputStream(process.getInputStream).mkString.trim
+      val source = scala.io.Source.fromInputStream(process.getInputStream)
+      val output = try source.mkString.trim finally source.close()
       process.waitFor()
       if (process.exitValue() == 0 && output.nonEmpty) Some(output) else None
     } catch {
