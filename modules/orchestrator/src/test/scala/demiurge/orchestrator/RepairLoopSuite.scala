@@ -151,7 +151,7 @@ class RepairLoopSuite extends FunSuite with TestFixtures {
 
       try {
         SignalHandler.reset()
-        val run = makeRun(runId, repoRoot, worktreePath, lockPath)
+        val run = makeRun(runId, repoRoot, worktreePath, lockPath).copy(maxAttempts = 2)
         TaskRunRepo.insert(run)
 
         val ctx = RunContext(run = run, repoRoot = repoRoot, worktreePath = worktreePath, conn = conn)
@@ -163,6 +163,7 @@ class RepairLoopSuite extends FunSuite with TestFixtures {
 
         assertEquals(finalRun.status, RunStatus.Exhausted)
         assertEquals(finalRun.finalVerdict, Some(VerdictStatus.Fail))
+        // Repair rejected on first attempt → immediate Exhausted
         assertEquals(backend.callCount, 1, "Backend should be called exactly once")
         assert(finalRun.finalSummary.exists(_.contains("Repair failed")))
       } finally {
@@ -172,7 +173,7 @@ class RepairLoopSuite extends FunSuite with TestFixtures {
     }
   }
 
-  test("repair loop: run reaches Exhausted after second verification failure") {
+  test("repair loop: run reaches Exhausted when all attempts fail despite repairs") {
     withTempGitRepoAndDb { (repoRoot, conn) =>
       implicit val c: java.sql.Connection = conn
       val runId = "repair-test-003"
@@ -181,7 +182,8 @@ class RepairLoopSuite extends FunSuite with TestFixtures {
 
       try {
         SignalHandler.reset()
-        val run = makeRun(runId, repoRoot, worktreePath, lockPath)
+        // maxAttempts=2 to keep test fast and predictable
+        val run = makeRun(runId, repoRoot, worktreePath, lockPath).copy(maxAttempts = 2)
         TaskRunRepo.insert(run)
 
         // Failing compiler + fixing backend = repair applied but verifiers still fail
@@ -194,8 +196,10 @@ class RepairLoopSuite extends FunSuite with TestFixtures {
 
         assertEquals(finalRun.status, RunStatus.Exhausted)
         assertEquals(finalRun.finalVerdict, Some(VerdictStatus.Fail))
-        assertEquals(backend.callCount, 1, "Backend should be called exactly once")
-        assert(finalRun.finalSummary.exists(_.contains("after repair")))
+        // With maxAttempts=2: attempt 1 fails → repair → attempt 2 fails → exhausted
+        assertEquals(backend.callCount, 1, "Backend should be called once (repair after attempt 1)")
+        assert(finalRun.finalSummary.exists(_.contains("attempt")),
+          s"Summary should mention attempts: ${finalRun.finalSummary}")
       } finally {
         LockManager.release(repoRoot)
         WorktreeManager.remove(repoRoot, runId)
@@ -203,7 +207,7 @@ class RepairLoopSuite extends FunSuite with TestFixtures {
     }
   }
 
-  test("only one repair allowed") {
+  test("repair is attempted up to maxAttempts-1 times") {
     withTempGitRepoAndDb { (repoRoot, conn) =>
       implicit val c: java.sql.Connection = conn
       val runId = "repair-test-004"
@@ -212,7 +216,8 @@ class RepairLoopSuite extends FunSuite with TestFixtures {
 
       try {
         SignalHandler.reset()
-        val run = makeRun(runId, repoRoot, worktreePath, lockPath)
+        // maxAttempts=3: repairs happen after attempts 1 and 2; attempt 3 is final
+        val run = makeRun(runId, repoRoot, worktreePath, lockPath).copy(maxAttempts = 3)
         TaskRunRepo.insert(run)
 
         val ctx = RunContext(run = run, repoRoot = repoRoot, worktreePath = worktreePath, conn = conn)
@@ -222,8 +227,8 @@ class RepairLoopSuite extends FunSuite with TestFixtures {
           repairBackend = Some(backend),
         )
 
-        // Backend should only be called once even though second verification also fails
-        assertEquals(backend.callCount, 1)
+        // Backend called maxAttempts-1 times (repair after each failing attempt except last)
+        assertEquals(backend.callCount, 2)
         assertEquals(finalRun.status, RunStatus.Exhausted)
       } finally {
         LockManager.release(repoRoot)
@@ -269,7 +274,7 @@ class RepairLoopSuite extends FunSuite with TestFixtures {
 
       try {
         SignalHandler.reset()
-        val run = makeRun(runId, repoRoot, worktreePath, lockPath)
+        val run = makeRun(runId, repoRoot, worktreePath, lockPath).copy(maxAttempts = 2)
         TaskRunRepo.insert(run)
 
         val ctx = RunContext(run = run, repoRoot = repoRoot, worktreePath = worktreePath, conn = conn)
@@ -303,7 +308,8 @@ class RepairLoopSuite extends FunSuite with TestFixtures {
 
       try {
         SignalHandler.reset()
-        val run = makeRun(runId, repoRoot, worktreePath, lockPath)
+        // maxAttempts=2 so we get exactly 1 repair + 1 reboot
+        val run = makeRun(runId, repoRoot, worktreePath, lockPath).copy(maxAttempts = 2)
         TaskRunRepo.insert(run)
 
         val ctx = RunContext(run = run, repoRoot = repoRoot, worktreePath = worktreePath, conn = conn)
@@ -335,7 +341,8 @@ class RepairLoopSuite extends FunSuite with TestFixtures {
 
       try {
         SignalHandler.reset()
-        val run = makeRun(runId, repoRoot, worktreePath, lockPath)
+        // maxAttempts=2 so we get exactly 2 attempts
+        val run = makeRun(runId, repoRoot, worktreePath, lockPath).copy(maxAttempts = 2)
         TaskRunRepo.insert(run)
 
         val ctx = RunContext(run = run, repoRoot = repoRoot, worktreePath = worktreePath, conn = conn)
@@ -372,7 +379,7 @@ class RepairLoopSuite extends FunSuite with TestFixtures {
 
       try {
         SignalHandler.reset()
-        val run = makeRun(runId, repoRoot, worktreePath, lockPath)
+        val run = makeRun(runId, repoRoot, worktreePath, lockPath).copy(maxAttempts = 2)
         TaskRunRepo.insert(run)
 
         val ctx = RunContext(run = run, repoRoot = repoRoot, worktreePath = worktreePath, conn = conn)
@@ -403,7 +410,7 @@ class RepairLoopSuite extends FunSuite with TestFixtures {
 
       try {
         SignalHandler.reset()
-        val run = makeRun(runId, repoRoot, worktreePath, lockPath)
+        val run = makeRun(runId, repoRoot, worktreePath, lockPath).copy(maxAttempts = 2)
         TaskRunRepo.insert(run)
 
         val ctx = RunContext(run = run, repoRoot = repoRoot, worktreePath = worktreePath, conn = conn)
@@ -434,7 +441,7 @@ class RepairLoopSuite extends FunSuite with TestFixtures {
 
       try {
         SignalHandler.reset()
-        val run = makeRun(runId, repoRoot, worktreePath, lockPath)
+        val run = makeRun(runId, repoRoot, worktreePath, lockPath).copy(maxAttempts = 2)
         TaskRunRepo.insert(run)
 
         val ctx = RunContext(run = run, repoRoot = repoRoot, worktreePath = worktreePath, conn = conn)

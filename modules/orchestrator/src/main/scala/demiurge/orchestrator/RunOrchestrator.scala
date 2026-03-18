@@ -13,19 +13,18 @@ import demiurge.repair._
 import demiurge.config.{ConfigResolver, ConfigResolverImpl}
 import demiurge.inference.InferenceService
 
-// Spec §4.1: Synchronous orchestrator loop for Phase 5.
+// Spec §4.1: Synchronous orchestrator loop.
 // Executes the path: Created → InspectingRepo → CompilingRequirements →
 // PlanningEnvironment → BootstrappingEnvironment → SeedingFixtures → ReadyToVerify →
-// Verifying → Evaluating →
-//   (Succeeded) or
-//   (NeedsRepair → Repairing → ApplyingPatch → RebootingEnvironment →
-//    ReadyToVerify → Verifying → Evaluating → Succeeded | Exhausted)
-// Only ONE repair attempt allowed.
+// [Verification + Repair Loop up to maxAttempts]:
+//   Verifying → (Pass → Succeeded) | (Fail → AnalyzingFailure → PlanningRepair →
+//     Repairing → SoftResettingEnvironment → ReadyToVerify → next attempt)
 // All transitions enforce persist-before-side-effects (Spec §4.1).
 object RunOrchestrator {
 
   /**
-   * Execute the Phase 5 orchestration path with single repair attempt.
+   * Execute the orchestration path with bounded multi-attempt repair loop.
+   * Iterates up to maxAttempts (default 5, build mode 8).
    * Returns the final TaskRun state after reaching a terminal status.
    */
   // Phase 6: Optional browserExecutor for dispatching BrowserFlowVerifiers through the worker.
@@ -183,67 +182,104 @@ object RunOrchestrator {
           currentCtx = currentCtx.copy(run = currentRun)
           SignalHandler.updateContext(currentCtx)
 
-          // --- Phase 5: Verification + single repair loop ---
-          var repairAttempted = false
+          // --- Phase 5: Verification + multi-attempt repair loop ---
+          var attemptNumber = 1
           var patchHistory: List[PatchProposal] = Nil
+          // Note: if there are any patchHistory entries from build mode code generation
+          // (Gap 3, not yet implemented), they would be passed in. For now, start empty.
 
-          // First verification attempt
-          if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
+          while (attemptNumber <= currentRun.maxAttempts) {
 
-          var verificationResult: Option[VerificationEngine.VerificationResult] = None
-          var currentAttempt: Option[Attempt] = None
+            // --- Check for interrupt at top of loop ---
+            if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
 
-          currentRun = RunTransitionManager.transition(
-            currentCtx,
-            RunStatus.Verifying,
-            sideEffect = { _ =>
-              val attempt = AttemptManager.createAttempt(currentRun.runId, 1)
-              val verifying = AttemptManager.startVerifying(attempt)
+            // --- Transition: → Verifying ---
+            var verificationResult: Option[VerificationEngine.VerificationResult] = None
+            var currentAttempt: Option[Attempt] = None
 
-              val result = VerificationEngine.runVerification(
-                currentRun.runId,
-                1,
-                requirementResult.get,
-                browserExecutor,
-                inferenceService,
-                resolvedConfig,
-              )
-              verificationResult = Some(result)
-
-              val completed = AttemptManager.completeAttempt(
-                verifying,
-                result.verdicts,
-                result.aggregate.overallVerdict,
-              )
-              currentAttempt = Some(completed)
-            },
-          )
-          currentCtx = currentCtx.copy(run = currentRun)
-          SignalHandler.updateContext(currentCtx)
-
-          // --- Evaluate first verdict ---
-          if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
-
-          val verdict = verificationResult.get.aggregate.overallVerdict
-          val agg = verificationResult.get.aggregate
-
-          if (verdict == VerdictStatus.Pass) {
-            // Success on first attempt
-            try { supervisor.teardown(planResult.get, currentCtx.repoRoot) } catch { case _: Exception => }
-            currentRun = RunTransitionManager.transitionToTerminal(
+            currentRun = RunTransitionManager.transition(
               currentCtx,
-              RunStatus.Succeeded,
-              summary = Some(s"All ${agg.total} verifiers passed"),
-              finalVerdict = Some(VerdictStatus.Pass),
+              RunStatus.Verifying,
+              sideEffect = { _ =>
+                val attempt = AttemptManager.createAttempt(currentRun.runId, attemptNumber)
+                val verifying = AttemptManager.startVerifying(attempt)
+
+                val result = VerificationEngine.runVerification(
+                  currentRun.runId,
+                  attemptNumber,
+                  requirementResult.get,
+                  browserExecutor,
+                  inferenceService,
+                  resolvedConfig,
+                )
+                verificationResult = Some(result)
+
+                val completed = AttemptManager.completeAttempt(
+                  verifying,
+                  result.verdicts,
+                  result.aggregate.overallVerdict,
+                )
+                currentAttempt = Some(completed)
+              },
             )
             currentCtx = currentCtx.copy(run = currentRun)
             SignalHandler.updateContext(currentCtx)
-          } else if (repairBackend.isDefined && !repairAttempted) {
-            // --- Phase 5: Single repair attempt ---
-            repairAttempted = true
+
+            // --- Evaluate verdict ---
+            if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
+
+            val verdict = verificationResult.get.aggregate.overallVerdict
+            val agg = verificationResult.get.aggregate
+
+            if (verdict == VerdictStatus.Pass) {
+              // Success — teardown and transition to Succeeded
+              try { supervisor.teardown(planResult.get, currentCtx.repoRoot) } catch { case _: Exception => }
+              currentRun = RunTransitionManager.transitionToTerminal(
+                currentCtx,
+                RunStatus.Succeeded,
+                summary = Some(
+                  if (attemptNumber == 1) s"All ${agg.total} verifiers passed"
+                  else s"All ${agg.total} verifiers passed after ${attemptNumber - 1} repair(s)"
+                ),
+                finalVerdict = Some(VerdictStatus.Pass),
+              )
+              currentCtx = currentCtx.copy(run = currentRun)
+              SignalHandler.updateContext(currentCtx)
+              return currentRun
+            }
+
+            // Fail + no more attempts remaining
+            if (attemptNumber >= currentRun.maxAttempts) {
+              try { supervisor.teardown(planResult.get, currentCtx.repoRoot) } catch { case _: Exception => }
+              currentRun = RunTransitionManager.transitionToTerminal(
+                currentCtx,
+                RunStatus.Exhausted,
+                summary = Some(s"Verification failed after $attemptNumber attempt(s): ${agg.failCount} failed, ${agg.errorCount} errors out of ${agg.total}"),
+                finalVerdict = Some(VerdictStatus.Fail),
+              )
+              currentCtx = currentCtx.copy(run = currentRun)
+              SignalHandler.updateContext(currentCtx)
+              return currentRun
+            }
+
+            // Fail + no repair backend
+            if (repairBackend.isEmpty) {
+              try { supervisor.teardown(planResult.get, currentCtx.repoRoot) } catch { case _: Exception => }
+              currentRun = RunTransitionManager.transitionToTerminal(
+                currentCtx,
+                RunStatus.Exhausted,
+                summary = Some(s"Verification failed: ${agg.failCount} failed, ${agg.errorCount} errors, ${agg.timeoutCount} timeouts out of ${agg.total}"),
+                finalVerdict = Some(VerdictStatus.Fail),
+              )
+              currentCtx = currentCtx.copy(run = currentRun)
+              SignalHandler.updateContext(currentCtx)
+              return currentRun
+            }
+
+            // --- Repair cycle (Fail + attempts remain + repairBackend exists) ---
             val backend = repairBackend.get
 
-            // Transition: Verifying → AnalyzingFailure (NeedsRepair)
+            // Transition: → AnalyzingFailure
             if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
             currentRun = RunTransitionManager.transition(
               currentCtx,
@@ -253,7 +289,7 @@ object RunOrchestrator {
             currentCtx = currentCtx.copy(run = currentRun)
             SignalHandler.updateContext(currentCtx)
 
-            // Transition: AnalyzingFailure → PlanningRepair
+            // Transition: → PlanningRepair
             if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
             currentRun = RunTransitionManager.transition(
               currentCtx,
@@ -263,7 +299,7 @@ object RunOrchestrator {
             currentCtx = currentCtx.copy(run = currentRun)
             SignalHandler.updateContext(currentCtx)
 
-            // Transition: PlanningRepair → Repairing
+            // Transition: → Repairing
             if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
 
             var repairOutcome: Option[RepairExecutor.RepairOutcome] = None
@@ -272,13 +308,11 @@ object RunOrchestrator {
               currentCtx,
               RunStatus.Repairing,
               sideEffect = { _ =>
-                // Mark attempt as repairing
                 currentAttempt.foreach(a => RepairManager.markAttemptRepairing(a.attemptId))
 
-                // Build repair inputs
                 val failureInput = RepairManager.buildFailureInput(
                   runId = currentRun.runId,
-                  attemptNumber = 1,
+                  attemptNumber = attemptNumber,
                   taskText = currentRun.taskText,
                   verdicts = verificationResult.get.verdicts,
                   graph = requirementResult.get,
@@ -290,7 +324,7 @@ object RunOrchestrator {
 
                 val repairContext = RepairManager.buildRepairContext(
                   ctx = currentCtx,
-                  attemptNumber = 1,
+                  attemptNumber = attemptNumber,
                   graph = requirementResult.get,
                   verdicts = verificationResult.get.verdicts,
                   inspectionReport = inspectionResult,
@@ -308,7 +342,7 @@ object RunOrchestrator {
             SignalHandler.updateContext(currentCtx)
 
             repairOutcome.get match {
-              case RepairExecutor.RepairApplied(packet, proposal, filesChanged) =>
+              case RepairExecutor.RepairApplied(packet, proposal, _) =>
                 // Persist failure packet and patch record
                 RepairManager.persistFailurePacket(packet)
                 RepairManager.persistPatchRecord(proposal)
@@ -317,7 +351,7 @@ object RunOrchestrator {
                     a.attemptId, proposal.patchId, packet.failurePacketId, proposal.backendId))
                 patchHistory = patchHistory :+ proposal
 
-                // --- Transition: Repairing → RebootingEnvironment (via SoftResettingEnvironment) ---
+                // --- Transition: → SoftResettingEnvironment ---
                 if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
 
                 var rebootResult: Option[RuntimeSupervisor.BootResult] = None
@@ -349,7 +383,7 @@ object RunOrchestrator {
                   case RuntimeSupervisor.BootSuccess(rebootSnapshot) =>
                     RuntimeSnapshotRepo.insert(rebootSnapshot)
 
-                    // Transition: back to ReadyToVerify
+                    // Transition: → ReadyToVerify
                     if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
                     currentRun = RunTransitionManager.transition(
                       currentCtx,
@@ -359,66 +393,12 @@ object RunOrchestrator {
                     currentCtx = currentCtx.copy(run = currentRun)
                     SignalHandler.updateContext(currentCtx)
 
-                    // --- Rerun verification (attempt 2) ---
-                    if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
-
-                    var rerunResult: Option[VerificationEngine.VerificationResult] = None
-                    currentRun = RunTransitionManager.transition(
-                      currentCtx,
-                      RunStatus.Verifying,
-                      sideEffect = { _ =>
-                        val attempt2 = AttemptManager.createAttempt(currentRun.runId, 2)
-                        val verifying2 = AttemptManager.startVerifying(attempt2)
-
-                        val result2 = VerificationEngine.runVerification(
-                          currentRun.runId,
-                          2,
-                          requirementResult.get,
-                          browserExecutor,
-                          inferenceService,
-                          resolvedConfig,
-                        )
-                        rerunResult = Some(result2)
-
-                        AttemptManager.completeAttempt(
-                          verifying2,
-                          result2.verdicts,
-                          result2.aggregate.overallVerdict,
-                        )
-                      },
-                    )
-                    currentCtx = currentCtx.copy(run = currentRun)
-                    SignalHandler.updateContext(currentCtx)
-
-                    // --- Evaluate rerun verdict ---
-                    if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
-
-                    val rerunVerdict = rerunResult.get.aggregate.overallVerdict
-                    val rerunAgg = rerunResult.get.aggregate
-
-                    try { supervisor.teardown(planResult.get, currentCtx.repoRoot) } catch { case _: Exception => }
-
-                    if (rerunVerdict == VerdictStatus.Pass) {
-                      currentRun = RunTransitionManager.transitionToTerminal(
-                        currentCtx,
-                        RunStatus.Succeeded,
-                        summary = Some(s"All ${rerunAgg.total} verifiers passed after repair"),
-                        finalVerdict = Some(VerdictStatus.Pass),
-                      )
-                    } else {
-                      currentRun = RunTransitionManager.transitionToTerminal(
-                        currentCtx,
-                        RunStatus.Exhausted,
-                        summary = Some(s"Verification failed after repair: ${rerunAgg.failCount} failed, ${rerunAgg.errorCount} errors out of ${rerunAgg.total}"),
-                        finalVerdict = Some(VerdictStatus.Fail),
-                      )
-                    }
-                    currentCtx = currentCtx.copy(run = currentRun)
-                    SignalHandler.updateContext(currentCtx)
+                    attemptNumber += 1
+                    // continue loop
                 }
 
               case RepairExecutor.RepairRejected(packet, reason) =>
-                // Repair failed — persist packet and go to Exhausted
+                // Repair failed — persist packet and transition to Exhausted
                 RepairManager.persistFailurePacket(packet)
                 currentAttempt.foreach(a =>
                   RepairManager.markAttemptRepairFailed(a.attemptId, packet.failurePacketId))
@@ -433,19 +413,22 @@ object RunOrchestrator {
                 )
                 currentCtx = currentCtx.copy(run = currentRun)
                 SignalHandler.updateContext(currentCtx)
+                return currentRun
             }
-          } else {
-            // No repair backend or already repaired — go to Exhausted
-            try { supervisor.teardown(planResult.get, currentCtx.repoRoot) } catch { case _: Exception => }
-            currentRun = RunTransitionManager.transitionToTerminal(
-              currentCtx,
-              RunStatus.Exhausted,
-              summary = Some(s"Verification failed: ${agg.failCount} failed, ${agg.errorCount} errors, ${agg.timeoutCount} timeouts out of ${agg.total}"),
-              finalVerdict = Some(VerdictStatus.Fail),
-            )
-            currentCtx = currentCtx.copy(run = currentRun)
-            SignalHandler.updateContext(currentCtx)
-          }
+          } // end while
+
+          // Safety: unreachable under normal control flow — every path inside the loop
+          // either returns or increments attemptNumber past maxAttempts (which then
+          // returns at the top-of-loop guard). This fallthrough exists as defensive coding.
+          try { supervisor.teardown(planResult.get, currentCtx.repoRoot) } catch { case _: Exception => }
+          currentRun = RunTransitionManager.transitionToTerminal(
+            currentCtx,
+            RunStatus.Exhausted,
+            summary = Some(s"Exhausted all ${currentRun.maxAttempts} attempts"),
+            finalVerdict = Some(VerdictStatus.Fail),
+          )
+          currentCtx = currentCtx.copy(run = currentRun)
+          SignalHandler.updateContext(currentCtx)
       }
     }
 
