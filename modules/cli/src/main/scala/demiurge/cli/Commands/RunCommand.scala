@@ -37,8 +37,8 @@ object RunCommand {
     }
 
     val runId = cmd.runId.getOrElse(UUID.randomUUID().toString)
-    val budget = ExecutionBudgetDefaults.defaults
     val runMode = cmd.mode.flatMap(m => RunMode.values.find(_.toString.equalsIgnoreCase(m))).getOrElse(RunMode.Full)
+    val budget = if (runMode == RunMode.Build) BuildBudgetDefaults.defaults else ExecutionBudgetDefaults.defaults
 
     val artifactRoot = global.repo.resolve(".demiurge").resolve("artifacts").resolve(runId)
     Files.createDirectories(artifactRoot)
@@ -143,6 +143,18 @@ object RunCommand {
     } finally {
       LockManager.release(global.repo)
       demiurge.api.Routes.clearRunStarter()
+    }
+
+    // Phase E: Post-run git operations (--branch / --open-pr)
+    if (finalRun.status == RunStatus.Succeeded && (cmd.branch.isDefined || cmd.openPr)) {
+      val gitMessage = GitIntegration.handlePostRun(
+        repoPath = global.repo,
+        worktreePath = worktreePath,
+        taskText = cmd.task,
+        branch = cmd.branch,
+        openPr = cmd.openPr,
+      )
+      gitMessage.foreach(msg => if (!global.quiet) System.out.println(msg))
     }
 
     if (!global.quiet) {

@@ -102,6 +102,10 @@ object ResumeManager {
     case RunStatus.ReadyToVerify => RunStatus.ReadyToVerify
     case RunStatus.RebuildingEnvironment => RunStatus.RebuildingEnvironment
 
+    // Build mode states: re-run the planning/generation phase
+    case RunStatus.PlanningFeature => RunStatus.PlanningFeature
+    case RunStatus.GeneratingCode => RunStatus.GeneratingCode
+
     // Non-resumable states: abort attempt and resume at ReadyToVerify or Exhausted
     case RunStatus.Verifying | RunStatus.AnalyzingFailure | RunStatus.PlanningRepair |
          RunStatus.Repairing | RunStatus.RepairFailed | RunStatus.PlanningRerun |

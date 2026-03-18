@@ -37,6 +37,11 @@ class ResumeManagerSuite extends munit.FunSuite {
     assertEquals(ResumeManager.resumeStateFor(RunStatus.SoftResettingEnvironment, 5, 5), RunStatus.Exhausted)
   }
 
+  test("build mode states resume at same state") {
+    assertEquals(ResumeManager.resumeStateFor(RunStatus.PlanningFeature, 0, 8), RunStatus.PlanningFeature)
+    assertEquals(ResumeManager.resumeStateFor(RunStatus.GeneratingCode, 0, 8), RunStatus.GeneratingCode)
+  }
+
   test("terminal states cannot be resumed") {
     assertEquals(ResumeManager.resumeStateFor(RunStatus.Succeeded, 3, 5), RunStatus.Exhausted)
     assertEquals(ResumeManager.resumeStateFor(RunStatus.Exhausted, 5, 5), RunStatus.Exhausted)
