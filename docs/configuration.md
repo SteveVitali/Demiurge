@@ -1,8 +1,8 @@
 # Configuration
 
-Demiurge is configured through YAML files in your repository root. The primary configuration file is `lastmile.yaml` (the manifest), with optional `requirements.yaml` and `selectors.yaml` files.
+Demiurge is configured through YAML files in your repository root. The primary configuration file is `demiurge.yaml` (the manifest), with optional `requirements.yaml` and `selectors.yaml` files.
 
-Generate a starter manifest with `lastmile init-manifest`.
+Generate a starter manifest with `demiurge init-manifest`.
 
 ## Environment Variables
 
@@ -10,7 +10,7 @@ Generate a starter manifest with `lastmile init-manifest`.
 |----------|----------|-------------|
 | `ANTHROPIC_API_KEY` | For repair/inference | Claude API key for LLM-powered failure analysis and repair |
 
-## `lastmile.yaml` — Manifest
+## `demiurge.yaml` — Manifest
 
 The manifest describes your application, its services, authentication, verification settings, inference configuration, policies, and observability.
 
@@ -345,17 +345,17 @@ selectors:
 
 | File | Location | Purpose |
 |------|----------|---------|
-| `lastmile.yaml` | Repo root | Main manifest |
+| `demiurge.yaml` | Repo root | Main manifest |
 | `requirements.yaml` | Repo root | Verification requirements |
 | `selectors.yaml` | Repo root | Browser selectors |
-| `.lastmile/lastmile.db` | Repo root | SQLite database (auto-created) |
-| `.lastmile/artifacts/<runId>/` | Repo root | Run artifacts (auto-created) |
-| `.lastmile/run.lock` | Repo root | Active run lock file (auto-created) |
+| `.demiurge/demiurge.db` | Repo root | SQLite database (auto-created) |
+| `.demiurge/artifacts/<runId>/` | Repo root | Run artifacts (auto-created) |
+| `.demiurge/run.lock` | Repo root | Active run lock file (auto-created) |
 
 ## Example: Simple Node.js API
 
 ```yaml
-# lastmile.yaml
+# demiurge.yaml
 version: 1
 
 app:
@@ -390,7 +390,7 @@ policies:
 ## Example: Full-Stack Compose App
 
 ```yaml
-# lastmile.yaml
+# demiurge.yaml
 version: 1
 
 app:

@@ -1,9 +1,9 @@
 # CLI Reference
 
-The `lastmile` CLI is the primary interface for interacting with Demiurge.
+The `demiurge` CLI is the primary interface for interacting with Demiurge.
 
 ```
-lastmile [global-flags] <command> [command-flags]
+demiurge [global-flags] <command> [command-flags]
 ```
 
 ## Global Flags
@@ -24,7 +24,7 @@ lastmile [global-flags] <command> [command-flags]
 Execute a full verification run.
 
 ```
-lastmile run --task <description> [flags]
+demiurge run --task <description> [flags]
 ```
 
 | Flag | Required | Default | Description |
@@ -67,7 +67,7 @@ lastmile run --task <description> [flags]
 Plan without executing — runs inspection and requirement compilation only.
 
 ```
-lastmile plan --task <description> [flags]
+demiurge plan --task <description> [flags]
 ```
 
 | Flag | Required | Description |
@@ -81,7 +81,7 @@ lastmile plan --task <description> [flags]
 Resume an interrupted run.
 
 ```
-lastmile resume --run-id <id>
+demiurge resume --run-id <id>
 ```
 
 | Flag | Required | Description |
@@ -97,7 +97,7 @@ Resets the run to `Created` and re-runs the full orchestration pipeline from the
 Show run status or list recent runs.
 
 ```
-lastmile status [--run-id <id>]
+demiurge status [--run-id <id>]
 ```
 
 | Flag | Required | Description |
@@ -111,7 +111,7 @@ Without `--run-id`, lists the 20 most recent runs.
 Detailed run inspection.
 
 ```
-lastmile inspect-run --run-id <id> [flags]
+demiurge inspect-run --run-id <id> [flags]
 ```
 
 | Flag | Required | Description |
@@ -126,7 +126,7 @@ lastmile inspect-run --run-id <id> [flags]
 Access run artifacts.
 
 ```
-lastmile open-artifact --run-id <id> [flags]
+demiurge open-artifact --run-id <id> [flags]
 ```
 
 | Flag | Required | Description |
@@ -142,7 +142,7 @@ lastmile open-artifact --run-id <id> [flags]
 Explain verification failures for a run.
 
 ```
-lastmile explain-failure --run-id <id> [flags]
+demiurge explain-failure --run-id <id> [flags]
 ```
 
 | Flag | Required | Description |
@@ -157,7 +157,7 @@ Outputs a structured failure explanation including failure class, message, and o
 Cancel an active run.
 
 ```
-lastmile cancel [--run-id <id>]
+demiurge cancel [--run-id <id>]
 ```
 
 | Flag | Required | Description |
@@ -169,7 +169,7 @@ lastmile cancel [--run-id <id>]
 Clean up old runs and artifacts.
 
 ```
-lastmile clean [flags]
+demiurge clean [flags]
 ```
 
 | Flag | Required | Description |
@@ -188,7 +188,7 @@ lastmile clean [flags]
 Check system prerequisites.
 
 ```
-lastmile doctor
+demiurge doctor
 ```
 
 Checks:
@@ -206,15 +206,15 @@ Exit code 1 if any required check fails.
 
 ### `init-manifest`
 
-Generate a starter `lastmile.yaml` manifest.
+Generate a starter `demiurge.yaml` manifest.
 
 ```
-lastmile init-manifest [flags]
+demiurge init-manifest [flags]
 ```
 
 | Flag | Required | Default | Description |
 |------|----------|---------|-------------|
-| `--output <path>` | No | `lastmile.yaml` | Output file path |
+| `--output <path>` | No | `demiurge.yaml` | Output file path |
 | `--force` | No | `false` | Overwrite existing file |
 
 Performs deterministic repo inspection (no LLM) to detect app type (frontend, api, fullstack), package manager, and Docker Compose presence.

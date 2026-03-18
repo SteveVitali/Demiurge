@@ -2,7 +2,7 @@
 
 Demiurge runs a local HTTP API server during active runs. The server binds to `127.0.0.1:19440` — localhost only, no authentication required.
 
-The server starts automatically with `lastmile run` and stops when the run completes.
+The server starts automatically with `demiurge run` and stops when the run completes.
 
 ## Response Envelope
 

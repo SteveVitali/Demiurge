@@ -34,8 +34,8 @@ scala_library(
 )
 
 scala_binary(
-    name = "lastmile",
-    main_class = "lastmile.cli.Main",
+    name = "demiurge",
+    main_class = "demiurge.cli.Main",
     visibility = ["//visibility:public"],
     deps = [":cli"],
 )

@@ -28,7 +28,7 @@ scala_library(
 
 scala_binary(
     name = "orchestrator",
-    main_class = "lastmile.orchestrator.Main",
+    main_class = "demiurge.orchestrator.Main",
     visibility = ["//visibility:public"],
     deps = [":orchestrator-lib"],
 )

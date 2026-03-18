@@ -20,7 +20,7 @@ Demiurge/
 │   ├── orchestrator/           # Run state machine, transitions
 │   ├── cli/                    # CLI commands, arg parsing
 │   ├── local-api/              # HTTP server, SSE streaming
-│   ├── manifest/               # lastmile.yaml parser
+│   ├── manifest/               # demiurge.yaml parser
 │   ├── repo-inspector/         # Repository analysis
 │   ├── requirement-compiler/   # Requirements → RequirementGraph
 │   ├── requirements/           # requirements.yaml parser
@@ -170,7 +170,7 @@ core-model (no deps)
 - **Enums** — sealed trait + case object pattern (Scala 2 style)
 - **JSON** — circe semiauto derivation for all DTOs
 - **Testing** — MUnit test framework
-- **Package structure** — `lastmile.<module>` (e.g., `lastmile.model`, `lastmile.orchestrator`, `lastmile.persistence`)
+- **Package structure** — `demiurge.<module>` (e.g., `demiurge.model`, `demiurge.orchestrator`, `demiurge.persistence`)
 - **State machine invariant** — persist-before-side-effects for all state transitions
 - **No external HTTP library** — API server uses JDK built-in `com.sun.net.httpserver`
 
@@ -192,8 +192,8 @@ core-model (no deps)
 
 ## Adding a New Module
 
-1. Create directory: `modules/<name>/src/main/scala/lastmile/<name>/`
-2. Create test directory: `modules/<name>/src/test/scala/lastmile/<name>/`
+1. Create directory: `modules/<name>/src/main/scala/demiurge/<name>/`
+2. Create test directory: `modules/<name>/src/test/scala/demiurge/<name>/`
 3. Create `modules/<name>/BUILD.bazel`:
 
 ```python
@@ -241,13 +241,13 @@ To add a new Maven dependency, add it to the `maven.install` block in `MODULE.ba
 
 ## Data Storage
 
-During development, Demiurge creates the following under `<repo>/.lastmile/`:
+During development, Demiurge creates the following under `<repo>/.demiurge/`:
 
-- `lastmile.db` — SQLite database (WAL mode)
+- `demiurge.db` — SQLite database (WAL mode)
 - `artifacts/<runId>/` — Run artifact directories
 - `run.lock` — Active run lock file
 
-These are created automatically and can be cleaned with `lastmile clean --all`.
+These are created automatically and can be cleaned with `demiurge clean --all`.
 
 ## Test Fixtures
 
@@ -257,7 +257,7 @@ Two integration test fixtures are provided in `test/fixtures/`:
 
 Minimal Node.js HTTP server with health check. Files:
 - `server.js` — HTTP server on port 3456
-- `lastmile.yaml` — manifest with script startup, static token auth, mock inference
+- `demiurge.yaml` — manifest with script startup, static token auth, mock inference
 - `requirements.yaml` — health check + root endpoint HTTP requirements
 - `package.json` — minimal Node.js project
 
@@ -265,7 +265,7 @@ Minimal Node.js HTTP server with health check. Files:
 
 Full-stack Docker Compose application. Files:
 - `docker-compose.yml` — frontend, API, PostgreSQL
-- `lastmile.yaml` — manifest with compose startup, browser form login, Anthropic inference
+- `demiurge.yaml` — manifest with compose startup, browser form login, Anthropic inference
 - `requirements.yaml` — frontend, API health, DB reachability requirements
 
 ## Debugging
@@ -294,7 +294,7 @@ echo '{"jsonrpc":"2.0","method":"ping","params":{},"id":1}' | node dist/index.js
 ### Inspect SQLite database
 
 ```bash
-sqlite3 .lastmile/lastmile.db
+sqlite3 .demiurge/demiurge.db
 .tables
 SELECT * FROM task_runs ORDER BY created_at DESC LIMIT 5;
 ```

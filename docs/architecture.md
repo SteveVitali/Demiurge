@@ -14,7 +14,7 @@ Demiurge is a verifier-first orchestration platform for automating last-mile web
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│                      CLI (lastmile)                      │
+│                      CLI (demiurge)                      │
 │   Main → CliApp → CommandParsers → Command handlers      │
 ├──────────────────────────────────────────────────────────┤
 │                  Local API Server                         │
@@ -108,7 +108,7 @@ SQLite WAL-mode database with 16 tables (defined in `V001__initial.sql`):
 - **TransactionManager** — atomic transaction wrapper
 - **Repos** — `TaskRunRepo`, `AttemptRepo`, `VerdictRepo`, `EventRepo`, `ArtifactRecordRepo`, `FailurePacketRepo`, `PatchRepo`, `RepoInspectionReportRepo`, `RequirementGraphRepo`, `RuntimePlanRepo`, `RuntimeSnapshotRepo`
 
-Data is stored at `<repo>/.lastmile/lastmile.db`.
+Data is stored at `<repo>/.demiurge/demiurge.db`.
 
 ### Orchestrator (`modules/orchestrator`)
 
@@ -127,7 +127,7 @@ The heart of the system — drives the run state machine:
 
 ### CLI (`modules/cli`)
 
-Entry point: `lastmile.cli.Main` → `CliApp.run(args)`.
+Entry point: `demiurge.cli.Main` → `CliApp.run(args)`.
 
 11 commands, hand-rolled arg parser (no external dependency):
 
@@ -143,7 +143,7 @@ Entry point: `lastmile.cli.Main` → `CliApp.run(args)`.
 | `cancel` | Cancel an active run |
 | `clean` | Clean up old runs and artifacts |
 | `doctor` | Check system prerequisites |
-| `init-manifest` | Generate a starter `lastmile.yaml` |
+| `init-manifest` | Generate a starter `demiurge.yaml` |
 
 Output supports `--format human` (default) and `--format json`.
 
