@@ -179,4 +179,61 @@ class ClaudePromptBuilderSuite extends munit.FunSuite {
     val prompt = builder.buildSystemPrompt(GenerationMode.Repair)
     assert(prompt.contains("code repair agent"))
   }
+
+  test("buildUserPrompt in InitialBuild mode shows feature plan instead of failure context") {
+    withTempDir { dir =>
+      Files.write(dir.resolve("app.js"), "console.log('hello');\n".getBytes)
+      val context = makeContext(dir).copy(
+        generationMode = GenerationMode.InitialBuild,
+        featureSpec = Some("Add a /api/ping endpoint"),
+        featurePlan = Some(FeaturePlan(
+          planId = "fp-1", runId = "run-1", taskText = "Add ping endpoint",
+          summary = "Create a new ping endpoint",
+          filesToCreate = List(PlannedFile("src/ping.ts", "Ping route handler", "route")),
+          filesToModify = List(PlannedModification("src/router.ts", "Register ping route", "add_route")),
+          filesToDelete = Nil,
+          requiresNewDeps = List("express"),
+          requiresMigration = false,
+          estimatedComplexity = "small",
+          createdAt = Instant.now(),
+        )),
+        verdicts = Nil,
+      )
+      val prompt = ClaudePromptBuilder.buildUserPrompt(makePacket(), context)
+
+      // Should contain feature plan details
+      assert(prompt.contains("# Feature Plan"), "Should have Feature Plan section")
+      assert(prompt.contains("Create a new ping endpoint"), "Should contain plan summary")
+      assert(prompt.contains("src/ping.ts"), "Should list files to create")
+      assert(prompt.contains("src/router.ts"), "Should list files to modify")
+      assert(prompt.contains("express"), "Should list new dependencies")
+      assert(prompt.contains("# Feature Specification"), "Should have Feature Specification section")
+      assert(prompt.contains("Add a /api/ping endpoint"), "Should contain feature spec")
+
+      // Should NOT contain repair-mode sections
+      assert(!prompt.contains("# Failure Summary"), "Should not have Failure Summary in build mode")
+      assert(!prompt.contains("# Failed Requirements"), "Should not have Failed Requirements in build mode")
+      assert(!prompt.contains("# Suspected Root Causes"), "Should not have Suspected Root Causes in build mode")
+
+      // Should still contain shared sections
+      assert(prompt.contains("# Requirements"), "Should still have Requirements section")
+      assert(prompt.contains("# Relevant Source Files"), "Should still have Relevant Source Files section")
+    }
+  }
+
+  test("buildUserPrompt in Repair mode does not show feature plan sections") {
+    withTempDir { dir =>
+      Files.write(dir.resolve("app.js"), "console.log('hello');\n".getBytes)
+      val prompt = ClaudePromptBuilder.buildUserPrompt(makePacket(), makeContext(dir))
+
+      // Should have repair-mode sections
+      assert(prompt.contains("# Failure Summary"))
+      assert(prompt.contains("# Failed Requirements"))
+      assert(prompt.contains("# Suspected Root Causes"))
+
+      // Should NOT have build-mode sections
+      assert(!prompt.contains("# Feature Plan"))
+      assert(!prompt.contains("# Feature Specification"))
+    }
+  }
 }

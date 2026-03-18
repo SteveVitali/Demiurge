@@ -102,6 +102,13 @@ object RepairSession {
             PatchApplier.apply(proposal, worktreePath) match {
               case PatchApplier.ApplySuccess(filesChanged) =>
                 session = addTranscript(session, "system", s"Patch applied: ${filesChanged.size} files changed")
+                System.err.println(s"[repair] Patch applied to ${filesChanged.mkString(", ")}")
+                proposal.edits.foreach { e =>
+                  System.err.println(s"[repair]   edit ${e.relativePath}: old=${e.oldContent.take(100).replace("\n","\\n")} -> new=${e.newContent.take(100).replace("\n","\\n")}")
+                }
+                proposal.newFiles.foreach { f =>
+                  System.err.println(s"[repair]   newFile ${f.relativePath} (${f.content.length}b)")
+                }
                 RepairExecutor.RepairApplied(packet, proposal, filesChanged)
               case PatchApplier.ApplyFailure(reason) =>
                 session = addTranscript(session, "system", s"Patch apply failed: $reason")

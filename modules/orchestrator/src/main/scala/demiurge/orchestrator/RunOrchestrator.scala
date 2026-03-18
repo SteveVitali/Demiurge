@@ -100,7 +100,7 @@ object RunOrchestrator {
         cr <- configResolver
         inspection <- inspectionResult
       } yield cr.resolve(
-        repoPath = currentCtx.repoRoot,
+        repoPath = currentCtx.worktreePath,
         taskText = currentRun.taskText,
         changedFiles = currentRun.changedFiles,
         inspection = inspection,
@@ -118,7 +118,7 @@ object RunOrchestrator {
         sideEffect = { updatedCtx =>
           val report = inspector.inspect(
             currentRun.runId,
-            currentCtx.repoRoot,
+            currentCtx.worktreePath,
             currentRun.changedFiles,
           )
           // Persist inspection report (Spec §7.2)
@@ -127,7 +127,7 @@ object RunOrchestrator {
 
           // Phase E: Resolve config (explicit YAML → cached → inferred)
           resolvedConfig = configResolver.map(_.resolve(
-            repoPath = currentCtx.repoRoot,
+            repoPath = currentCtx.worktreePath,
             taskText = currentRun.taskText,
             changedFiles = currentRun.changedFiles,
             inspection = report,

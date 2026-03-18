@@ -146,4 +146,66 @@ class PatchProposalSuite extends FunSuite {
       assert(result.isInstanceOf[PatchApplier.ApplyFailure])
     }
   }
+
+  test("PatchApplier applies edit with trailing whitespace mismatch (fuzzy matching)") {
+    withTempDir { dir =>
+      // File has trailing whitespace on lines; oldContent does not
+      Files.write(dir.resolve("code.js"), "function hello() {  \n  return 'hi';  \n}\n".getBytes)
+      import scala.sys.process._
+      Process(Seq("git", "add", "code.js"), dir.toFile).!
+      Process(Seq("git", "commit", "-m", "add code"), dir.toFile).!
+
+      val proposal = PatchProposal(
+        patchId = "p9", runId = "r1", attemptNumber = 1, backendId = "test",
+        edits = List(FileEdit("code.js", "function hello() {\n  return 'hi';\n}", "function hello() {\n  return 'hello';\n}")),
+        newFiles = Nil, deletions = Nil,
+        summary = "fix greeting", hypotheses = Nil, createdAt = Instant.now(),
+      )
+
+      val result = PatchApplier.apply(proposal, dir)
+      assert(result.isInstanceOf[PatchApplier.ApplySuccess], s"Expected ApplySuccess but got $result")
+      val content = new String(Files.readAllBytes(dir.resolve("code.js")))
+      assert(content.contains("return 'hello'"), s"Expected patched content but got: $content")
+    }
+  }
+
+  test("PatchApplier fails when oldContent not found even with fuzzy matching") {
+    withTempDir { dir =>
+      Files.write(dir.resolve("data.txt"), "line1\nline2\nline3\n".getBytes)
+      import scala.sys.process._
+      Process(Seq("git", "add", "data.txt"), dir.toFile).!
+      Process(Seq("git", "commit", "-m", "add data"), dir.toFile).!
+
+      val proposal = PatchProposal(
+        patchId = "p10", runId = "r1", attemptNumber = 1, backendId = "test",
+        edits = List(FileEdit("data.txt", "totally different content", "replacement")),
+        newFiles = Nil, deletions = Nil,
+        summary = "fix", hypotheses = Nil, createdAt = Instant.now(),
+      )
+
+      val result = PatchApplier.apply(proposal, dir)
+      assert(result.isInstanceOf[PatchApplier.ApplyFailure])
+    }
+  }
+
+  test("PatchApplier applies edit with empty oldContent as full file replacement") {
+    withTempDir { dir =>
+      Files.write(dir.resolve("replace.txt"), "original content\n".getBytes)
+      import scala.sys.process._
+      Process(Seq("git", "add", "replace.txt"), dir.toFile).!
+      Process(Seq("git", "commit", "-m", "add file"), dir.toFile).!
+
+      val proposal = PatchProposal(
+        patchId = "p11", runId = "r1", attemptNumber = 1, backendId = "test",
+        edits = List(FileEdit("replace.txt", "", "completely new content\n")),
+        newFiles = Nil, deletions = Nil,
+        summary = "replace file", hypotheses = Nil, createdAt = Instant.now(),
+      )
+
+      val result = PatchApplier.apply(proposal, dir)
+      assert(result.isInstanceOf[PatchApplier.ApplySuccess])
+      val content = new String(Files.readAllBytes(dir.resolve("replace.txt")))
+      assertEquals(content, "completely new content\n")
+    }
+  }
 }

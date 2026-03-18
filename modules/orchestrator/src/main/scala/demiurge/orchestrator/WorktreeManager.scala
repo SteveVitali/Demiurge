@@ -52,6 +52,23 @@ object WorktreeManager {
       throw new RuntimeException(s"git worktree add failed with exit code $exitCode for runId=$runId")
     }
 
+    // Copy runtime files that aren't committed but are needed by services.
+    // TODO: Make this configurable via demiurge.yaml (e.g. worktree.copy / worktree.symlink)
+    //       instead of hardcoding Node.js-specific paths. Other ecosystems may need
+    //       different files (e.g. Python venv/, Java .m2/, etc.)
+    val envFile = repoRoot.resolve(".env")
+    if (Files.exists(envFile)) {
+      Files.copy(envFile, wtPath.resolve(".env"), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+    }
+
+    // Symlink node_modules from repo root into worktree so spawned child processes
+    // (which use absolute paths like <worktree>/node_modules/.bin/tsx) resolve correctly.
+    val repoNodeModules = repoRoot.resolve("node_modules")
+    val wtNodeModules = wtPath.resolve("node_modules")
+    if (Files.isDirectory(repoNodeModules) && !Files.exists(wtNodeModules)) {
+      Files.createSymbolicLink(wtNodeModules, repoNodeModules)
+    }
+
     wtPath
   }
 

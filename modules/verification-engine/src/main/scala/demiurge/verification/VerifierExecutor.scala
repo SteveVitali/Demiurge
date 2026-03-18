@@ -48,6 +48,7 @@ object VerifierExecutor {
   }
 
   private def executeHttp(v: HttpVerifier): VerifierOutcome = {
+    System.err.println(s"[verifier] Executing HTTP ${v.method} ${v.url} (expected ${v.expectedStatus})")
     try {
       val url = new URL(v.url)
       val conn = url.openConnection().asInstanceOf[HttpURLConnection]
@@ -57,6 +58,7 @@ object VerifierExecutor {
         conn.setReadTimeout(v.timeout.toMillis.toInt.min(30000))
         v.headers.foreach { case (k, value) => conn.setRequestProperty(k, value) }
         val status = conn.getResponseCode
+        System.err.println(s"[verifier] HTTP ${v.method} ${v.url} → $status (expected ${v.expectedStatus})")
         if (status == v.expectedStatus) {
           VerifierOutcome.Passed
         } else {
@@ -66,10 +68,14 @@ object VerifierExecutor {
         conn.disconnect()
       }
     } catch {
-      case _: java.net.SocketTimeoutException => VerifierOutcome.TimedOut
+      case _: java.net.SocketTimeoutException =>
+        System.err.println(s"[verifier] Timeout: ${v.url}")
+        VerifierOutcome.TimedOut
       case e: java.net.ConnectException =>
+        System.err.println(s"[verifier] Connection refused: ${v.url}")
         VerifierOutcome.Failed(s"Connection refused: ${v.url}")
       case e: Exception =>
+        System.err.println(s"[verifier] Error: ${v.url} — ${e.getClass.getName}: ${e.getMessage}")
         VerifierOutcome.Error(s"HTTP verifier error: ${e.getMessage}")
     }
   }
