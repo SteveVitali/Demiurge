@@ -54,8 +54,10 @@ Demiurge is a **Scala 2.13 + TypeScript** dual-stack project built with **Bazel*
 | `modules/cli` | Scala | 11 CLI commands, arg parsing, output formatting (human/JSON) |
 | `modules/local-api` | Scala | HTTP server (127.0.0.1:19440), REST + SSE event streaming |
 | `modules/manifest` | Scala | `demiurge.yaml` parser (SnakeYAML) |
+| `modules/config-resolver` | Scala | Layered config resolution (explicit YAML → cached inference), `ResolvedConfig` DTOs |
 | `modules/repo-inspector` | Scala | Repository analysis, changed-file impact mapping |
 | `modules/requirement-compiler` | Scala | Requirements + selectors → RequirementGraph with VerifierSpecs |
+| `modules/agent-backend` | Scala | Agent SDK integration — bridges orchestrator to TypeScript worker for agentic operations |
 | `modules/requirements` | Scala | `requirements.yaml` parser and validator |
 | `modules/selectors` | Scala | `selectors.yaml` parser (CSS/XPath/test-id strategies) |
 | `modules/environment-planner` | Scala | RuntimePlan generation from inspection + requirements |
@@ -120,10 +122,14 @@ demiurge doctor
 
 ## Configuration
 
-Demiurge is configured via a `demiurge.yaml` manifest in your repository root. Generate a starter manifest:
+Demiurge is configured via a `demiurge.yaml` manifest in your repository root. Generate configuration:
 
 ```bash
-demiurge init-manifest
+# Deterministic scaffold (no LLM)
+demiurge init
+
+# Agentic generation via Claude Code CLI (recommended)
+demiurge init --smart
 ```
 
 See [docs/configuration.md](docs/configuration.md) for the full manifest schema reference.
@@ -133,6 +139,7 @@ See [docs/configuration.md](docs/configuration.md) for the full manifest schema 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `ANTHROPIC_API_KEY` | For repair | Claude API key for LLM-powered failure analysis and repair |
+| `DEMIURGE_WORKER_PATH` | For `--smart` init | Path to the Demiurge TypeScript worker (auto-detected if installed) |
 
 ## Documentation
 

@@ -144,7 +144,7 @@ Entry point: `demiurge.cli.Main` → `CliApp.run(args)`.
 | `cancel` | Cancel an active run |
 | `clean` | Clean up old runs and artifacts |
 | `doctor` | Check system prerequisites |
-| `init-manifest` | Generate a starter `demiurge.yaml` |
+| `init` | Generate `demiurge.yaml` and `requirements.yaml` (deterministic or `--smart` agentic) |
 
 Output supports `--format human` (default) and `--format json`.
 
@@ -186,6 +186,22 @@ TypeScript + Playwright process communicating via stdio JSON-RPC 2.0:
 - **ArtifactWriter** — temp-file-then-rename, SHA-256 checksums, gzip compression >1MB
 - **Methods** — `initialize`, `executeBrowserFlow` (navigate, actions, assertions, artifact capture), `executeAuthBootstrap` (form login, API login, static token, dev bypass), `executeApiRequest`, `capturePageSnapshot`, `cancel`, `shutdown`, `ping`
 
+### Config Resolver (`modules/config-resolver`)
+
+Layered configuration resolution:
+
+- **Layer 1: Explicit YAML** — loads `demiurge.yaml` and `requirements.yaml` from the repo root
+- **Layer 2: Cached Inference** — loads previously inferred config from `.demiurge/inferred/`
+- **No Layer 3** — heuristic inference was removed; if no config is found, `NoConfigError` directs the user to run `demiurge init --smart`
+- **InferredConfigWriter** — serializes `ResolvedConfig` back to manifest YAML for caching
+
+### Agent Backend (`modules/agent-backend`)
+
+Bridge between the Scala orchestrator and the TypeScript worker for agentic operations:
+
+- **AgentBackend** trait — defines the interface for agent-powered code generation and repair
+- **AgentExecutor** — sends `agent/execute` JSON-RPC requests to the worker, which runs Claude Agent SDK `query()` with MCP tools for verification, service health checks, and log access
+
 ### Repair Pipeline
 
 1. **FailureAnalyzer** (`modules/failure-analysis`) — LLM-backed analysis with rule-based fallback (confidence 0.3)
@@ -222,8 +238,9 @@ All LLM calls go through `InferenceService`:
 3. Starts local API server on :19440
 4. Orchestrator begins state machine:
    a. RepoInspector analyzes repo (file types, dependencies, impact map)
-   b. RequirementCompiler: requirements.yaml + selectors.yaml → RequirementGraph
-   c. EnvironmentPlanner: inspection + graph → RuntimePlan
+   b. ConfigResolver: demiurge.yaml (explicit or cached) → ResolvedConfig
+   c. RequirementCompiler: requirements.yaml + selectors.yaml → RequirementGraph
+   d. EnvironmentPlanner: inspection + graph → RuntimePlan
    d. RuntimeSupervisor: boots services, runs readiness probes, seeds fixtures
    e. VerificationEngine: generates verifiers → executes → aggregates verdicts
    f. If failed + repair backend available:

@@ -2,7 +2,7 @@
 
 Demiurge is configured through YAML files in your repository root. The primary configuration file is `demiurge.yaml` (the manifest), with optional `requirements.yaml` and `selectors.yaml` files.
 
-Generate a starter manifest with `demiurge init-manifest`.
+Generate configuration files with `demiurge init` (deterministic scaffold) or `demiurge init --smart` (agentic generation via Claude Code CLI).
 
 ## Environment Variables
 
@@ -348,9 +348,20 @@ selectors:
 | `demiurge.yaml` | Repo root | Main manifest |
 | `requirements.yaml` | Repo root | Verification requirements |
 | `selectors.yaml` | Repo root | Browser selectors |
+| `.demiurge/inferred/demiurge.yaml` | Repo root | Cached inferred config (auto-created by ConfigResolver) |
 | `.demiurge/demiurge.db` | Repo root | SQLite database (auto-created) |
 | `.demiurge/artifacts/<runId>/` | Repo root | Run artifacts (auto-created) |
 | `.demiurge/run.lock` | Repo root | Active run lock file (auto-created) |
+
+## Config Resolution Order
+
+When Demiurge runs, `ConfigResolver` loads configuration using a layered approach:
+
+1. **Explicit YAML** — `demiurge.yaml` in the repo root (highest priority)
+2. **Cached Inference** — `.demiurge/inferred/demiurge.yaml` (previously generated config)
+3. **Error** — if neither is found, Demiurge exits with an error directing the user to run `demiurge init --smart`
+
+Runtime heuristic inference has been removed. All configuration must come from explicit YAML files. Use `demiurge init --smart` to generate these files for a new project.
 
 ## Example: Simple Node.js API
 

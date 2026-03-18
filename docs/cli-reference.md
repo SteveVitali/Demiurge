@@ -204,20 +204,25 @@ Checks:
 
 Exit code 1 if any required check fails.
 
-### `init-manifest`
+### `init`
 
-Generate a starter `demiurge.yaml` manifest.
+Generate `demiurge.yaml` and `requirements.yaml` configuration files.
 
 ```
-demiurge init-manifest [flags]
+demiurge init [flags]
 ```
 
 | Flag | Required | Default | Description |
 |------|----------|---------|-------------|
 | `--output <path>` | No | `demiurge.yaml` | Output file path |
-| `--force` | No | `false` | Overwrite existing file |
+| `--force` | No | `false` | Overwrite existing files |
+| `--smart` | No | `false` | Use Claude Code CLI for agentic config generation |
 
-Performs deterministic repo inspection (no LLM) to detect app type (frontend, api, fullstack), package manager, and Docker Compose presence.
+**Without `--smart`:** Performs deterministic repo inspection (no LLM) to detect app type (frontend, api, fullstack), services, ports, database dependencies, and Docker Compose presence. Generates scaffold YAML files with TODO markers for manual refinement.
+
+**With `--smart`:** Launches an agentic session via the TypeScript worker and Claude Code CLI. The agent inspects the repository, understands its structure, and generates complete `demiurge.yaml` and `requirements.yaml` files tailored to the project. Requires `DEMIURGE_WORKER_PATH` environment variable or the Demiurge worker to be installed.
+
+If existing config is found (explicit or cached), the deterministic path loads and displays it instead of regenerating. Use `--force` to regenerate.
 
 ## Exit Codes
 
