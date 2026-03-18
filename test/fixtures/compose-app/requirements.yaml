@@ -1,0 +1,19 @@
+requirements:
+  - id: frontend-responds
+    type: http
+    description: Frontend serves content on port 3000
+    expected: http://localhost:3000/
+    timeout_ms: 10000
+    severity: required
+  - id: api-health
+    type: http
+    description: API health endpoint returns 200
+    expected: http://localhost:4000/health
+    timeout_ms: 10000
+    severity: required
+  - id: db-reachable
+    type: tcp
+    description: PostgreSQL database is reachable on port 5432
+    expected: localhost:5432
+    timeout_ms: 10000
+    severity: required

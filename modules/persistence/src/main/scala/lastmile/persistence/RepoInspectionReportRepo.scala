@@ -24,6 +24,12 @@ object RepoInspectionReportRepo {
     }
   }
 
+  def deleteByRunId(runId: String)(implicit conn: Connection): Unit = {
+    val ps = conn.prepareStatement("DELETE FROM repo_inspection_reports WHERE run_id = ?")
+    try { ps.setString(1, runId); ps.executeUpdate() }
+    finally { ps.close() }
+  }
+
   def getById(reportId: String)(implicit conn: Connection): Option[RepoInspectionReport] = {
     val ps = conn.prepareStatement("SELECT report_json FROM repo_inspection_reports WHERE report_id = ?")
     try {

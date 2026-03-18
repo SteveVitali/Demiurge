@@ -1,5 +1,6 @@
 package lastmile.cli.Commands
 
+import java.nio.file.{Files, Path}
 import java.sql.Connection
 import java.time.Instant
 
@@ -7,11 +8,12 @@ import lastmile.cli._
 import lastmile.cli.CommandParsers._
 import lastmile.model._
 import lastmile.persistence._
+import lastmile.orchestrator._
+import lastmile.api.EventStream
 
-// Phase 7: `lastmile resume` command — Spec §14.1
+// Phase 10: `lastmile resume` command — resumes interrupted runs via orchestrator
 object ResumeCommand {
 
-  // Resumable statuses: non-terminal, non-Created
   private val resumableStatuses: Set[RunStatus] = Set(
     RunStatus.Interrupted,
     RunStatus.ReadyToVerify,
@@ -34,17 +36,38 @@ object ResumeCommand {
           return ExitCodes.ResumeFailed
         }
 
-        // Mark run as resuming by transitioning back to its status
+        val worktreePath = run.worktreePath
+        if (!Files.exists(worktreePath)) {
+          System.err.println(OutputFormatter.formatError(
+            s"Worktree not found at ${worktreePath}. Cannot resume.", global.format))
+          return ExitCodes.ResumeFailed
+        }
+
+        // Reset status to Created so the orchestrator re-runs the full pipeline
+        TaskRunRepo.updateStatus(cmd.runId, RunStatus.Created)
         TaskRunRepo.setStartedAt(cmd.runId, Instant.now())
+        val resumedRun = run.copy(status = RunStatus.Created, startedAt = Some(Instant.now()))
 
         if (!global.quiet) {
           System.out.println(OutputFormatter.formatSuccess(
             s"Resuming run ${cmd.runId} from status ${run.status}", global.format))
         }
 
-        // Actual resume orchestration would be invoked here.
-        // For the CLI layer, we validate and signal readiness.
-        ExitCodes.Success
+        // Delegate to shared orchestration runner
+        val finalRun = try {
+          OrchestrationRunner.run(resumedRun, global, worktreePath, conn)
+        } catch {
+          case e: Exception =>
+            System.err.println(OutputFormatter.formatError(s"Resume failed: ${e.getMessage}", global.format))
+            try { TaskRunRepo.updateStatus(cmd.runId, RunStatus.Exhausted, endedAt = Some(Instant.now())) } catch { case _: Exception => }
+            return ExitCodes.Errored
+        }
+
+        if (!global.quiet) {
+          System.out.println(OutputFormatter.formatRun(finalRun, global.format))
+        }
+
+        ExitCodes.fromRunStatus(finalRun.status)
     }
   }
 }

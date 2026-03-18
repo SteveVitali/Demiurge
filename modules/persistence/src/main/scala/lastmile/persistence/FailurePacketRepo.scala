@@ -27,6 +27,12 @@ object FailurePacketRepo {
     }
   }
 
+  def deleteByRunId(runId: String)(implicit conn: Connection): Unit = {
+    val ps = conn.prepareStatement("DELETE FROM failure_packets WHERE run_id = ?")
+    try { ps.setString(1, runId); ps.executeUpdate() }
+    finally { ps.close() }
+  }
+
   def getById(failurePacketId: String)(implicit conn: Connection): Option[FailurePacket] = {
     val ps = conn.prepareStatement("SELECT packet_json FROM failure_packets WHERE failure_packet_id = ?")
     try {

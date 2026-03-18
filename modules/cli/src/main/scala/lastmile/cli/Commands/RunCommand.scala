@@ -1,16 +1,28 @@
 package lastmile.cli.Commands
 
-import java.nio.file.Files
+import java.nio.file.{Files, Path}
 import java.sql.Connection
 import java.time.Instant
 import java.util.UUID
+
+import io.circe.Json
+import io.circe.syntax._
 
 import lastmile.cli._
 import lastmile.cli.CommandParsers._
 import lastmile.model._
 import lastmile.persistence._
+import lastmile.orchestrator._
+import lastmile.api.LocalApiServer
+import lastmile.compiler.RequirementCompilerImpl
+import lastmile.requirements.{RequirementsParser, RequirementsFile}
+import lastmile.selectors.{SelectorsParser, SelectorsFile}
+import lastmile.repair.RepairBackend
+import lastmile.verification.{VerificationEngine, BrowserFlowVerifier, BrowserVerifierResult, VerifierOutcome}
+import lastmile.worker.{WorkerProcessManager, WorkerMessages}
 
-// Phase 7: `lastmile run` command — Spec §14.1
+// Phase 10: `lastmile run` command — fully wired to real implementations
+// Includes: browser worker spawning, artifact production, repair backend
 object RunCommand {
 
   def execute(cmd: RunCmd, global: GlobalOpts, conn: Connection): Int = {
@@ -28,10 +40,31 @@ object RunCommand {
     val budget = ExecutionBudgetDefaults.defaults
     val runMode = cmd.mode.flatMap(m => RunMode.values.find(_.toString.equalsIgnoreCase(m))).getOrElse(RunMode.Full)
 
-    val worktreePath = global.repo // simplified: use repo directly in CLI layer
-    val artifactRoot = global.repo.resolve(".lastmile").resolve("artifacts")
-    val lockFilePath = global.repo.resolve(".lastmile").resolve("run.lock")
+    val artifactRoot = global.repo.resolve(".lastmile").resolve("artifacts").resolve(runId)
     Files.createDirectories(artifactRoot)
+
+    // Create isolated git worktree (Spec §4.2)
+    val worktreePath = try {
+      WorktreeManager.create(global.repo, runId, cmd.gitRef.orElse(Some("HEAD")))
+    } catch {
+      case e: Exception =>
+        System.err.println(OutputFormatter.formatError(s"Failed to create worktree: ${e.getMessage}", global.format))
+        return ExitCodes.Errored
+    }
+
+    // Acquire run lock (Spec §4.3)
+    val lockFilePath = try {
+      LockManager.acquire(global.repo, runId, worktreePath)
+    } catch {
+      case e: IllegalStateException =>
+        System.err.println(OutputFormatter.formatError(e.getMessage, global.format))
+        WorktreeManager.remove(global.repo, runId)
+        return ExitCodes.ConcurrentRunConflict
+      case e: Exception =>
+        System.err.println(OutputFormatter.formatError(s"Failed to acquire lock: ${e.getMessage}", global.format))
+        WorktreeManager.remove(global.repo, runId)
+        return ExitCodes.Errored
+    }
 
     val run = TaskRun(
       runId = runId,
@@ -43,7 +76,7 @@ object RunCommand {
       status = RunStatus.Created,
       runMode = runMode,
       createdAt = Instant.now(),
-      startedAt = Some(Instant.now()),
+      startedAt = None,
       endedAt = None,
       maxAttempts = cmd.maxAttempts.getOrElse(budget.maxAttempts),
       attemptCount = 0,
@@ -58,15 +91,220 @@ object RunCommand {
 
     TaskRunRepo.insert(run)
 
-    // The actual orchestration is delegated to the orchestrator.
-    // In a full integration, RunOrchestrator.execute would be called here.
-    // For the CLI layer, we persist the run and return success.
-    // The local API (started alongside) allows monitoring.
-
     if (!global.quiet) {
       System.out.println(OutputFormatter.formatRun(run, global.format))
     }
 
-    ExitCodes.Success
+    // Start local API server (Spec §14.4)
+    val dbPath = global.repo.resolve(".lastmile").resolve("lastmile.db")
+    try {
+      lastmile.api.Routes.setRunStarter((task: String, apiConn: Connection) => {
+        try {
+          val apiRunId = UUID.randomUUID().toString
+          val apiRun = TaskRun(
+            runId = apiRunId, repoPath = global.repo, worktreePath = global.repo,
+            gitRef = None, taskText = task, changedFiles = None,
+            status = RunStatus.Created, runMode = RunMode.Full,
+            createdAt = Instant.now(), startedAt = None, endedAt = None,
+            maxAttempts = 5, attemptCount = 0, envBootAttempts = 0,
+            currentAttemptId = None, finalVerdict = None, finalSummary = None,
+            policySnapshotId = s"policy-$apiRunId",
+            lockFilePath = global.repo.resolve(".lastmile").resolve("run.lock"),
+            artifactRootPath = global.repo.resolve(".lastmile").resolve("artifacts").resolve(apiRunId),
+          )
+          TaskRunRepo.insert(apiRun)(apiConn)
+          Some(apiRunId)
+        } catch { case _: Exception => None }
+      })
+
+      LocalApiServer.start(
+        port = 19440,
+        dbPath = dbPath,
+        artifactRootResolver = rid => Some(global.repo.resolve(".lastmile").resolve("artifacts").resolve(rid)),
+      )
+      if (!global.quiet) {
+        System.out.println("Local API server started on http://127.0.0.1:19440")
+      }
+    } catch {
+      case e: Exception =>
+        if (!global.quiet) {
+          System.err.println(s"Warning: Could not start local API server: ${e.getMessage}")
+        }
+    }
+
+    // Delegate to shared orchestration runner (manages SSE, worker, artifacts, cleanup)
+    val finalRun = try {
+      OrchestrationRunner.run(run, global, worktreePath, conn)
+    } catch {
+      case e: Exception =>
+        System.err.println(OutputFormatter.formatError(s"Orchestration failed: ${e.getMessage}", global.format))
+        try { TaskRunRepo.updateStatus(runId, RunStatus.Exhausted, endedAt = Some(Instant.now())) } catch { case _: Exception => }
+        return ExitCodes.Errored
+    } finally {
+      LockManager.release(global.repo)
+      lastmile.api.Routes.clearRunStarter()
+    }
+
+    if (!global.quiet) {
+      System.out.println(OutputFormatter.formatRun(finalRun, global.format))
+    }
+
+    ExitCodes.fromRunStatus(finalRun.status)
   }
+
+  /** Build a RequirementCompiler from worktree YAML files, falling back to empty if not present. */
+  private[cli] def buildCompiler(worktreePath: Path): RequirementCompilerImpl = {
+    val reqsFile = worktreePath.resolve("requirements.yaml")
+    val selsFile = worktreePath.resolve("selectors.yaml")
+
+    val reqs = if (Files.exists(reqsFile)) {
+      RequirementsParser.parse(reqsFile).getOrElse(RequirementsFile(Nil))
+    } else RequirementsFile(Nil)
+
+    val sels = if (Files.exists(selsFile)) {
+      SelectorsParser.parse(selsFile).getOrElse(SelectorsFile(Nil))
+    } else SelectorsFile(Nil)
+
+    new RequirementCompilerImpl(reqs, sels)
+  }
+
+  /** Build repair backend if ANTHROPIC_API_KEY is set. */
+  private[cli] def buildRepairBackend(): Option[RepairBackend] = {
+    val apiKey = System.getenv("ANTHROPIC_API_KEY")
+    if (apiKey != null && apiKey.nonEmpty) {
+      try {
+        Some(new lastmile.repair.claude.ClaudeRepairBackend())
+      } catch {
+        case _: Exception => None
+      }
+    } else None
+  }
+
+  /**
+   * Build browser executor if a worker entry point exists.
+   * Returns (executor option, worker manager option for shutdown).
+   * Worker is spawned lazily — only initialized when browser verification is actually needed.
+   */
+  private[cli] def buildBrowserExecutor(
+    worktreePath: Path,
+    artifactRoot: Path,
+    runId: String,
+  ): (Option[VerificationEngine.BrowserVerifierExecutor], Option[WorkerProcessManager]) = {
+    // Look for worker entry point in standard locations
+    val workerLocations = List(
+      worktreePath.resolve("node_modules/.bin/lastmile-worker"),
+      worktreePath.resolve("worker/src/index.ts"),
+      worktreePath.resolve("worker/dist/index.js"),
+    )
+    val workerScript = workerLocations.find(Files.exists(_))
+
+    workerScript match {
+      case Some(script) =>
+        val wpm = new WorkerProcessManager(script)
+        val executor = new WorkerBrowserExecutor(wpm, artifactRoot.toString, worktreePath.toString, runId)
+        (Some(executor), Some(wpm))
+      case None =>
+        // No worker script found — browser verifiers will error gracefully
+        (None, None)
+    }
+  }
+
+}
+
+/**
+ * BrowserVerifierExecutor that wraps WorkerProcessManager.
+ * Spawns and initializes the worker on first use (lazy).
+ * Maps BrowserFlowVerifier fields to WorkerMessages params and back.
+ */
+class WorkerBrowserExecutor(
+  wpm: WorkerProcessManager,
+  artifactRoot: String,
+  worktreePath: String,
+  runId: String,
+) extends VerificationEngine.BrowserVerifierExecutor {
+
+  @volatile private var initialized = false
+
+  private def ensureInitialized(): Unit = {
+    if (!initialized) {
+      wpm.spawn()
+      wpm.initialize(artifactRoot, worktreePath, runId) match {
+        case Right(_) => initialized = true
+        case Left(err) => throw new RuntimeException(s"Worker init failed: $err")
+      }
+    }
+  }
+
+  override def execute(bv: BrowserFlowVerifier): BrowserVerifierResult = {
+    try {
+      ensureInitialized()
+
+      // Map BrowserAction/Assertion/ArtifactCapture to Json
+      val actionJsons = bv.actions.map(actionToJson)
+      val assertionJsons = bv.assertions.map(assertionToJson)
+      val artifactPlanJsons = bv.artifactPlan.map(captureToJson)
+
+      val params = WorkerMessages.executeBrowserFlowParams(
+        taskId = bv.id,
+        entryUrl = bv.entryUrl,
+        actions = actionJsons,
+        assertions = assertionJsons,
+        artifactPlan = artifactPlanJsons,
+        storageStatePath = bv.storageStatePath,
+        timeoutMs = Some(bv.timeout.toMillis.toInt),
+      )
+
+      wpm.executeBrowserFlow(params, bv.timeout.toMillis) match {
+        case Right(result) =>
+          val outcome = result.status match {
+            case "passed" => VerifierOutcome.Passed
+            case "failed" => VerifierOutcome.Failed(result.errorMessage.getOrElse("Browser flow failed"))
+            case "error"  => VerifierOutcome.Error(result.errorMessage.getOrElse("Browser flow error"))
+            case _        => VerifierOutcome.Error(s"Unknown status: ${result.status}")
+          }
+
+          val observations = result.observations.map { obs =>
+            Observation(
+              observationType = obs.observationType,
+              message = obs.message,
+              selector = obs.selector,
+              expected = obs.expected,
+              actual = obs.actual,
+              timestamp = try { Instant.parse(obs.timestamp) } catch { case _: Exception => Instant.now() },
+            )
+          }
+
+          val artifactRefs = result.artifacts.map(_.relativePath)
+
+          BrowserVerifierResult(outcome, observations, artifactRefs)
+
+        case Left(err) =>
+          BrowserVerifierResult(VerifierOutcome.Error(s"Worker error: $err"), Nil, Nil)
+      }
+    } catch {
+      case e: Exception =>
+        BrowserVerifierResult(VerifierOutcome.Error(s"Worker exception: ${e.getMessage}"), Nil, Nil)
+    }
+  }
+
+  private def actionToJson(a: BrowserAction): Json = Json.obj(
+    "actionType" -> Json.fromString(a.actionType),
+    "selector" -> a.selector.map(s => Json.fromString(s.value)).getOrElse(Json.Null),
+    "value" -> a.value.map(Json.fromString).getOrElse(Json.Null),
+    "url" -> a.url.map(Json.fromString).getOrElse(Json.Null),
+    "description" -> Json.fromString(a.description),
+  )
+
+  private def assertionToJson(a: Assertion): Json = Json.obj(
+    "assertionType" -> Json.fromString(a.assertionType),
+    "selector" -> a.selector.map(s => Json.fromString(s.value)).getOrElse(Json.Null),
+    "expected" -> a.expected.map(Json.fromString).getOrElse(Json.Null),
+    "description" -> Json.fromString(a.description),
+  )
+
+  private def captureToJson(c: ArtifactCapture): Json = Json.obj(
+    "artifactType" -> Json.fromString(c.artifactType.toString),
+    "trigger" -> Json.fromString(c.trigger),
+    "label" -> c.label.map(Json.fromString).getOrElse(Json.Null),
+  )
 }
