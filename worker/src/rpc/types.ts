@@ -35,9 +35,25 @@ export const ErrorCodes = {
   INTERNAL_ERROR: -32603,
   // Application-specific codes
   TASK_CANCELLED: -32000,
-  BROWSER_ERROR: -32001,
-  ARTIFACT_ERROR: -32002,
+  BROWSER_LAUNCH_FAILED: -32001,
+  INVALID_CONFIG: -32002,
   NOT_INITIALIZED: -32003,
+  // Spec §9.13: Full browser-specific error code catalog
+  NAVIGATION_FAILED: -32010,
+  SELECTOR_NOT_FOUND: -32011,
+  ACTION_TIMEOUT: -32012,
+  ASSERTION_FAILED: -32013,
+  BROWSER_CRASHED: -32014,
+  POLICY_VIOLATION: -32015,
+  STORAGE_STATE_INVALID: -32016,
+  // Spec §9.13: API request error codes
+  REQUEST_FAILED: -32020,
+  REQUEST_TIMEOUT: -32021,
+  // Spec §9.13: Auth error codes
+  AUTH_FAILED: -32030,
+  AUTH_TIMEOUT: -32031,
+  // Spec §9.13: Capture error codes
+  CAPTURE_FAILED: -32040,
 } as const;
 
 // Spec §10.2: Worker capability advertisement

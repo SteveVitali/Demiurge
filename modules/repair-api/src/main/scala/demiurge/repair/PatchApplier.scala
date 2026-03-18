@@ -29,8 +29,21 @@ object PatchApplier {
           // Empty oldContent means full file replacement
           Files.write(filePath, edit.newContent.getBytes("UTF-8"))
         } else if (!currentContent.contains(edit.oldContent)) {
-          return ApplyFailure(
-            s"Edit target not found in ${edit.relativePath}: oldContent not present in file")
+          // Try whitespace-normalized matching: strip trailing whitespace per line
+          val normalizedContent = normalizeWhitespace(currentContent)
+          val normalizedOld = normalizeWhitespace(edit.oldContent)
+          if (normalizedOld.nonEmpty && normalizedContent.contains(normalizedOld)) {
+            // Find the original substring that matches after normalization
+            val updatedContent = fuzzyReplace(currentContent, edit.oldContent, edit.newContent)
+            Files.write(filePath, updatedContent.getBytes("UTF-8"))
+          } else {
+            val preview = edit.oldContent.take(200).replace("\n", "\\n")
+            System.err.println(s"[PatchApplier] oldContent mismatch in ${edit.relativePath}")
+            System.err.println(s"[PatchApplier]   oldContent (first 200): $preview")
+            System.err.println(s"[PatchApplier]   file length: ${currentContent.length}, oldContent length: ${edit.oldContent.length}")
+            return ApplyFailure(
+              s"Edit target not found in ${edit.relativePath}: oldContent not present in file")
+          }
         } else {
           val updatedContent = currentContent.replace(edit.oldContent, edit.newContent)
           Files.write(filePath, updatedContent.getBytes("UTF-8"))
@@ -58,6 +71,43 @@ object PatchApplier {
       case e: Exception =>
         ApplyFailure(s"Failed to apply patch: ${e.getMessage}")
     }
+  }
+
+  /** Normalize whitespace: strip trailing whitespace per line and normalize line endings. */
+  private def normalizeWhitespace(s: String): String =
+    s.split("\n", -1).map(_.replaceAll("\\s+$", "")).mkString("\n")
+
+  /** Replace oldContent in source using whitespace-normalized matching. */
+  private def fuzzyReplace(source: String, oldContent: String, newContent: String): String = {
+    val normSource = normalizeWhitespace(source)
+    val normOld = normalizeWhitespace(oldContent)
+    val idx = normSource.indexOf(normOld)
+    if (idx < 0) return source
+
+    // Map normalized index back to original source position
+    // Walk both strings counting characters, skipping trailing whitespace differences
+    val sourceLines = source.split("\n", -1)
+    val normLines = normSource.split("\n", -1)
+
+    // Find the start line in normalized text
+    var charCount = 0
+    var startLine = 0
+    for (i <- normLines.indices if charCount <= idx) {
+      if (charCount + normLines(i).length >= idx) {
+        startLine = i
+      }
+      charCount += normLines(i).length + 1 // +1 for \n
+    }
+
+    // Count lines in normalized oldContent
+    val oldLines = normOld.split("\n", -1).length
+
+    // Replace those lines in the original source
+    val before = sourceLines.take(startLine).mkString("\n")
+    val after = sourceLines.drop(startLine + oldLines).mkString("\n")
+    val prefix = if (before.nonEmpty) before + "\n" else ""
+    val suffix = if (after.nonEmpty) "\n" + after else ""
+    prefix + newContent + suffix
   }
 
   private def stageChanges(worktreePath: Path, proposal: PatchProposal): Unit = {

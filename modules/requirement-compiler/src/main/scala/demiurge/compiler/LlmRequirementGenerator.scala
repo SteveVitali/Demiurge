@@ -2,6 +2,8 @@ package demiurge.compiler
 
 import java.time.{Duration, Instant}
 import java.util.UUID
+import scala.concurrent.Await
+import scala.concurrent.duration.{Duration => SDuration}
 
 import demiurge.model._
 import demiurge.inference.InferenceService
@@ -51,7 +53,7 @@ object LlmRequirementGenerator {
       metadata = Map("task" -> taskText),
     )
 
-    inferenceService.infer(request) match {
+    Await.result(inferenceService.infer(request), SDuration.Inf) match {
       case Right(response) =>
         parseRequirementGraph(runId, response, requestId)
           .getOrElse(buildFallbackGraph(runId, inspection, resolvedConfig, Some(requestId)))
@@ -86,12 +88,9 @@ object LlmRequirementGenerator {
         val apiSpec = if (r.probeType.toLowerCase == "http") {
           Some(ApiContractVerifierSpec(
             method = "GET",
-            urlTemplate = r.target,
-            headers = Map.empty,
-            bodyTemplate = None,
+            path = r.target,
+            requestBody = None,
             expectedStatus = 200,
-            responseAssertions = Nil,
-            artifactPlan = Nil,
           ))
         } else None
 
@@ -281,12 +280,9 @@ object LlmRequirementGenerator {
         val apiSpec = if (reqType == "http") {
           Some(ApiContractVerifierSpec(
             method = "GET",
-            urlTemplate = url.getOrElse("http://localhost:3000"),
-            headers = Map.empty,
-            bodyTemplate = None,
+            path = url.getOrElse("http://localhost:3000"),
+            requestBody = None,
             expectedStatus = expectedStatus,
-            responseAssertions = Nil,
-            artifactPlan = Nil,
           ))
         } else None
 

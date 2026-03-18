@@ -30,6 +30,11 @@ object ResumeManager {
       case Some(run) if run.status != RunStatus.Interrupted =>
         ResumeFailed(s"Run $runId is in status ${run.status}, not Interrupted. Cannot resume.")
       case Some(run) =>
+        // Spec §7.6: PRAGMA integrity_check on resume
+        if (!checkDatabaseIntegrity(conn)) {
+          return ResumeFailed("Database integrity check failed (PRAGMA integrity_check). Database may be corrupted.")
+        }
+
         // Check worktree exists
         val worktree = run.worktreePath
         if (!Files.isDirectory(worktree)) {
@@ -154,6 +159,26 @@ object ResumeManager {
 
     // Clean orphaned tmp files (Spec §7.5)
     cleanTmpFiles(worktree)
+  }
+
+  /** Spec §7.6: Run PRAGMA integrity_check on resume. Returns true if DB is healthy. */
+  private def checkDatabaseIntegrity(conn: Connection): Boolean = {
+    try {
+      val stmt = conn.createStatement()
+      try {
+        val rs = stmt.executeQuery("PRAGMA integrity_check")
+        if (rs.next()) {
+          val result = rs.getString(1)
+          result == "ok"
+        } else {
+          false
+        }
+      } finally {
+        stmt.close()
+      }
+    } catch {
+      case _: Exception => false
+    }
   }
 
   /** Spec §7.5: On startup, delete all files matching .tmp-* in artifact directories. */

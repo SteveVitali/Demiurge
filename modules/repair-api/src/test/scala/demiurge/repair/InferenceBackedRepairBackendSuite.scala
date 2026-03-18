@@ -114,6 +114,10 @@ class InferenceBackedRepairBackendSuite extends munit.FunSuite {
       lastContext = Some(context)
       s"Fix: ${packet.summary}"
     }
+
+    override def buildRepairRequestPrompt(request: RepairRequest): String = {
+      s"Fix: ${request.failurePacket.summary}"
+    }
   }
 
   private case class TestHarness(

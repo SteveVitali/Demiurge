@@ -2,6 +2,8 @@ package demiurge.analysis
 
 import java.time.Instant
 import java.util.UUID
+import scala.concurrent.Await
+import scala.concurrent.duration.Duration
 
 import demiurge.model._
 import demiurge.inference.InferenceService
@@ -83,7 +85,7 @@ Produce a JSON object with:
       metadata = Map("attemptNumber" -> attemptNumber.toString),
     )
 
-    svc.infer(request) match {
+    Await.result(svc.infer(request), Duration.Inf) match {
       case Right(response) =>
         // Parse the LLM response into a FailurePacket
         Some(buildPacketFromInference(runId, attemptNumber, failedVerdicts, graph, response, changedFiles))

@@ -29,7 +29,7 @@ export async function handleExecuteBrowserFlow(
 
   // Spec §10.3: strictly serial — one active task at a time
   if (state.activeTaskId) {
-    throw Object.assign(new Error(`Task already active: ${state.activeTaskId}`), { code: ErrorCodes.BROWSER_ERROR });
+    throw Object.assign(new Error(`Task already active: ${state.activeTaskId}`), { code: ErrorCodes.BROWSER_LAUNCH_FAILED });
   }
 
   state.activeTaskId = p.taskId;
@@ -40,6 +40,12 @@ export async function handleExecuteBrowserFlow(
   const consoleLogs: Array<{ type: string; text: string; timestamp: string }> = [];
   const networkRequests: Array<{ url: string; method: string; status?: number; resourceType: string }> = [];
   const timeoutMs = p.timeoutMs ?? 30000;
+
+  // Spec §9.9: Max 500 captured network requests per task
+  const MAX_NETWORK_REQUESTS = 500;
+  // Spec §9.10: Max 200 console entries, truncated to 4096 chars each
+  const MAX_CONSOLE_ENTRIES = 200;
+  const MAX_CONSOLE_CHAR_LENGTH = 4096;
 
   let context: BrowserContext | undefined;
   let page: Page | undefined;
@@ -53,28 +59,54 @@ export async function handleExecuteBrowserFlow(
     // Start tracing (Spec §12.3: BrowserTrace artifact)
     await context.tracing.start({ screenshots: true, snapshots: true });
 
-    // Capture console logs
+    // Spec §9.10: Capture console logs with limits
     page.on('console', (msg) => {
-      consoleLogs.push({
-        type: msg.type(),
-        text: msg.text(),
-        timestamp: new Date().toISOString(),
-      });
+      const text = msg.text().substring(0, MAX_CONSOLE_CHAR_LENGTH);
+      if (consoleLogs.length < MAX_CONSOLE_ENTRIES) {
+        consoleLogs.push({
+          type: msg.type(),
+          text,
+          timestamp: new Date().toISOString(),
+        });
+      } else if (msg.type() === 'error') {
+        // Spec §9.10: Beyond limit, only error-level entries are kept
+        consoleLogs.push({
+          type: msg.type(),
+          text,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    });
+    page.on('pageerror', (error) => {
+      if (consoleLogs.length < MAX_CONSOLE_ENTRIES) {
+        consoleLogs.push({
+          type: 'pageerror',
+          text: error.message.substring(0, MAX_CONSOLE_CHAR_LENGTH),
+          timestamp: new Date().toISOString(),
+        });
+      }
     });
 
-    // Capture network requests
+    // Spec §9.9: Capture network requests with limit of 500
     page.on('response', (response) => {
-      networkRequests.push({
-        url: response.url(),
-        method: response.request().method(),
-        status: response.status(),
-        resourceType: response.request().resourceType(),
-      });
+      if (networkRequests.length < MAX_NETWORK_REQUESTS) {
+        networkRequests.push({
+          url: response.url(),
+          method: response.request().method(),
+          status: response.status(),
+          resourceType: response.request().resourceType(),
+        });
+      }
     });
 
     // Navigate to entry URL
     rpcServer.sendNotification('progress', { taskId: p.taskId, step: 'navigate', message: `Navigating to ${p.entryUrl}` });
-    await page.goto(p.entryUrl, { timeout: timeoutMs, waitUntil: 'domcontentloaded' });
+    try {
+      await page.goto(p.entryUrl, { timeout: timeoutMs, waitUntil: 'domcontentloaded' });
+    } catch (navErr: any) {
+      // Spec §9.13: Use NAVIGATION_FAILED error code
+      throw Object.assign(new Error(`Navigation failed: ${navErr.message}`), { code: ErrorCodes.NAVIGATION_FAILED });
+    }
 
     if (state.cancelled) {
       return makeResult('error', observations, artifacts, 'Task cancelled', startTime);
@@ -194,63 +226,77 @@ export async function handleExecuteBrowserFlow(
 async function executeAction(page: Page, action: BrowserActionSpec, defaultTimeout: number): Promise<void> {
   const timeout = action.timeoutMs ?? defaultTimeout;
 
-  switch (action.actionType) {
-    case 'navigate':
-      if (action.url) {
-        await page.goto(action.url, { timeout, waitUntil: 'domcontentloaded' });
-      }
-      break;
-    case 'click':
-      if (action.selector) {
-        const locator = resolveSelector(page, action.selector);
-        await locator.click({ timeout });
-      }
-      break;
-    case 'fill':
-      if (action.selector && action.value !== undefined) {
-        const locator = resolveSelector(page, action.selector);
-        await locator.fill(action.value, { timeout });
-      }
-      break;
-    case 'type':
-      if (action.selector && action.value !== undefined) {
-        const locator = resolveSelector(page, action.selector);
-        await locator.pressSequentially(action.value, { timeout });
-      }
-      break;
-    case 'press':
-      if (action.selector && action.value) {
-        const locator = resolveSelector(page, action.selector);
-        await locator.press(action.value, { timeout });
-      } else if (action.value) {
-        await page.keyboard.press(action.value);
-      }
-      break;
-    case 'select':
-      if (action.selector && action.value) {
-        const locator = resolveSelector(page, action.selector);
-        await locator.selectOption(action.value, { timeout });
-      }
-      break;
-    case 'wait':
-      if (action.selector) {
-        const locator = resolveSelector(page, action.selector);
-        await locator.waitFor({ state: 'visible', timeout });
-      } else if (action.timeoutMs) {
-        await page.waitForTimeout(action.timeoutMs);
-      }
-      break;
-    case 'waitForNavigation':
-      await page.waitForLoadState('domcontentloaded', { timeout });
-      break;
-    case 'scroll':
-      if (action.selector) {
-        const locator = resolveSelector(page, action.selector);
-        await locator.scrollIntoViewIfNeeded({ timeout });
-      }
-      break;
-    default:
-      process.stderr.write(`[worker] Unknown action type: ${action.actionType}\n`);
+  try {
+    switch (action.actionType) {
+      case 'navigate':
+        if (action.url) {
+          try {
+            await page.goto(action.url, { timeout, waitUntil: 'domcontentloaded' });
+          } catch (navErr: any) {
+            throw Object.assign(new Error(`Navigation failed: ${navErr.message}`), { code: ErrorCodes.NAVIGATION_FAILED });
+          }
+        }
+        break;
+      case 'click':
+        if (action.selector) {
+          const locator = resolveSelector(page, action.selector);
+          await locator.click({ timeout });
+        }
+        break;
+      case 'fill':
+        if (action.selector && action.value !== undefined) {
+          const locator = resolveSelector(page, action.selector);
+          await locator.fill(action.value, { timeout });
+        }
+        break;
+      case 'type':
+        if (action.selector && action.value !== undefined) {
+          const locator = resolveSelector(page, action.selector);
+          await locator.pressSequentially(action.value, { timeout });
+        }
+        break;
+      case 'press':
+        if (action.selector && action.value) {
+          const locator = resolveSelector(page, action.selector);
+          await locator.press(action.value, { timeout });
+        } else if (action.value) {
+          await page.keyboard.press(action.value);
+        }
+        break;
+      case 'select':
+        if (action.selector && action.value) {
+          const locator = resolveSelector(page, action.selector);
+          await locator.selectOption(action.value, { timeout });
+        }
+        break;
+      case 'wait':
+        if (action.selector) {
+          const locator = resolveSelector(page, action.selector);
+          await locator.waitFor({ state: 'visible', timeout });
+        } else if (action.timeoutMs) {
+          await page.waitForTimeout(action.timeoutMs);
+        }
+        break;
+      case 'waitForNavigation':
+        await page.waitForLoadState('domcontentloaded', { timeout });
+        break;
+      case 'scroll':
+        if (action.selector) {
+          const locator = resolveSelector(page, action.selector);
+          await locator.scrollIntoViewIfNeeded({ timeout });
+        }
+        break;
+      default:
+        process.stderr.write(`[worker] Unknown action type: ${action.actionType}\n`);
+    }
+  } catch (err: any) {
+    // Spec §9.13: Map Playwright selector errors to SELECTOR_NOT_FOUND
+    if (err.code) throw err; // Already has a specific code
+    const msg = err.message ?? String(err);
+    if (msg.includes('waiting for locator') || msg.includes('locator resolved to') || msg.includes('strict mode violation')) {
+      throw Object.assign(new Error(`Selector not found: ${action.selector?.value ?? 'unknown'} — ${msg}`), { code: ErrorCodes.SELECTOR_NOT_FOUND });
+    }
+    throw err;
   }
 }
 
@@ -326,6 +372,10 @@ async function checkAssertion(page: Page, assertion: AssertionSpec): Promise<Obs
     }
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : String(err);
+    // Spec §9.13: Map assertion errors to observation results for structured handling
+    if (errorMessage.includes('waiting for locator') || errorMessage.includes('locator resolved to')) {
+      return { observationType: 'assertion_error', message: `Selector not found in assertion: ${assertion.description}: ${errorMessage}`, timestamp };
+    }
     return { observationType: 'assertion_error', message: `${assertion.description}: ${errorMessage}`, timestamp };
   }
 }

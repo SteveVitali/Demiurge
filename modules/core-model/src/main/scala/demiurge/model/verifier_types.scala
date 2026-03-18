@@ -72,38 +72,45 @@ case class ArtifactCapture(
 // Spec §3.2: ApiContractVerifierSpec
 case class ApiContractVerifierSpec(
   method:             String,
-  urlTemplate:        String,
-  headers:            Map[String, String],
-  bodyTemplate:       Option[String],
+  path:               String,
+  serviceId:          Option[String] = None,
+  authMode:           Option[AuthMode] = None,
+  headers:            Map[String, String] = Map.empty,
+  queryParams:        Map[String, String] = Map.empty,
+  requestBody:        Option[String] = None,
   expectedStatus:     Int,
-  responseAssertions: List[Assertion],
-  artifactPlan:       List[ArtifactCapture],
+  expectedHeaders:    Map[String, String] = Map.empty,
+  responseAssertions: List[Assertion] = Nil,
+  sideEffectChecks:   List[StateAssertionVerifierSpec] = Nil,
+  artifactPlan:       List[ArtifactCapture] = Nil,
 )
 
 // Spec §3.2: StateAssertionVerifierSpec
 case class StateAssertionVerifierSpec(
-  queryType:          String,
-  connectionRef:      String,
+  source:             String,
+  serviceId:          Option[String] = None,
   query:              String,
-  assertions:         List[Assertion],
-  setupCommands:      List[String],
-  teardownCommands:   List[String],
+  bindVariables:      Map[String, String] = Map.empty,
+  assertions:         List[Assertion] = Nil,
+  readOnly:           Boolean = true,
 )
 
 // Spec §3.2: EnvReadinessVerifierSpec
 case class EnvReadinessVerifierSpec(
   serviceId:          String,
-  probeOverride:      Option[ReadinessProbe],
-  requiredLogPatterns: List[String],
+  checkType:          String = "http_status",
+  target:             Option[String] = None,
+  expectedValue:      Option[String] = None,
+  probeOverride:      Option[ReadinessProbe] = None,
+  requiredLogPatterns: List[String] = Nil,
 )
 
 // Spec §3.2: ConsoleLogVerifierSpec
 case class ConsoleLogVerifierSpec(
-  targetUrl:          String,
-  forbiddenPatterns:  List[String],
-  allowedPatterns:    List[String],
-  maxErrors:          Int,
-  captureLevel:       String,
+  url:                String,
+  forbiddenPatterns:  List[String] = Nil,
+  requiredPatterns:   List[String] = Nil,
+  severityThreshold:  String = "error",
 )
 
 // Spec §3.2: NetworkExpectationVerifierSpec

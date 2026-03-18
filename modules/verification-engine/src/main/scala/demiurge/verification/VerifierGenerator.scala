@@ -23,7 +23,7 @@ object VerifierGenerator {
           id = spec.verifierId,
           requirementId = spec.requirementId,
           method = api.method,
-          url = api.urlTemplate,
+          url = api.path,
           headers = api.headers,
           expectedStatus = api.expectedStatus,
           timeout = spec.timeout,
@@ -42,12 +42,12 @@ object VerifierGenerator {
 
       case VerifierType.ConsoleLogSanity =>
         val log = spec.consoleLogSpec.getOrElse(
-          ConsoleLogVerifierSpec(targetUrl = "", forbiddenPatterns = Nil, allowedPatterns = Nil, maxErrors = 0, captureLevel = "error")
+          ConsoleLogVerifierSpec(url = "")
         )
         LogContainsVerifier(
           id = spec.verifierId,
           requirementId = spec.requirementId,
-          logPath = log.targetUrl,
+          logPath = log.url,
           pattern = log.forbiddenPatterns.headOption.getOrElse(""),
           forbidden = true,
           timeout = spec.timeout,

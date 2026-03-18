@@ -26,7 +26,7 @@ export async function handleExecuteApiRequest(
   }
 
   if (state.activeTaskId) {
-    throw Object.assign(new Error(`Task already active: ${state.activeTaskId}`), { code: ErrorCodes.BROWSER_ERROR });
+    throw Object.assign(new Error(`Task already active: ${state.activeTaskId}`), { code: ErrorCodes.INTERNAL_ERROR });
   }
 
   state.activeTaskId = p.taskId;
@@ -97,7 +97,7 @@ export async function handleExecuteApiRequest(
     };
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : String(err);
-    throw Object.assign(new Error(`API request failed: ${errorMessage}`), { code: ErrorCodes.BROWSER_ERROR });
+    throw Object.assign(new Error(`API request failed: ${errorMessage}`), { code: ErrorCodes.REQUEST_FAILED });
   } finally {
     state.activeTaskId = null;
   }

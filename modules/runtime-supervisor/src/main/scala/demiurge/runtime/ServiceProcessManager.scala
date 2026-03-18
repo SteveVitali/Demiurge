@@ -44,11 +44,8 @@ object ServiceProcessManager {
       pb.directory(cwd.toFile)
       pb.redirectErrorStream(true)
 
-      // Apply env vars
+      // Load env file first (base layer), then apply demiurge.yaml env vars (override layer)
       val env = pb.environment()
-      spec.env.foreach { case (k, v) => env.put(k, v) }
-
-      // Load env file if specified
       spec.envFile.foreach { envFilePath =>
         val envFile = cwd.resolve(envFilePath)
         if (Files.exists(envFile)) {
@@ -63,6 +60,8 @@ object ServiceProcessManager {
           }
         }
       }
+      // demiurge.yaml env vars override .env file values
+      spec.env.foreach { case (k, v) => env.put(k, v) }
 
       val process = pb.start()
       val logLines = scala.collection.mutable.ListBuffer[String]()
@@ -212,14 +211,32 @@ object ServiceProcessManager {
     }
   }
 
-  /** Stop a script-native service. */
+  /** Stop a script-native service. Kills the full process tree (not just the shell). */
   def stopScript(serviceId: String, shutdownTimeoutMs: Int, pidDir: Path): Unit = {
     Option(services.remove(serviceId)).foreach { managed =>
       managed.process.foreach { proc =>
         if (proc.isAlive) {
+          // Kill the entire process tree — proc.destroy() only kills the shell,
+          // leaving child processes (e.g. node) holding the port.
+          managed.pid.foreach { pid =>
+            try {
+              // pkill -P sends signal to all children of the given PID
+              new ProcessBuilder("pkill", "-TERM", "-P", pid.toString)
+                .redirectErrorStream(true).start().waitFor(5000, java.util.concurrent.TimeUnit.MILLISECONDS)
+            } catch { case _: Exception => }
+          }
           proc.destroy()
           val stopped = proc.waitFor(shutdownTimeoutMs.toLong, java.util.concurrent.TimeUnit.MILLISECONDS)
-          if (!stopped) proc.destroyForcibly()
+          if (!stopped) {
+            // Force kill the process tree
+            managed.pid.foreach { pid =>
+              try {
+                new ProcessBuilder("pkill", "-KILL", "-P", pid.toString)
+                  .redirectErrorStream(true).start().waitFor(3000, java.util.concurrent.TimeUnit.MILLISECONDS)
+              } catch { case _: Exception => }
+            }
+            proc.destroyForcibly()
+          }
         }
       }
       // Remove PID file

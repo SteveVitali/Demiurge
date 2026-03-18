@@ -60,12 +60,8 @@ class BuildModeOrchestratorSuite extends FunSuite with TestFixtures {
         browserFlowSpec = None,
         apiContractSpec = Some(ApiContractVerifierSpec(
           method = "GET",
-          urlTemplate = url,
-          headers = Map.empty,
-          bodyTemplate = None,
+          path = url,
           expectedStatus = 200,
-          responseAssertions = Nil,
-          artifactPlan = Nil,
         )),
         stateAssertionSpec = None,
         envReadinessSpec = None,

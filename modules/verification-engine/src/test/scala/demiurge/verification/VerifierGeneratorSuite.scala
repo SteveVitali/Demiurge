@@ -63,12 +63,10 @@ class VerifierGeneratorSuite extends FunSuite {
   test("generates HttpVerifier from HttpApiContract spec") {
     val apiSpec = ApiContractVerifierSpec(
       method = "GET",
-      urlTemplate = "http://localhost:3000/health",
+      path = "http://localhost:3000/health",
       headers = Map("Accept" -> "application/json"),
-      bodyTemplate = None,
+      requestBody = None,
       expectedStatus = 200,
-      responseAssertions = Nil,
-      artifactPlan = Nil,
     )
     val graph = makeGraph(List(makeNode("req-1", VerifierType.HttpApiContract, apiSpec = Some(apiSpec))))
     val verifiers = VerifierGenerator.generate(graph)
@@ -99,11 +97,8 @@ class VerifierGeneratorSuite extends FunSuite {
 
   test("generates LogContainsVerifier from ConsoleLogSanity spec") {
     val logSpec = ConsoleLogVerifierSpec(
-      targetUrl = "/tmp/test.log",
+      url = "/tmp/test.log",
       forbiddenPatterns = List("ERROR"),
-      allowedPatterns = Nil,
-      maxErrors = 0,
-      captureLevel = "error",
     )
     val graph = makeGraph(List(makeNode("req-1", VerifierType.ConsoleLogSanity, logSpec = Some(logSpec))))
     val verifiers = VerifierGenerator.generate(graph)
@@ -191,7 +186,7 @@ class VerifierGeneratorSuite extends FunSuite {
   }
 
   test("deterministic generation - same input produces same output") {
-    val apiSpec = ApiContractVerifierSpec("GET", "http://localhost:3000", Map.empty, None, 200, Nil, Nil)
+    val apiSpec = ApiContractVerifierSpec(method = "GET", path = "http://localhost:3000", expectedStatus = 200)
     val graph = makeGraph(List(
       makeNode("req-1", VerifierType.HttpApiContract, apiSpec = Some(apiSpec)),
       makeNode("req-2", VerifierType.StateAssertion),
@@ -214,7 +209,7 @@ class VerifierGeneratorSuite extends FunSuite {
   }
 
   test("generates one verifier per spec") {
-    val apiSpec = ApiContractVerifierSpec("GET", "http://localhost:3000", Map.empty, None, 200, Nil, Nil)
+    val apiSpec = ApiContractVerifierSpec(method = "GET", path = "http://localhost:3000", expectedStatus = 200)
     val graph = makeGraph(List(
       makeNode("req-1", VerifierType.HttpApiContract, apiSpec = Some(apiSpec)),
       makeNode("req-2", VerifierType.StateAssertion),
