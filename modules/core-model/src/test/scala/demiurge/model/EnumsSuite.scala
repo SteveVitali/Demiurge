@@ -21,7 +21,7 @@ class EnumsSuite extends FunSuite {
     roundTrip[RunStatus](RunStatus.Verifying, "\"Verifying\"")
     roundTrip[RunStatus](RunStatus.Succeeded, "\"Succeeded\"")
     roundTrip[RunStatus](RunStatus.Interrupted, "\"Interrupted\"")
-    assertEquals(RunStatus.values.size, 21)
+    assertEquals(RunStatus.values.size, 23)
   }
 
   // Spec §3.1: AttemptStatus — 10 values
@@ -125,7 +125,7 @@ class EnumsSuite extends FunSuite {
     roundTrip[RunMode](RunMode.Full, "\"Full\"")
     roundTrip[RunMode](RunMode.PlanOnly, "\"PlanOnly\"")
     roundTrip[RunMode](RunMode.RepairOnly, "\"RepairOnly\"")
-    assertEquals(RunMode.values.size, 4)
+    assertEquals(RunMode.values.size, 5)
   }
 
   // Spec §3.1: ResetStrategy — 3 values

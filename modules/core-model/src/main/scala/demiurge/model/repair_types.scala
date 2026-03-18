@@ -24,6 +24,7 @@ case class RepairSessionHandle(
 )
 
 // Spec §3.2: RepairRequest
+// Phase B: Extended with generationMode and featureSpec for Build mode.
 case class RepairRequest(
   taskObjective:      String,
   repoSummary:        String,
@@ -34,6 +35,9 @@ case class RepairRequest(
   rulesOfEngagement:  String,
   outputContract:     RepairOutputContract,
   priorAttemptSummaries: List[PriorAttemptSummary],
+  generationMode:     GenerationMode = GenerationMode.Repair,
+  featureSpec:        Option[String] = None,
+  featurePlan:        Option[FeaturePlan] = None,
 )
 
 // Spec §3.2: RequirementSummary

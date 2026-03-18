@@ -444,6 +444,23 @@ object JsonCodecs {
   implicit val priorAttemptSummaryEncoder: Encoder[PriorAttemptSummary] = deriveEncoder
   implicit val priorAttemptSummaryDecoder: Decoder[PriorAttemptSummary] = deriveDecoder
 
+  // GenerationMode
+  implicit val generationModeEncoder: Encoder[GenerationMode] = simpleEnumEncoder(_.toString)
+  implicit val generationModeDecoder: Decoder[GenerationMode] = simpleEnumDecoder(s =>
+    GenerationMode.values.find(_.toString == s), "GenerationMode")
+
+  // PlannedFile
+  implicit val plannedFileEncoder: Encoder[PlannedFile] = deriveEncoder
+  implicit val plannedFileDecoder: Decoder[PlannedFile] = deriveDecoder
+
+  // PlannedModification
+  implicit val plannedModificationEncoder: Encoder[PlannedModification] = deriveEncoder
+  implicit val plannedModificationDecoder: Decoder[PlannedModification] = deriveDecoder
+
+  // FeaturePlan
+  implicit val featurePlanEncoder: Encoder[FeaturePlan] = deriveEncoder
+  implicit val featurePlanDecoder: Decoder[FeaturePlan] = deriveDecoder
+
   // RepairRequest
   implicit val repairRequestEncoder: Encoder[RepairRequest] = deriveEncoder
   implicit val repairRequestDecoder: Decoder[RepairRequest] = deriveDecoder
