@@ -137,6 +137,7 @@ object CommandParsers {
       case "cancel"           => parseCancelCmd(args, global)
       case "clean"            => parseCleanCmd(args, global)
       case "doctor"           => Right(ParseResult(global, DoctorCmd()))
+      case "init"             => parseInitManifestCmd(args, global)
       case "init-manifest"    => parseInitManifestCmd(args, global)
       case other              => Left(s"Unknown command: $other")
     }

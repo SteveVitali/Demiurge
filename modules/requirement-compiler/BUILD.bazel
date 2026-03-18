@@ -8,6 +8,7 @@ scala_library(
         "//modules/core-model",
         "//modules/requirements",
         "//modules/selectors",
+        "//modules/inference",
     ],
 )
 
@@ -20,6 +21,7 @@ scala_junit_test(
         "//modules/core-model",
         "//modules/requirements",
         "//modules/selectors",
+        "//modules/inference",
         "@maven//:org_scalameta_munit_2_13",
         "@maven//:org_scalameta_munit_diff_2_13",
     ],

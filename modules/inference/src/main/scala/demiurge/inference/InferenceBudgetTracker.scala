@@ -15,6 +15,7 @@ object InferenceBudgetTracker {
 
   val defaultBudgets: Map[String, ComponentBudget] = Map(
     "requirement_compiler"    -> ComponentBudget(100000L, 5),
+    "requirement_generator"   -> ComponentBudget(100000L, 5),
     "verifier_generator"      -> ComponentBudget(200000L, 20),
     "failure_analyzer"        -> ComponentBudget(100000L, 5, perAttempt = true),
     "impact_analysis"         -> ComponentBudget(50000L, 3),
@@ -24,6 +25,7 @@ object InferenceBudgetTracker {
   // Spec §5.2: Only these components may call inference
   val allowedCallers: Set[String] = Set(
     "requirement_compiler",
+    "requirement_generator",
     "verifier_generator",
     "failure_analyzer",
     "impact_analysis",
