@@ -41,6 +41,7 @@ object CliApp {
 
   private def dispatch(cmd: ParsedCommand, global: GlobalOpts, conn: Connection): Int = cmd match {
     case c: RunCmd            => RunCommand.execute(c, global, conn)
+    case c: BuildCmd          => BuildCommand.execute(c, global, conn)
     case c: PlanCmd           => PlanCommand.execute(c, global, conn)
     case c: ResumeCmd         => ResumeCommand.execute(c, global, conn)
     case c: StatusCmd         => StatusCommand.execute(c, global, conn)
@@ -69,6 +70,7 @@ object CliApp {
         |
         |Commands:
         |  run                 Execute a full verification run
+        |  build               Build a new feature (generate + verify + repair)
         |  plan                Plan without executing
         |  resume              Resume an interrupted run
         |  status              Show run status
@@ -78,7 +80,7 @@ object CliApp {
         |  cancel              Cancel an active run
         |  clean               Clean up old runs and artifacts
         |  doctor              Check system prerequisites
-        |  init-manifest       Generate a demiurge.yaml manifest
+        |  init                Generate demiurge.yaml from repo analysis
         |
         |Run 'demiurge <command> --help' for command-specific help.
       """.stripMargin)
