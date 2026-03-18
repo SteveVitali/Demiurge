@@ -23,7 +23,11 @@ class WorkerProcessManager(
   def spawn(): Unit = {
     if (alive && !hasCrashed) return
 
-    val cmd = command.getOrElse(List("node", workerScript.toAbsolutePath.toString))
+    val scriptPath = workerScript.toAbsolutePath.toString
+    val cmd = command.getOrElse(
+      if (scriptPath.endsWith(".ts")) List("npx", "tsx", scriptPath)
+      else List("node", scriptPath)
+    )
     val pb = new ProcessBuilder(cmd: _*)
     pb.redirectErrorStream(false)
     process = pb.start()
