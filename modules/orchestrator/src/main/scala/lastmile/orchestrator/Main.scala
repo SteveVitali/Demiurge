@@ -87,6 +87,7 @@ object Main {
         StubRepoInspector,
         StubRequirementCompiler,
         StubEnvironmentPlanner,
+        StubRuntimeSupervisor,
       )
 
       println(s"Run completed: status=${finalRun.status}, summary=${finalRun.finalSummary.getOrElse("none")}")

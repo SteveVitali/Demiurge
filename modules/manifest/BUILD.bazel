@@ -1,9 +1,25 @@
-load("@rules_scala//scala:scala.bzl", "scala_library")
+load("@rules_scala//scala:scala.bzl", "scala_junit_test", "scala_library")
 
-# Phase 2+: Manifest parsing module
+# Phase 3: Manifest parsing module — lastmile.yaml
 scala_library(
     name = "manifest",
     srcs = glob(["src/main/scala/**/*.scala"], allow_empty = True),
     visibility = ["//visibility:public"],
-    deps = ["//modules/core-model"],
+    deps = [
+        "//modules/core-model",
+        "@maven//:org_yaml_snakeyaml",
+    ],
+)
+
+scala_junit_test(
+    name = "manifest-tests",
+    srcs = glob(["src/test/scala/**/*.scala"], allow_empty = True),
+    suffixes = ["Suite"],
+    deps = [
+        ":manifest",
+        "//modules/core-model",
+        "@maven//:org_yaml_snakeyaml",
+        "@maven//:org_scalameta_munit_2_13",
+        "@maven//:org_scalameta_munit_diff_2_13",
+    ],
 )

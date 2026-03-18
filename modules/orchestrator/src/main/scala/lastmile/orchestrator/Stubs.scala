@@ -7,11 +7,11 @@ import lastmile.model._
 import lastmile.inspector.RepoInspector
 import lastmile.compiler.RequirementCompiler
 import lastmile.planner.EnvironmentPlanner
+import lastmile.runtime.RuntimeSupervisor
 
-// Spec §5/§6/§8: Stub implementations for Phase 2.
+// Spec §5/§6/§8: Stub implementations for Phase 2/3.
 // These return deterministic trivial results sufficient for the orchestrator
-// to progress through Created → InspectingRepo → CompilingRequirements →
-// PlanningEnvironment → Exhausted.
+// to progress through the full state machine path.
 // All timestamps use a fixed epoch to guarantee determinism.
 
 object StubRepoInspector extends RepoInspector {
@@ -71,5 +71,25 @@ object StubEnvironmentPlanner extends EnvironmentPlanner {
       generatedAt = Instant.EPOCH,
       warnings = List("Stub plan — no real environment planning performed"),
     )
+  }
+}
+
+object StubRuntimeSupervisor extends RuntimeSupervisor {
+  override def bootEnvironment(plan: RuntimePlan, repoRoot: Path): RuntimeSupervisor.BootResult = {
+    val snapshot = RuntimeSnapshot(
+      snapshotId = s"stub-snapshot-${plan.runId}",
+      runId = plan.runId,
+      capturedAt = Instant.EPOCH,
+      environmentStatus = EnvironmentStatus.Ready,
+      services = Nil,
+      activePortMappings = Map.empty,
+      resolvedUrls = Map.empty,
+      uptimeMs = 0L,
+    )
+    RuntimeSupervisor.BootSuccess(snapshot)
+  }
+
+  override def teardown(plan: RuntimePlan, repoRoot: Path): Unit = {
+    // Stub: nothing to tear down
   }
 }
