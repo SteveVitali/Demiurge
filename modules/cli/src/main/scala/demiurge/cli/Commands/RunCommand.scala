@@ -43,9 +43,10 @@ object RunCommand {
     val artifactRoot = global.repo.resolve(".demiurge").resolve("artifacts").resolve(runId)
     Files.createDirectories(artifactRoot)
 
-    // Create isolated git worktree (Spec §4.2)
+    // Create isolated git worktree (Spec §4.2, Design §12.3)
+    val agentMode = Option(System.getenv("DEMIURGE_AGENT_BACKEND")).exists(_.nonEmpty)
     val worktreePath = try {
-      WorktreeManager.create(global.repo, runId, cmd.gitRef.orElse(Some("HEAD")))
+      WorktreeManager.create(global.repo, runId, cmd.gitRef.orElse(Some("HEAD")), agentMode = agentMode)
     } catch {
       case e: Exception =>
         System.err.println(OutputFormatter.formatError(s"Failed to create worktree: ${e.getMessage}", global.format))

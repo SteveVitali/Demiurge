@@ -10,6 +10,7 @@ import demiurge.model._
 import demiurge.persistence._
 import demiurge.repair._
 import demiurge.inference.InferenceService
+import demiurge.agent.{AgentBackend, AgentConfig, AgentResult, AgentCompleted, AgentFailed, AgentTimeout, AgentBudgetExceeded}
 
 // Phase B+E: BuildPhaseManager handles the PlanningFeature → GeneratingCode states
 // in Build mode. Uses the RepairBackend for initial code generation (same interface,
@@ -292,5 +293,38 @@ object BuildPhaseManager {
     )
 
     RepairExecutor.executeRepair(backend, ctx.worktreePath, buildInput, repairContext)
+  }
+
+  /**
+   * Design §8.2: Generate initial code via the agent backend.
+   * The agent reads the codebase, creates files, installs deps, and self-verifies.
+   * Returns an AgentResult instead of RepairOutcome.
+   */
+  def generateCodeWithAgent(
+    ctx: RunContext,
+    agentBackend: AgentBackend,
+    agentConfig: AgentConfig,
+    taskText: String,
+    featurePlan: FeaturePlan,
+    inspection: RepoInspectionReport,
+    graph: RequirementGraph,
+    runtimePlan: Option[RuntimePlan],
+  ): AgentResult = {
+    val repairContext = RepairContext(
+      runId = ctx.run.runId,
+      attemptNumber = 0,
+      taskText = taskText,
+      worktreePath = ctx.worktreePath,
+      graph = graph,
+      verdicts = Nil,
+      inspectionReport = Some(inspection),
+      runtimePlan = runtimePlan,
+      patchHistory = Nil,
+      generationMode = GenerationMode.InitialBuild,
+      featureSpec = Some(taskText),
+      featurePlan = Some(featurePlan),
+    )
+
+    agentBackend.executeBuild(repairContext, agentConfig)
   }
 }

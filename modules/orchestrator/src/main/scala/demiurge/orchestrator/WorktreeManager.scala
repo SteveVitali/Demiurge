@@ -39,8 +39,11 @@ object WorktreeManager {
    * - Create .demiurge/worktrees/ if missing
    * - Run `git worktree add --detach <worktree_path> <resolved_commit_sha>`
    * - Return the worktree path
+   *
+   * Design §12.3: When agentMode=true, node_modules is copied (not symlinked)
+   * to prevent the agent's `npm install` from mutating the original repo.
    */
-  def create(repoRoot: Path, runId: String, gitRef: Option[String]): Path = {
+  def create(repoRoot: Path, runId: String, gitRef: Option[String], agentMode: Boolean = false): Path = {
     val wtPath = worktreePath(repoRoot, runId)
     Files.createDirectories(wtPath.getParent)
 
@@ -53,20 +56,32 @@ object WorktreeManager {
     }
 
     // Copy runtime files that aren't committed but are needed by services.
-    // TODO: Make this configurable via demiurge.yaml (e.g. worktree.copy / worktree.symlink)
-    //       instead of hardcoding Node.js-specific paths. Other ecosystems may need
-    //       different files (e.g. Python venv/, Java .m2/, etc.)
     val envFile = repoRoot.resolve(".env")
     if (Files.exists(envFile)) {
       Files.copy(envFile, wtPath.resolve(".env"), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
     }
 
-    // Symlink node_modules from repo root into worktree so spawned child processes
-    // (which use absolute paths like <worktree>/node_modules/.bin/tsx) resolve correctly.
     val repoNodeModules = repoRoot.resolve("node_modules")
     val wtNodeModules = wtPath.resolve("node_modules")
     if (Files.isDirectory(repoNodeModules) && !Files.exists(wtNodeModules)) {
-      Files.createSymbolicLink(wtNodeModules, repoNodeModules)
+      if (agentMode) {
+        // Design §12.3: Copy node_modules for agent mode to prevent repo root mutation.
+        // Uses `cp -al` for hard-link copy (fast, COW-friendly) with fallback to full copy.
+        val hardLinkResult = Process(
+          Seq("cp", "-al", repoNodeModules.toAbsolutePath.toString, wtNodeModules.toAbsolutePath.toString),
+          repoRoot.toFile,
+        ).!
+        if (hardLinkResult != 0) {
+          // Fallback: full recursive copy
+          Process(
+            Seq("cp", "-r", repoNodeModules.toAbsolutePath.toString, wtNodeModules.toAbsolutePath.toString),
+            repoRoot.toFile,
+          ).!
+        }
+      } else {
+        // Legacy mode: symlink node_modules for speed
+        Files.createSymbolicLink(wtNodeModules, repoNodeModules)
+      }
     }
 
     wtPath
