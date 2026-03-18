@@ -1,0 +1,9 @@
+load("@rules_scala//scala:scala.bzl", "scala_library")
+
+# Phase 2+: Environment planning module
+scala_library(
+    name = "environment-planner",
+    srcs = glob(["src/main/scala/**/*.scala"], allow_empty = True),
+    visibility = ["//visibility:public"],
+    deps = ["//modules/core-model"],
+)

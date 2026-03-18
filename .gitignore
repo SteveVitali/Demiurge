@@ -1,0 +1,7 @@
+.idea/*
+*_*.md
+Demiurge.iml
+.DS_Store
+bazel-*
+MODULE.bazel.lock
+

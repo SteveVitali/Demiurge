@@ -1,0 +1,19 @@
+# Java runtime
+build --java_runtime_version=remotejdk_17
+build --tool_java_runtime_version=remotejdk_17
+
+# Scala/Java compilation settings
+build --javacopt="-source 17"
+build --javacopt="-target 17"
+
+# macOS minimum version for C++ deps (abseil-cpp)
+build --macos_minimum_os=13.0
+build --host_macos_minimum_os=13.0
+build --cxxopt=-std=c++17
+build --host_cxxopt=-std=c++17
+
+# Disable proto toolchain resolution (not needed for this project)
+build --noincompatible_enable_proto_toolchain_resolution
+
+# Test output
+test --test_output=errors

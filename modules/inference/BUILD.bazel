@@ -1,0 +1,9 @@
+load("@rules_scala//scala:scala.bzl", "scala_library")
+
+# Phase 2+: Inference service module
+scala_library(
+    name = "inference",
+    srcs = glob(["src/main/scala/**/*.scala"], allow_empty = True),
+    visibility = ["//visibility:public"],
+    deps = ["//modules/core-model"],
+)
