@@ -192,7 +192,7 @@ object AgentInitExecutor {
        |## Instructions
        |
        |1. Explore the repository thoroughly using file read and shell tools
-       |2. Write $outputName to ${repoRoot.toAbsolutePath}/$outputName
+       |2. Write $outputName to ${outputPath.toAbsolutePath}
        |3. Write requirements.yaml to ${repoRoot.toAbsolutePath}/requirements.yaml
        |4. Include at least one readiness requirement per service
        |5. Include HTTP requirements for key API endpoints you discover
@@ -224,9 +224,18 @@ object AgentInitExecutor {
     val durationMs = c.downField("durationMs").as[Long].getOrElse(0L)
 
     // Check if the agent actually wrote the files
+    // The agent may write to outputPath directly or to repoRoot/outputName
     val demiurgeYaml = if (Files.exists(outputPath)) {
       Some(Files.readString(outputPath))
-    } else None
+    } else {
+      // Fallback: check if agent wrote to repoRoot/outputName instead
+      val fallbackPath = repoRoot.resolve(outputPath.getFileName)
+      if (Files.exists(fallbackPath) && fallbackPath != outputPath) {
+        // Copy to the intended output path
+        Files.copy(fallbackPath, outputPath)
+        Some(Files.readString(outputPath))
+      } else None
+    }
 
     val reqsPath = repoRoot.resolve("requirements.yaml")
     val requirementsYaml = if (Files.exists(reqsPath)) {
