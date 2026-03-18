@@ -3,6 +3,7 @@ package demiurge.inference
 import java.io.{BufferedReader, InputStreamReader, OutputStreamWriter}
 import java.net.{HttpURLConnection, SocketTimeoutException, URL}
 
+import io.circe.parser.{parse => parseJsonStr}
 import demiurge.model._
 
 // Spec §2.1: Real Anthropic API backend implementing InferenceBackend.
@@ -59,7 +60,13 @@ class AnthropicInferenceBackend(apiKey: String) extends InferenceBackend {
     val escapedSystem = escapeJson(request.systemPrompt)
     val escapedUser = escapeJson(request.userPrompt)
     val tempPart = if (request.temperature != 0.0) s""","temperature":${request.temperature}""" else ""
-    s"""{"model":"${escapeJson(request.model)}","max_tokens":${request.maxOutputTokens},"system":"$escapedSystem","messages":[{"role":"user","content":"$escapedUser"}]$tempPart}"""
+    // When JSON response format is requested, use assistant prefill to force JSON output
+    val messagesPart = if (request.responseFormat.contains("json")) {
+      s"""[{"role":"user","content":"$escapedUser"},{"role":"assistant","content":"{"}]"""
+    } else {
+      s"""[{"role":"user","content":"$escapedUser"}]"""
+    }
+    s"""{"model":"${escapeJson(request.model)}","max_tokens":${request.maxOutputTokens},"system":"$escapedSystem","messages":$messagesPart$tempPart}"""
   }
 
   private[inference] def parseResponse(
@@ -68,15 +75,36 @@ class AnthropicInferenceBackend(apiKey: String) extends InferenceBackend {
     elapsedMs: Long = 0L,
   ): Either[InferenceError, InferenceResponse] = {
     try {
-      val content = extractJsonString(body, "text")
-      val inputTokens = extractJsonLong(body, "input_tokens")
-      val outputTokens = extractJsonLong(body, "output_tokens")
+      // Use circe for proper JSON parsing of the API response to handle escape sequences correctly
+      val (content, inputTokens, outputTokens) = parseJsonStr(body) match {
+        case Right(json) =>
+          val text = json.hcursor
+            .downField("content").downArray
+            .downField("text").as[String]
+            .getOrElse(extractJsonString(body, "text")) // fallback to regex
+          val usage = json.hcursor.downField("usage")
+          val inTok = usage.downField("input_tokens").as[Long].getOrElse(0L)
+          val outTok = usage.downField("output_tokens").as[Long].getOrElse(0L)
+          (text, inTok, outTok)
+        case Left(_) =>
+          // Fallback to regex extraction if circe parse fails
+          (extractJsonString(body, "text"),
+           extractJsonLong(body, "input_tokens"),
+           extractJsonLong(body, "output_tokens"))
+      }
 
-      val parsedJson = if (request.responseFormat.contains("json")) Some(content) else None
+      // When JSON prefill was used, prepend the opening brace that was in the assistant prefill
+      val finalContent = if (request.responseFormat.contains("json") && !content.trim.startsWith("{")) {
+        "{" + content
+      } else {
+        content
+      }
+
+      val parsedJson = if (request.responseFormat.contains("json")) Some(finalContent) else None
 
       Right(InferenceResponse(
         requestId = request.requestId,
-        responseText = content,
+        responseText = finalContent,
         parsedJson = parsedJson,
         inputTokens = inputTokens,
         outputTokens = outputTokens,
