@@ -1,9 +1,25 @@
-load("@rules_scala//scala:scala.bzl", "scala_library")
+load("@rules_scala//scala:scala.bzl", "scala_junit_test", "scala_library")
 
-# Phase 2+: Failure analysis module
+# Phase 8: Failure analysis module — inference-backed with rule-based fallback
 scala_library(
     name = "failure-analysis",
     srcs = glob(["src/main/scala/**/*.scala"], allow_empty = True),
     visibility = ["//visibility:public"],
-    deps = ["//modules/core-model"],
+    deps = [
+        "//modules/core-model",
+        "//modules/inference",
+    ],
+)
+
+scala_junit_test(
+    name = "failure-analysis-tests",
+    srcs = glob(["src/test/scala/**/*.scala"], allow_empty = True),
+    suffixes = ["Suite"],
+    deps = [
+        ":failure-analysis",
+        "//modules/core-model",
+        "//modules/inference",
+        "@maven//:org_scalameta_munit_2_13",
+        "@maven//:org_scalameta_munit_diff_2_13",
+    ],
 )

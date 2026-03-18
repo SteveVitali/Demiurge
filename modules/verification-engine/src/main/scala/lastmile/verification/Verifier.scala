@@ -59,6 +59,7 @@ case class StateVerifier(
 ) extends Verifier
 
 // Phase 6: BrowserFlowVerifier — dispatches to worker process via WorkerProcessManager
+// Phase 8: Added selectorFallbacks for orchestrator-side fallback (Spec §11.5)
 case class BrowserFlowVerifier(
   id:               String,
   requirementId:    String,
@@ -69,6 +70,9 @@ case class BrowserFlowVerifier(
   storageStatePath: Option[String],
   timeout:          Duration,
   maxRetries:       Int,
+  // Phase 8: Selector fallback map — key is primary selector value, value is fallback SelectorRef.
+  // Spec §11.5: If worker returns SELECTOR_NOT_FOUND (-32011), orchestrator re-dispatches with fallback.
+  selectorFallbacks: Map[String, lastmile.model.SelectorRef] = Map.empty,
 ) extends Verifier
 
 // Phase 6: Extended verifier outcome with artifact refs and observations

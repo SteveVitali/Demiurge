@@ -30,6 +30,11 @@ object RepoInspectorImpl extends RepoInspector {
     val healthEndpointHints = detectHealthEndpoints(packageJsonContent)
     val manifestsFound = detectManifests(repoRoot)
 
+    // Phase 8: Changed-file impact analysis (Spec §3.2 ImpactMap)
+    val impactMap = changedFiles.filter(_.nonEmpty).map { files =>
+      buildImpactMap(repoRoot, files)
+    }
+
     RepoInspectionReport(
       reportId = s"inspection-$runId-${UUID.randomUUID().toString.take(8)}",
       runId = runId,
@@ -46,7 +51,7 @@ object RepoInspectorImpl extends RepoInspector {
       apiBasePaths = Nil,
       testFrameworkHints = Nil,
       authHints = Nil,
-      changedSurfaceMap = None,
+      changedSurfaceMap = impactMap,
       manifestsFound = manifestsFound,
       warnings = warnings.toList,
     )
@@ -195,6 +200,69 @@ object RepoInspectorImpl extends RepoInspector {
       results += ManifestRef("npm", "package.json", parsedSuccessfully = true, parseErrors = Nil)
 
     results.toList
+  }
+
+  // Phase 8: Deterministic changed-file impact analysis (Spec §3.2 ImpactMap, §13.11 infra-sensitive)
+  // Uses file-extension heuristics to determine affected areas. No LLM in deterministic mode.
+  private[inspector] def buildImpactMap(repoRoot: Path, changedFiles: List[String]): ImpactMap = {
+    // Spec §1: Infra-sensitive file patterns — exact filename matches
+    val infraExactNames = Set(
+      "docker-compose.yml", "docker-compose.yaml", "compose.yaml", "compose.yml",
+      "Dockerfile", "package.json", "pnpm-lock.yaml", "package-lock.json", "yarn.lock",
+      "requirements.txt", "Pipfile", "Pipfile.lock", "pyproject.toml", "poetry.lock",
+      "build.sbt", "build.gradle", "pom.xml", "Makefile", "lastmile.yaml",
+    )
+    val infraDirPatterns = Set("migrations", "migrate")
+
+    val infraSensitive = changedFiles.filter { f =>
+      val name = f.split("/").last
+      infraExactNames.contains(name) ||
+        f.split("/").exists(seg => infraDirPatterns.contains(seg)) ||
+        name.endsWith(".dockerfile") ||
+        name.startsWith("Dockerfile.") ||
+        name == ".env" || name.startsWith(".env.")
+    }
+
+    // Classify by file extension/path
+    val frontendExts = Set(".tsx", ".jsx", ".vue", ".svelte", ".html", ".css", ".scss")
+    val apiExts = Set(".ts", ".js", ".py", ".rb", ".go", ".java", ".scala")
+    val dbExts = Set(".sql", ".prisma")
+    val migrationFiles = changedFiles.filter(f => f.contains("migration") || f.contains("migrate"))
+
+    val frontendRoutes = changedFiles.filter(f => frontendExts.exists(f.endsWith)).map { f =>
+      ScoredInference(f, 0.6, "file-extension heuristic")
+    }
+
+    val apiHandlers = changedFiles.filter { f =>
+      apiExts.exists(f.endsWith) && (f.contains("route") || f.contains("handler") ||
+        f.contains("controller") || f.contains("api") || f.contains("endpoint"))
+    }.map(f => ScoredInference(f, 0.6, "file-extension + path heuristic"))
+
+    val dbModels = changedFiles.filter { f =>
+      dbExts.exists(f.endsWith) || f.contains("model") || f.contains("schema") || f.contains("entity")
+    }.map(f => ScoredInference(f, 0.5, "file-extension + path heuristic"))
+
+    val components = changedFiles.filter(f => frontendExts.exists(f.endsWith)).map { f =>
+      ScoredInference(f.split("/").last.split("\\.").head, 0.5, "file-name heuristic")
+    }
+
+    val authModules = changedFiles.filter { f =>
+      f.contains("auth") || f.contains("login") || f.contains("session") || f.contains("token")
+    }.map(f => ScoredInference(f, 0.6, "path heuristic"))
+
+    ImpactMap(
+      changedFiles = changedFiles,
+      affectedFrontendRoutes = frontendRoutes,
+      affectedComponents = components,
+      affectedApiHandlers = apiHandlers,
+      affectedDbModels = dbModels,
+      affectedMigrations = migrationFiles,
+      affectedServiceIds = Nil, // would need manifest cross-reference
+      affectedAuthModules = authModules,
+      inferredAdjacentFlows = Nil, // would need LLM for this
+      infraSensitiveChanges = infraSensitive,
+      inferenceRequestId = None, // deterministic-only, no LLM
+    )
   }
 
   private def readFileContent(root: Path, name: String): Option[String] = {

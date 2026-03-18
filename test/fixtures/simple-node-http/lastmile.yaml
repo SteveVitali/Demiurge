@@ -1,0 +1,38 @@
+version: 1
+
+app:
+  type: api
+  root_url: http://localhost:3456
+
+services:
+  node-api:
+    kind: api
+    startup_mode: script
+    startup_command: node server.js
+    ports:
+      - host: 3456
+        container: 3456
+    readiness:
+      probe_type: http
+      target: http://localhost:3456/health
+      interval_ms: 1000
+      timeout_ms: 3000
+      max_failures: 10
+    required: true
+
+auth:
+  mode: static_test_token
+  static_token: test-token-123
+
+verification:
+  default_verifier_timeout_ms: 30000
+  max_retries: 1
+  screenshot_on_failure: false
+
+inference:
+  default_provider: mock
+
+policies:
+  max_attempts: 3
+  run_timeout_ms: 60000
+  attempt_timeout_ms: 30000

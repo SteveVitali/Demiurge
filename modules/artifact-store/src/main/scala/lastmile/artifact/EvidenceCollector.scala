@@ -40,7 +40,30 @@ trait EvidenceCollector {
     attemptNumber: Int,
     reportJson:    String,
   ): ArtifactRecord
+
+  // Spec §14.1, §14.6: Assemble a prompt package for repair.
+  // Curates artifacts, truncates oversized ones, omits unhelpful ones,
+  // produces canonical PromptPackageArtifact.
+  def assemblePromptPackage(
+    runId:          String,
+    attemptNumber:  Int,
+    failureSummary: String,
+    reproSteps:     String,
+    reqDescriptions: List[String],
+    artifacts:      List[ArtifactRecord],
+    maxArtifacts:   Int,
+    maxTotalBytes:  Long,
+  ): PromptPackageResult
 }
+
+// Spec §3.2: PromptPackageArtifact result
+case class PromptPackageResult(
+  artifactRecord:     ArtifactRecord,
+  textContent:        String,
+  includedArtifacts:  List[String],
+  truncatedArtifacts: List[String],
+  omittedArtifacts:   List[String],
+)
 
 // Reference to an artifact produced by the worker process
 case class WorkerArtifactRef(

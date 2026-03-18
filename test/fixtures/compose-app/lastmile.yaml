@@ -1,0 +1,110 @@
+version: 1
+
+app:
+  type: fullstack
+  root_url: http://localhost:3000
+  api_url: http://localhost:4000
+
+services:
+  frontend:
+    kind: frontend
+    startup_mode: compose
+    compose_target: frontend
+    ports:
+      - host: 3000
+        container: 3000
+    readiness:
+      probe_type: http
+      target: http://localhost:3000/
+      interval_ms: 2000
+      timeout_ms: 5000
+      max_failures: 15
+    required: true
+
+  api:
+    kind: api
+    startup_mode: compose
+    compose_target: api
+    ports:
+      - host: 4000
+        container: 4000
+    depends_on:
+      - db
+    readiness:
+      probe_type: http
+      target: http://localhost:4000/health
+    required: true
+
+  db:
+    kind: db
+    startup_mode: compose
+    compose_target: postgres
+    ports:
+      - host: 5432
+        container: 5432
+    readiness:
+      probe_type: tcp
+      target: localhost:5432
+    required: true
+
+fixtures:
+  reset_strategy: soft
+  seed_steps:
+    - step_id: migrate
+      command: npm run migrate
+      cwd: api
+      timeout_ms: 30000
+      run_on_init_only: true
+    - step_id: seed
+      command: npm run seed
+      cwd: api
+      timeout_ms: 30000
+      run_on_reset: true
+
+auth:
+  mode: browser_form_login
+  login_url: http://localhost:3000/login
+  credentials:
+    username: admin@test.com
+    password: testpass123
+  storage_state_output: auth-state.json
+
+verification:
+  default_verifier_timeout_ms: 60000
+  default_browser_action_timeout_ms: 15000
+  max_retries: 2
+  retry_delay_ms: 1000
+  screenshot_on_failure: true
+  screenshot_on_complete: true
+  trace_enabled: true
+
+inference:
+  default_provider: anthropic
+  models:
+    requirement_compiler: claude-sonnet-4-20250514
+    failure_analyzer: claude-sonnet-4-20250514
+
+policies:
+  max_attempts: 5
+  run_timeout_ms: 3600000
+  attempt_timeout_ms: 900000
+  max_patch_lines: 2000
+  max_artifact_disk_bytes: 536870912
+  allowed_hosts:
+    - localhost
+    - 127.0.0.1
+  browser_allowed_origins:
+    - http://localhost:*
+  allow_git_push: false
+  allow_db_drop: false
+
+observability:
+  log_queries:
+    - id: api_errors
+      service_id: api
+      query: "grep -c ERROR"
+      description: Count API errors
+  taps:
+    - tap_id: api-log
+      service_id: api
+      tap_type: log_tail
