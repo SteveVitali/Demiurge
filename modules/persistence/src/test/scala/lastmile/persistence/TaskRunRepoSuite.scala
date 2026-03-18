@@ -113,4 +113,92 @@ class TaskRunRepoSuite extends FunSuite {
       assertEquals(projectBRuns.head.runId, "run-b1")
     }
   }
+
+  test("TaskRunRepo update persists all fields") {
+    withDb { implicit conn =>
+      val run = makeRun("run-upd")
+      TaskRunRepo.insert(run)
+
+      val updated = run.copy(
+        status = RunStatus.InspectingRepo,
+        startedAt = Some(Instant.parse("2025-01-01T00:05:00Z")),
+        taskText = "Updated task text",
+      )
+      TaskRunRepo.update(updated)
+
+      val loaded = TaskRunRepo.getById("run-upd")
+      assert(loaded.isDefined)
+      assertEquals(loaded.get.status, RunStatus.InspectingRepo)
+      assertEquals(loaded.get.startedAt, Some(Instant.parse("2025-01-01T00:05:00Z")))
+      assertEquals(loaded.get.taskText, "Updated task text")
+    }
+  }
+
+  test("TaskRunRepo setCurrentAttempt") {
+    withDb { implicit conn =>
+      TaskRunRepo.insert(makeRun("run-sca"))
+      assertEquals(TaskRunRepo.getById("run-sca").get.currentAttemptId, None)
+
+      TaskRunRepo.setCurrentAttempt("run-sca", Some("attempt-1"))
+      assertEquals(TaskRunRepo.getById("run-sca").get.currentAttemptId, Some("attempt-1"))
+
+      TaskRunRepo.setCurrentAttempt("run-sca", None)
+      assertEquals(TaskRunRepo.getById("run-sca").get.currentAttemptId, None)
+    }
+  }
+
+  test("TaskRunRepo incrementAttemptCount") {
+    withDb { implicit conn =>
+      TaskRunRepo.insert(makeRun("run-inc"))
+      assertEquals(TaskRunRepo.getById("run-inc").get.attemptCount, 0)
+
+      TaskRunRepo.incrementAttemptCount("run-inc")
+      assertEquals(TaskRunRepo.getById("run-inc").get.attemptCount, 1)
+
+      TaskRunRepo.incrementAttemptCount("run-inc")
+      assertEquals(TaskRunRepo.getById("run-inc").get.attemptCount, 2)
+    }
+  }
+
+  test("TaskRunRepo getActiveRunByRepoPath finds non-terminal runs") {
+    withDb { implicit conn =>
+      // Terminal run
+      val exhausted = makeRun("run-term", "/home/user/projectX")
+        .copy(status = RunStatus.Exhausted, endedAt = Some(Instant.parse("2025-01-01T01:00:00Z")))
+      TaskRunRepo.insert(exhausted)
+
+      // No active run yet
+      assertEquals(TaskRunRepo.getActiveRunByRepoPath("/home/user/projectX"), None)
+
+      // Active run
+      val active = makeRun("run-active", "/home/user/projectX")
+        .copy(status = RunStatus.InspectingRepo)
+      TaskRunRepo.insert(active)
+
+      val found = TaskRunRepo.getActiveRunByRepoPath("/home/user/projectX")
+      assert(found.isDefined)
+      assertEquals(found.get.runId, "run-active")
+    }
+  }
+
+  test("TaskRunRepo setStartedAt") {
+    withDb { implicit conn =>
+      TaskRunRepo.insert(makeRun("run-sta"))
+      assertEquals(TaskRunRepo.getById("run-sta").get.startedAt, None)
+
+      val t = Instant.parse("2025-06-15T12:30:00Z")
+      TaskRunRepo.setStartedAt("run-sta", t)
+      assertEquals(TaskRunRepo.getById("run-sta").get.startedAt, Some(t))
+    }
+  }
+
+  test("TaskRunRepo setFinalSummary") {
+    withDb { implicit conn =>
+      TaskRunRepo.insert(makeRun("run-sum"))
+      assertEquals(TaskRunRepo.getById("run-sum").get.finalSummary, None)
+
+      TaskRunRepo.setFinalSummary("run-sum", "All checks passed")
+      assertEquals(TaskRunRepo.getById("run-sum").get.finalSummary, Some("All checks passed"))
+    }
+  }
 }

@@ -79,6 +79,39 @@ object AttemptRepo {
     }
   }
 
+  // Phase 2: List all attempts for a run
+  def listByRunId(runId: String)(implicit conn: Connection): List[Attempt] = {
+    val ps = conn.prepareStatement("SELECT * FROM attempts WHERE run_id = ? ORDER BY attempt_number ASC")
+    try {
+      ps.setString(1, runId)
+      val rs = ps.executeQuery()
+      try {
+        val buf = scala.collection.mutable.ListBuffer[Attempt]()
+        while (rs.next()) {
+          buf += rowToAttempt(rs)
+        }
+        buf.toList
+      } finally {
+        rs.close()
+      }
+    } finally {
+      ps.close()
+    }
+  }
+
+  // Phase 2: Mark an attempt as aborted with endedAt timestamp
+  def markAborted(attemptId: String, endedAt: Instant)(implicit conn: Connection): Unit = {
+    val ps = conn.prepareStatement("UPDATE attempts SET status = ?, ended_at = ? WHERE attempt_id = ?")
+    try {
+      ps.setString(1, AttemptStatus.Aborted.toString)
+      ps.setString(2, endedAt.toString)
+      ps.setString(3, attemptId)
+      ps.executeUpdate()
+    } finally {
+      ps.close()
+    }
+  }
+
   private def rowToAttempt(rs: java.sql.ResultSet): Attempt = {
     val summaryJson = Option(rs.getString("verdict_summary_json"))
     val verdictSummary = summaryJson.flatMap { json =>

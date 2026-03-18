@@ -92,6 +92,123 @@ object TaskRunRepo {
     }
   }
 
+  // Phase 2: Update full TaskRun record
+  def update(run: TaskRun)(implicit conn: Connection): Unit = {
+    val ps = conn.prepareStatement(
+      """UPDATE task_runs SET
+        |  repo_path = ?, worktree_path = ?, git_ref = ?, task_text = ?, changed_files_json = ?,
+        |  status = ?, run_mode = ?, created_at = ?, started_at = ?, ended_at = ?,
+        |  max_attempts = ?, attempt_count = ?, env_boot_attempts = ?, current_attempt_id = ?,
+        |  final_verdict = ?, final_summary = ?, policy_snapshot_id = ?, lock_file_path = ?, artifact_root_path = ?
+        |WHERE run_id = ?
+      """.stripMargin)
+    try {
+      ps.setString(1, run.repoPath.toString)
+      ps.setString(2, run.worktreePath.toString)
+      ps.setString(3, run.gitRef.orNull)
+      ps.setString(4, run.taskText)
+      ps.setString(5, run.changedFiles.map(_.asJson.noSpaces).orNull)
+      ps.setString(6, run.status.toString)
+      ps.setString(7, run.runMode.toString)
+      ps.setString(8, run.createdAt.toString)
+      ps.setString(9, run.startedAt.map(_.toString).orNull)
+      ps.setString(10, run.endedAt.map(_.toString).orNull)
+      ps.setInt(11, run.maxAttempts)
+      ps.setInt(12, run.attemptCount)
+      ps.setInt(13, run.envBootAttempts)
+      ps.setString(14, run.currentAttemptId.orNull)
+      ps.setString(15, run.finalVerdict.map(_.toString).orNull)
+      ps.setString(16, run.finalSummary.orNull)
+      ps.setString(17, run.policySnapshotId)
+      ps.setString(18, run.lockFilePath.toString)
+      ps.setString(19, run.artifactRootPath.toString)
+      ps.setString(20, run.runId)
+      ps.executeUpdate()
+    } finally {
+      ps.close()
+    }
+  }
+
+  // Phase 2: Set current attempt ID on a run
+  def setCurrentAttempt(runId: String, attemptId: Option[String])(implicit conn: Connection): Unit = {
+    val ps = conn.prepareStatement("UPDATE task_runs SET current_attempt_id = ? WHERE run_id = ?")
+    try {
+      ps.setString(1, attemptId.orNull)
+      ps.setString(2, runId)
+      ps.executeUpdate()
+    } finally {
+      ps.close()
+    }
+  }
+
+  // Phase 2: Increment attempt count
+  def incrementAttemptCount(runId: String)(implicit conn: Connection): Unit = {
+    val ps = conn.prepareStatement("UPDATE task_runs SET attempt_count = attempt_count + 1 WHERE run_id = ?")
+    try {
+      ps.setString(1, runId)
+      ps.executeUpdate()
+    } finally {
+      ps.close()
+    }
+  }
+
+  // Phase 2: Find active (non-terminal) runs for a repo path
+  def getActiveRunByRepoPath(repoPath: String)(implicit conn: Connection): Option[TaskRun] = {
+    val terminalStatuses = List("Succeeded", "Exhausted", "Cancelled", "Interrupted")
+    val placeholders = terminalStatuses.map(_ => "?").mkString(", ")
+    val ps = conn.prepareStatement(
+      s"SELECT * FROM task_runs WHERE repo_path = ? AND status NOT IN ($placeholders) LIMIT 1"
+    )
+    try {
+      ps.setString(1, repoPath)
+      terminalStatuses.zipWithIndex.foreach { case (s, i) => ps.setString(i + 2, s) }
+      val rs = ps.executeQuery()
+      try {
+        if (rs.next()) Some(rowToTaskRun(rs)) else None
+      } finally {
+        rs.close()
+      }
+    } finally {
+      ps.close()
+    }
+  }
+
+  // Phase 2: Set startedAt timestamp
+  def setStartedAt(runId: String, startedAt: Instant)(implicit conn: Connection): Unit = {
+    val ps = conn.prepareStatement("UPDATE task_runs SET started_at = ? WHERE run_id = ?")
+    try {
+      ps.setString(1, startedAt.toString)
+      ps.setString(2, runId)
+      ps.executeUpdate()
+    } finally {
+      ps.close()
+    }
+  }
+
+  // Phase 2: Set final summary
+  def setFinalSummary(runId: String, summary: String)(implicit conn: Connection): Unit = {
+    val ps = conn.prepareStatement("UPDATE task_runs SET final_summary = ? WHERE run_id = ?")
+    try {
+      ps.setString(1, summary)
+      ps.setString(2, runId)
+      ps.executeUpdate()
+    } finally {
+      ps.close()
+    }
+  }
+
+  // Phase 2: Update worktree path on a run
+  def updateWorktreePath(runId: String, worktreePath: java.nio.file.Path)(implicit conn: Connection): Unit = {
+    val ps = conn.prepareStatement("UPDATE task_runs SET worktree_path = ? WHERE run_id = ?")
+    try {
+      ps.setString(1, worktreePath.toString)
+      ps.setString(2, runId)
+      ps.executeUpdate()
+    } finally {
+      ps.close()
+    }
+  }
+
   private def rowToTaskRun(rs: java.sql.ResultSet): TaskRun = {
     val changedFilesJson = Option(rs.getString("changed_files_json"))
     val changedFiles = changedFilesJson.flatMap { json =>
