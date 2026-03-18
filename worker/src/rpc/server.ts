@@ -11,13 +11,20 @@ import {
 
 export type MethodHandler = (params: Record<string, unknown>) => Promise<unknown>;
 
+export type NotificationHandler = (params: Record<string, unknown>) => void;
+
 export class JsonRpcServer {
   private handlers: Map<string, MethodHandler> = new Map();
+  private notificationHandlers: Map<string, NotificationHandler> = new Map();
   private running = false;
   private rl: readline.Interface | null = null;
 
   registerMethod(method: string, handler: MethodHandler): void {
     this.handlers.set(method, handler);
+  }
+
+  registerInboundNotificationHandler(method: string, handler: NotificationHandler): void {
+    this.notificationHandlers.set(method, handler);
   }
 
   // Spec §10.1: Send a JSON-RPC notification (no id) to the orchestrator via stdout
@@ -87,8 +94,19 @@ export class JsonRpcServer {
       return;
     }
 
-    // If no id, it's a notification from orchestrator — currently we don't handle inbound notifications
+    // If no id, it's a notification from orchestrator — dispatch to registered handler
     if (msg.id === undefined || msg.id === null) {
+      const notifMethod = msg.method as string;
+      if (notifMethod) {
+        const notifHandler = this.notificationHandlers.get(notifMethod);
+        if (notifHandler) {
+          try {
+            notifHandler((msg.params as Record<string, unknown>) ?? {});
+          } catch (err) {
+            process.stderr.write(`[worker] Notification handler error for ${notifMethod}: ${err}\n`);
+          }
+        }
+      }
       return;
     }
 

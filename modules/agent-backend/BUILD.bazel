@@ -1,0 +1,45 @@
+load("@rules_scala//scala:scala.bzl", "scala_junit_test", "scala_library")
+
+# Design §10: Agent backend module — AgentBackend trait, AgentExecutor, AgentSystemPromptBuilder
+scala_library(
+    name = "agent-backend",
+    srcs = glob(["src/main/scala/**/*.scala"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//modules/core-model",
+        "//modules/repair-api",
+        "//modules/worker-protocol",
+        "//modules/verification-engine",
+        "//modules/runtime-supervisor",
+        "//modules/inference",
+        "@maven//:io_circe_circe_core_2_13",
+        "@maven//:io_circe_circe_generic_2_13",
+        "@maven//:io_circe_circe_parser_2_13",
+        "@maven//:org_typelevel_cats_core_2_13",
+        "@maven//:org_typelevel_cats_kernel_2_13",
+        "@maven//:com_chuusai_shapeless_2_13",
+    ],
+)
+
+scala_junit_test(
+    name = "agent-backend-tests",
+    srcs = glob(["src/test/scala/**/*.scala"], allow_empty = True),
+    suffixes = ["Suite"],
+    deps = [
+        ":agent-backend",
+        "//modules/core-model",
+        "//modules/repair-api",
+        "//modules/worker-protocol",
+        "//modules/verification-engine",
+        "//modules/runtime-supervisor",
+        "//modules/inference",
+        "@maven//:io_circe_circe_core_2_13",
+        "@maven//:io_circe_circe_generic_2_13",
+        "@maven//:io_circe_circe_parser_2_13",
+        "@maven//:org_typelevel_cats_core_2_13",
+        "@maven//:org_typelevel_cats_kernel_2_13",
+        "@maven//:com_chuusai_shapeless_2_13",
+        "@maven//:org_scalameta_munit_2_13",
+        "@maven//:org_scalameta_munit_diff_2_13",
+    ],
+)

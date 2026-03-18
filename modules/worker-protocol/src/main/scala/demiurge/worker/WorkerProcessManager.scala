@@ -141,6 +141,20 @@ class WorkerProcessManager(
     initialize(artifactRoot, worktreePath, runId)
   }
 
+  // Design §5: Send a raw JSON-RPC request to the worker (for agent/execute and other new methods).
+  def sendRawRequest(method: String, params: Json, timeoutMs: Long = 60000): Either[String, Json] = {
+    if (!alive || hasCrashed) return Left("Worker not alive")
+    if (!initialized) return Left("Worker not initialized")
+    client.sendRequest(method, params, timeoutMs)
+  }
+
+  // Design §6.3: Send a JSON-RPC notification to the worker (for callback responses).
+  def sendNotification(method: String, params: Json): Unit = {
+    if (alive && !hasCrashed && client != null) {
+      client.sendNotification(method, params)
+    }
+  }
+
   def isAlive: Boolean = alive && !hasCrashed
   def isInitialized: Boolean = initialized
   def getRestartCount: Int = restartCount

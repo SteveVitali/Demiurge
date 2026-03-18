@@ -20,6 +20,8 @@ import demiurge.config.ConfigResolverImpl
 import demiurge.inference.{InferenceServiceImpl, InferenceBudgetState, InMemoryInferenceCache, AnthropicInferenceBackend}
 import demiurge.repair.{InferenceBackedRepairBackend, RepairBackend}
 import demiurge.repair.claude.ClaudePromptBuilder
+import demiurge.agent.{AgentBackend, AgentConfig, ClaudeAgentBackend}
+import demiurge.worker.WorkerProcessManager
 
 // Shared orchestration runner used by both RunCommand and ResumeCommand.
 // Encapsulates: API server lifecycle, SSE wiring, compiler construction,
@@ -70,6 +72,15 @@ object OrchestrationRunner {
       case None => RunCommand.buildRepairBackend()
     }
 
+    // Design §10: Build AgentBackend when DEMIURGE_AGENT_BACKEND=claude-agent-sdk.
+    // If the browser worker didn't provide a workerManager, the agent backend will
+    // create its own from DEMIURGE_WORKER_PATH (points to the Demiurge worker script).
+    val (agentBackendOpt, agentConfigOpt, agentWorkerManager) =
+      buildAgentBackend(workerManager, global.repo, artifactRoot, worktreePath, runId)
+
+    // Use the agent's worker manager if the browser executor didn't create one
+    val effectiveWorkerManager = workerManager.orElse(agentWorkerManager)
+
     val ctx = RunContext(
       run = taskRun,
       repoRoot = global.repo,
@@ -88,13 +99,18 @@ object OrchestrationRunner {
         browserExecutor = browserExecutor,
         configResolver = Some(ConfigResolverImpl),
         inferenceService = inferenceServiceOpt,
+        workerManager = effectiveWorkerManager,
         resumeFromStatus = resumeFromStatus,
+        agentBackend = agentBackendOpt,
+        agentConfig = agentConfigOpt,
       )
 
       writeFinalReport(evidenceCollector, runId, finalRun, conn)
       finalRun
     } finally {
       workerManager.foreach(w => try { w.shutdown() } catch { case _: Exception => })
+      // Shut down agent-specific worker if it's a separate instance
+      agentWorkerManager.foreach(w => try { w.shutdown() } catch { case _: Exception => })
       RunTransitionManager.clearEventListener()
       EventStream.markRunEnded(runId)
       LocalApiServer.stop()
@@ -114,6 +130,54 @@ object OrchestrationRunner {
         case _: Exception => None
       }
     } else None
+  }
+
+  // Design §10: Build AgentBackend from environment configuration.
+  // If the browser executor didn't create a workerManager, falls back to DEMIURGE_WORKER_PATH.
+  // Returns (agentBackend, agentConfig, optionalNewWorkerManager).
+  private def buildAgentBackend(
+    existingWorkerManager: Option[WorkerProcessManager],
+    repoRoot: Path,
+    artifactRoot: Path,
+    worktreePath: Path,
+    runId: String,
+  ): (Option[AgentBackend], AgentConfig, Option[WorkerProcessManager]) = {
+    val backendEnv = Option(System.getenv("DEMIURGE_AGENT_BACKEND")).getOrElse("")
+    val config = AgentConfig.fromEnvironment()
+
+    if (backendEnv != "claude-agent-sdk") {
+      return (None, config, None)
+    }
+
+    // Try existing worker manager first, then fall back to DEMIURGE_WORKER_PATH
+    val (wm, newWm) = existingWorkerManager match {
+      case Some(w) => (w, None)
+      case None =>
+        val workerPath = Option(System.getenv("DEMIURGE_WORKER_PATH")).map(Path.of(_))
+        workerPath match {
+          case Some(wp) if Files.exists(wp) =>
+            System.err.println(s"[orchestrator] Creating agent worker from DEMIURGE_WORKER_PATH=$wp")
+            val w = new WorkerProcessManager(wp)
+            w.spawn()
+            w.initialize(artifactRoot.toString, worktreePath.toString, runId) match {
+              case Right(_) =>
+                System.err.println("[orchestrator] Agent worker initialized successfully")
+              case Left(err) =>
+                System.err.println(s"[orchestrator] Warning: Agent worker init failed: $err")
+                return (None, config, None)
+            }
+            (w, Some(w))
+          case Some(wp) =>
+            System.err.println(s"[orchestrator] Warning: DEMIURGE_WORKER_PATH=$wp does not exist")
+            return (None, config, None)
+          case None =>
+            System.err.println("[orchestrator] Warning: DEMIURGE_AGENT_BACKEND=claude-agent-sdk but no worker available. Set DEMIURGE_WORKER_PATH.")
+            return (None, config, None)
+        }
+    }
+
+    System.err.println("[orchestrator] Agent backend: claude-agent-sdk")
+    (Some(new ClaudeAgentBackend(wm, repoRoot)), config, newWm)
   }
 
   private def writeFinalReport(

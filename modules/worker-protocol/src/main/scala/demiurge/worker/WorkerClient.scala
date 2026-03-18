@@ -77,6 +77,25 @@ class WorkerClient(
     this.notificationHandler = handler
   }
 
+  // Design §6.3: Send a JSON-RPC notification (no id, no response expected) to the worker.
+  def sendNotification(method: String, params: Json): Unit = {
+    if (crashed) return
+    val notification = Json.obj(
+      "jsonrpc" -> Json.fromString("2.0"),
+      "method"  -> Json.fromString(method),
+      "params"  -> params,
+    ).noSpaces
+    try {
+      synchronized {
+        writer.write(notification)
+        writer.newLine()
+        writer.flush()
+      }
+    } catch {
+      case _: Exception => // best-effort
+    }
+  }
+
   // Spec §10.1: Send a JSON-RPC request and wait for the corresponding response
   def sendRequest(method: String, params: Json = Json.obj(), timeoutMs: Long = 60000): Either[String, Json] = {
     if (crashed) return Left("Worker process has crashed")
