@@ -1,9 +1,21 @@
-load("@rules_scala//scala:scala.bzl", "scala_library")
+load("@rules_scala//scala:scala.bzl", "scala_junit_test", "scala_library")
 
-# Phase 2+: Repair API module
+# Phase 5: Repair API module — FailurePacketBuilder, PatchProposal, PatchApplier, RepairExecutor
 scala_library(
     name = "repair-api",
-    srcs = glob(["src/main/scala/**/*.scala"], allow_empty = True),
+    srcs = glob(["src/main/scala/**/*.scala"]),
     visibility = ["//visibility:public"],
     deps = ["//modules/core-model"],
+)
+
+scala_junit_test(
+    name = "repair-api-tests",
+    srcs = glob(["src/test/scala/**/*.scala"], allow_empty = True),
+    suffixes = ["Suite"],
+    deps = [
+        ":repair-api",
+        "//modules/core-model",
+        "@maven//:org_scalameta_munit_2_13",
+        "@maven//:org_scalameta_munit_diff_2_13",
+    ],
 )
