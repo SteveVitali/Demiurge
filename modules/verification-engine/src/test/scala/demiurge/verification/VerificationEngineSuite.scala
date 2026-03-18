@@ -102,12 +102,8 @@ class VerificationEngineSuite extends FunSuite {
         browserFlowSpec = None,
         apiContractSpec = Some(ApiContractVerifierSpec(
           method = "GET",
-          urlTemplate = "http://localhost:19999/nonexistent",
-          headers = Map.empty,
-          bodyTemplate = None,
+          path = "http://localhost:19999/nonexistent",
           expectedStatus = 200,
-          responseAssertions = Nil,
-          artifactPlan = Nil,
         )),
         stateAssertionSpec = None,
         envReadinessSpec = None,

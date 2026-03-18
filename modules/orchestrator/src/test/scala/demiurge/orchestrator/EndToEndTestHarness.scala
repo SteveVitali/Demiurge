@@ -142,12 +142,8 @@ object EndToEndTestHarness {
             browserFlowSpec = None,
             apiContractSpec = Some(ApiContractVerifierSpec(
               method = "GET",
-              urlTemplate = s"http://localhost:$port/check",
-              headers = Map.empty,
-              bodyTemplate = None,
+              path = s"http://localhost:$port/check",
               expectedStatus = 200,
-              responseAssertions = Nil,
-              artifactPlan = Nil,
             )),
             stateAssertionSpec = None,
             envReadinessSpec = None,

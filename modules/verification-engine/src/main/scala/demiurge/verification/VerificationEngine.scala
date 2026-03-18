@@ -42,6 +42,9 @@ object VerificationEngine {
     // Accumulate verdicts per requirement as layers execute
     val reqVerdicts = scala.collection.mutable.Map[String, VerdictStatus]()
     val allVerdicts = scala.collection.mutable.ListBuffer[RequirementVerdict]()
+    // Spec §4.3: Track requirements that have stopOnFailure=true and already failed
+    val stoppedRequirements = scala.collection.mutable.Set[String]()
+    val nodeMap = graph.nodes.map(n => n.requirementId -> n).toMap
 
     // Execute layers in order 0..4
     for (layer <- plan.layers if layer.verifiers.nonEmpty) {
@@ -60,6 +63,10 @@ object VerificationEngine {
               groupSpecs.zip(groupVerifiers).map { case (spec, verifier) =>
                 val future = pool.submit(new Callable[RequirementVerdict] {
                   override def call(): RequirementVerdict = {
+                    // Spec §4.3: stopOnFailure — skip if requirement already failed
+                    if (stoppedRequirements.contains(verifier.requirementId)) {
+                      return makeBlockedVerdict(runId, attemptNumber, verifier, "stopped_on_failure")
+                    }
                     executeOneVerifier(
                       spec, verifier, runId, attemptNumber, graph, reqVerdicts.toMap,
                       browserExecutor, inferenceService, resolvedConfig, storageStatePath,
@@ -68,7 +75,7 @@ object VerificationEngine {
                 })
                 (future, spec, verifier)
               }
-            futuresWithMeta.foreach { case (f, _, verifier) =>
+            futuresWithMeta.foreach { case (f, spec, verifier) =>
               val verdict = try {
                 f.get(120, TimeUnit.SECONDS)
               } catch {
@@ -94,6 +101,8 @@ object VerificationEngine {
               }
               reqVerdicts(verdict.requirementId) = verdict.status
               allVerdicts += verdict
+              // Spec §4.3: Mark requirement as stopped if stopOnFailure and verdict is Fail/Timeout
+              checkStopOnFailure(verdict, nodeMap, stoppedRequirements)
             }
           } finally {
             pool.shutdownNow()
@@ -101,20 +110,27 @@ object VerificationEngine {
         } else {
           // Sequential execution (single verifier or sequential group)
           groupSpecs.zip(groupVerifiers).foreach { case (spec, verifier) =>
-            val verdict = executeOneVerifier(
-              spec, verifier, runId, attemptNumber, graph, reqVerdicts.toMap,
-              browserExecutor, inferenceService, resolvedConfig, storageStatePath,
-            )
+            // Spec §4.3: stopOnFailure — skip if requirement already failed
+            val verdict = if (stoppedRequirements.contains(verifier.requirementId)) {
+              makeBlockedVerdict(runId, attemptNumber, verifier, "stopped_on_failure")
+            } else {
+              executeOneVerifier(
+                spec, verifier, runId, attemptNumber, graph, reqVerdicts.toMap,
+                browserExecutor, inferenceService, resolvedConfig, storageStatePath,
+              )
+            }
             reqVerdicts(verdict.requirementId) = verdict.status
             allVerdicts += verdict
+            // Spec §4.3: Mark requirement as stopped if stopOnFailure and verdict is Fail/Timeout
+            checkStopOnFailure(verdict, nodeMap, stoppedRequirements)
           }
         }
       }
     }
 
     val verdicts = allVerdicts.toList
-    val outcomeList = verdicts.map(v => (v.verifierId, verdictToOutcome(v.status, v.failureMessage)))
-    val aggregate = VerdictAggregator.aggregate(outcomeList)
+    // Spec §4.3–4.4: Use priority-aware aggregation with requirement graph
+    val aggregate = VerdictAggregator.aggregateWithGraph(verdicts, graph)
 
     VerificationResult(verdicts = verdicts, aggregate = aggregate)
   }
@@ -279,6 +295,47 @@ object VerificationEngine {
     case VerdictStatus.Blocked => VerifierOutcome.Error(msg.getOrElse("blocked"))
     case VerdictStatus.Timeout => VerifierOutcome.TimedOut
     case VerdictStatus.Inconclusive => VerifierOutcome.Error(msg.getOrElse("inconclusive"))
+  }
+
+  /** Spec §4.3: Check if a verdict triggers stopOnFailure for its requirement. */
+  private def checkStopOnFailure(
+    verdict: RequirementVerdict,
+    nodeMap: Map[String, RequirementNode],
+    stoppedRequirements: scala.collection.mutable.Set[String],
+  ): Unit = {
+    if (verdict.status == VerdictStatus.Fail || verdict.status == VerdictStatus.Timeout) {
+      nodeMap.get(verdict.requirementId).foreach { node =>
+        if (node.stopOnFailure) {
+          stoppedRequirements += verdict.requirementId
+        }
+      }
+    }
+  }
+
+  /** Create a Blocked verdict for a verifier skipped due to stopOnFailure. */
+  private def makeBlockedVerdict(
+    runId: String,
+    attemptNumber: Int,
+    verifier: Verifier,
+    reason: String,
+  ): RequirementVerdict = {
+    RequirementVerdict(
+      verdictId = UUID.randomUUID().toString,
+      runId = runId,
+      attemptNumber = attemptNumber,
+      requirementId = verifier.requirementId,
+      verifierId = verifier.id,
+      status = VerdictStatus.Blocked,
+      executionDurationMs = 0,
+      retryCount = 0,
+      observations = Nil,
+      evidenceRefs = Nil,
+      failureClass = None,
+      failureMessage = Some(s"Blocked: $reason"),
+      suggestedRerunScope = None,
+      confidence = 1.0,
+      producedAt = Instant.now(),
+    )
   }
 
   /** Build verifier ID → Verifier map. */

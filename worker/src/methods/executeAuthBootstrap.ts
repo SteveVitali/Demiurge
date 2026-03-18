@@ -26,7 +26,7 @@ export async function handleExecuteAuthBootstrap(
   }
 
   if (state.activeTaskId) {
-    throw Object.assign(new Error(`Task already active: ${state.activeTaskId}`), { code: ErrorCodes.BROWSER_ERROR });
+    throw Object.assign(new Error(`Task already active: ${state.activeTaskId}`), { code: ErrorCodes.BROWSER_LAUNCH_FAILED });
   }
 
   state.activeTaskId = p.taskId;

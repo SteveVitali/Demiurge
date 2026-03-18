@@ -426,17 +426,19 @@ object RunOrchestrator {
       val verdict = verificationResult.get.aggregate.overallVerdict
       val agg = verificationResult.get.aggregate
 
-      if (verdict == VerdictStatus.Pass) {
+      if (verdict == VerdictStatus.Pass || verdict == VerdictStatus.Flake) {
         // Success — teardown and transition to Succeeded
+        // Spec §4.5: Flake counts as pass for control flow but is flagged
         try { supervisor.teardown(planResult.get, currentCtx.repoRoot) } catch { case _: Exception => }
+        val flakeNote = if (agg.flakeCount > 0) s" (${agg.flakeCount} flaky)" else ""
         currentRun = RunTransitionManager.transitionToTerminal(
           currentCtx,
           RunStatus.Succeeded,
           summary = Some(
-            if (attemptNumber == 1) s"All ${agg.total} verifiers passed"
-            else s"All ${agg.total} verifiers passed after ${attemptNumber - 1} repair(s)"
+            if (attemptNumber == 1) s"All ${agg.total} verifiers passed$flakeNote"
+            else s"All ${agg.total} verifiers passed after ${attemptNumber - 1} repair(s)$flakeNote"
           ),
-          finalVerdict = Some(VerdictStatus.Pass),
+          finalVerdict = Some(verdict),
         )
         currentCtx = currentCtx.copy(run = currentRun)
         SignalHandler.updateContext(currentCtx)

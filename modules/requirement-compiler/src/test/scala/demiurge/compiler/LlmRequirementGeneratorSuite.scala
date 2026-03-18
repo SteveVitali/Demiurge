@@ -92,7 +92,7 @@ class LlmRequirementGeneratorSuite extends FunSuite {
 
     assertEquals(verifier.verifierType, VerifierType.HttpApiContract)
     assert(verifier.apiContractSpec.isDefined)
-    assertEquals(verifier.apiContractSpec.get.urlTemplate, "http://localhost:3000/health")
+    assertEquals(verifier.apiContractSpec.get.path, "http://localhost:3000/health")
   }
 
   test("buildFallbackGraph creates TCP verifier for tcp probe") {

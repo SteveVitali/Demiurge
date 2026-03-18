@@ -29,7 +29,7 @@ export async function handleExecuteBrowserFlow(
 
   // Spec §10.3: strictly serial — one active task at a time
   if (state.activeTaskId) {
-    throw Object.assign(new Error(`Task already active: ${state.activeTaskId}`), { code: ErrorCodes.BROWSER_ERROR });
+    throw Object.assign(new Error(`Task already active: ${state.activeTaskId}`), { code: ErrorCodes.BROWSER_LAUNCH_FAILED });
   }
 
   state.activeTaskId = p.taskId;

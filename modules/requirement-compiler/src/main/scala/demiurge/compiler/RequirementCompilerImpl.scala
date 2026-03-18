@@ -134,9 +134,8 @@ class RequirementCompilerImpl(
     val apiSpec = if (entry.`type` == "http") {
       Some(ApiContractVerifierSpec(
         method = "GET",
-        urlTemplate = entry.expected.getOrElse("http://localhost:3000"),
-        headers = Map.empty,
-        bodyTemplate = None,
+        path = entry.expected.getOrElse("http://localhost:3000"),
+        requestBody = None,
         expectedStatus = 200,
         responseAssertions = Nil,
         artifactPlan = Nil,
@@ -153,11 +152,8 @@ class RequirementCompilerImpl(
 
     val consoleLogSpec = if (entry.`type` == "log") {
       Some(ConsoleLogVerifierSpec(
-        targetUrl = entry.expected.getOrElse(""),
+        url = entry.expected.getOrElse(""),
         forbiddenPatterns = entry.expected.map(List(_)).getOrElse(Nil),
-        allowedPatterns = Nil,
-        maxErrors = 0,
-        captureLevel = "error",
       ))
     } else None
 
