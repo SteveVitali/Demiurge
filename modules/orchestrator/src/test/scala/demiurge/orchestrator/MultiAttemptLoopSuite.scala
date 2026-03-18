@@ -371,7 +371,8 @@ class MultiAttemptLoopSuite extends FunSuite with TestFixtures {
 
         assertEquals(finalRun.status, RunStatus.Exhausted)
         assertEquals(finalRun.finalVerdict, Some(VerdictStatus.Fail))
-        assertEquals(backend.callCount, 1)
+        // Spec §10.9: Repair retries within attempt (1 initial + 2 retries = 3 calls)
+        assertEquals(backend.callCount, 3)
 
         val attempts = AttemptRepo.listByRunId(runId)
         assertEquals(attempts.size, 1)

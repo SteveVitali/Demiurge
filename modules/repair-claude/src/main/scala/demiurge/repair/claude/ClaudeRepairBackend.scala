@@ -6,18 +6,81 @@ import java.util.UUID
 import demiurge.model._
 import demiurge.repair._
 
-// Phase 5: ClaudeRepairBackend — implements RepairBackend using Claude API.
-// Builds a prompt from the failure packet and context, sends it to Claude,
-// parses the response into a PatchProposal.
+// Spec §10.1: ClaudeRepairBackend — implements RepairBackend using Claude API.
+// Implements full session-based interface per spec §10.1.
+// Uses circe for structured JSON parsing (spec §10.11).
 class ClaudeRepairBackend(model: Option[String] = None) extends RepairBackend {
 
+  override val backendId: String = "claude"
+
+  // Spec §10.1: Session state tracked in-memory per handle
+  private val sessions = scala.collection.concurrent.TrieMap.empty[String, SessionInfo]
+
+  private case class SessionInfo(
+    config: RepairSessionConfig,
+    handle: RepairSessionHandle,
+    startedAt: Instant,
+    var durationMs: Long = 0,
+    var cancelled: Boolean = false,
+  )
+
+  override def prepareSession(config: RepairSessionConfig): Either[RepairBackendError, RepairSessionHandle] = {
+    val handle = RepairSessionHandle(
+      sessionId = UUID.randomUUID().toString,
+      backendId = backendId,
+      createdAt = Instant.now(),
+    )
+    sessions.put(handle.sessionId, SessionInfo(config, handle, Instant.now()))
+    Right(handle)
+  }
+
+  override def submitRepairTask(handle: RepairSessionHandle, request: RepairRequest): Either[RepairBackendError, RepairResult] = {
+    sessions.get(handle.sessionId) match {
+      case None => Left(RepairBackendError.SessionCreationFailed(s"Session ${handle.sessionId} not found"))
+      case Some(info) if info.cancelled => Left(RepairBackendError.TaskSubmissionFailed("Session was cancelled"))
+      case Some(info) =>
+        val systemPrompt = ClaudePromptBuilder.buildSystemPrompt(request.generationMode)
+        val userPrompt = ClaudePromptBuilder.buildRepairRequestPrompt(request)
+
+        val startMs = System.currentTimeMillis()
+        val result = ClaudeClient.sendMessage(systemPrompt, userPrompt, model) match {
+          case Right(response) =>
+            info.durationMs += (System.currentTimeMillis() - startMs)
+            RepairResponseParser.parseRepairResult(response.content)
+          case Left(error) =>
+            info.durationMs += (System.currentTimeMillis() - startMs)
+            Left(RepairBackendError.TaskSubmissionFailed(s"Claude API error: ${error.message} (HTTP ${error.statusCode})"))
+        }
+        result
+    }
+  }
+
+  override def cancel(handle: RepairSessionHandle): Unit = {
+    sessions.get(handle.sessionId).foreach(_.cancelled = true)
+  }
+
+  override def getUsage(handle: RepairSessionHandle): RepairUsageSummary = {
+    sessions.get(handle.sessionId) match {
+      case Some(info) => RepairUsageSummary(
+        inputTokens = 0, outputTokens = 0, totalTokens = 0,
+        durationMs = info.durationMs, toolCallCount = 1, estimatedCostUsd = None,
+      )
+      case None => RepairUsageSummary(0, 0, 0, 0, 0, None)
+    }
+  }
+
+  override def closeSession(handle: RepairSessionHandle): Unit = {
+    sessions.remove(handle.sessionId)
+  }
+
+  // Convenience: wraps full session lifecycle into single call
   override def proposePatch(packet: FailurePacket, context: RepairContext): RepairResponse = {
     val systemPrompt = ClaudePromptBuilder.buildSystemPrompt()
     val userPrompt = ClaudePromptBuilder.buildUserPrompt(packet, context)
 
     ClaudeClient.sendMessage(systemPrompt, userPrompt, model) match {
       case Right(response) =>
-        parseProposal(response.content, context) match {
+        RepairResponseParser.parsePatchProposal(response.content, context.runId, context.attemptNumber, backendId) match {
           case Right(proposal) =>
             if (proposal.isEmpty) {
               RepairResponse.InvalidPatch("Claude returned empty patch — no edits, new files, or deletions")
@@ -33,130 +96,4 @@ class ClaudeRepairBackend(model: Option[String] = None) extends RepairBackend {
     }
   }
 
-  private def parseProposal(
-    rawContent: String,
-    context: RepairContext,
-  ): Either[String, PatchProposal] = {
-    try {
-      // Extract JSON from response (may be wrapped in markdown code blocks)
-      val json = extractJson(rawContent)
-
-      val summary = extractString(json, "summary").getOrElse("Repair patch from Claude")
-      val hypotheses = extractStringArray(json, "hypotheses")
-
-      val edits = extractEdits(json)
-      val newFiles = extractNewFiles(json)
-      val deletions = extractDeletions(json)
-
-      Right(PatchProposal(
-        patchId = UUID.randomUUID().toString,
-        runId = context.runId,
-        attemptNumber = context.attemptNumber,
-        backendId = "claude",
-        edits = edits,
-        newFiles = newFiles,
-        deletions = deletions,
-        summary = summary,
-        hypotheses = hypotheses,
-        createdAt = Instant.now(),
-      ))
-    } catch {
-      case e: Exception =>
-        Left(s"Parse error: ${e.getMessage}")
-    }
-  }
-
-  private def extractJson(content: String): String = {
-    // Strip markdown code blocks if present
-    val stripped = content.trim
-    if (stripped.startsWith("```")) {
-      val lines = stripped.split("\n").toList
-      // Skip the opening ``` line (possibly with language tag like ```json)
-      val start = 1
-      val end = lines.lastIndexWhere(_.trim.startsWith("```"))
-      if (end > start) lines.slice(start, end).mkString("\n")
-      else stripped
-    } else {
-      stripped
-    }
-  }
-
-  private def extractString(json: String, key: String): Option[String] = {
-    val pattern = s""""$key"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"""".r
-    pattern.findFirstMatchIn(json).map(_.group(1)
-      .replace("\\n", "\n")
-      .replace("\\t", "\t")
-      .replace("\\\"", "\"")
-      .replace("\\\\", "\\"))
-  }
-
-  private def extractStringArray(json: String, key: String): List[String] = {
-    val pattern = s""""$key"\\s*:\\s*\\[(.*?)\\]""".r
-    pattern.findFirstMatchIn(json) match {
-      case Some(m) =>
-        val arrayContent = m.group(1)
-        """"((?:[^"\\]|\\.)*)"""".r.findAllMatchIn(arrayContent)
-          .map(_.group(1)).toList
-      case None => Nil
-    }
-  }
-
-  private def extractEdits(json: String): List[FileEdit] = {
-    val editsBlock = extractArrayBlock(json, "edits")
-    if (editsBlock.isEmpty) return Nil
-
-    val objectPattern = """\{[^{}]*\}""".r
-    objectPattern.findAllIn(editsBlock).flatMap { obj =>
-      for {
-        path <- extractString(obj, "relativePath")
-        oldContent <- extractString(obj, "oldContent")
-        newContent <- extractString(obj, "newContent")
-      } yield FileEdit(path, oldContent, newContent)
-    }.toList
-  }
-
-  private def extractNewFiles(json: String): List[NewFile] = {
-    val block = extractArrayBlock(json, "newFiles")
-    if (block.isEmpty) return Nil
-
-    val objectPattern = """\{[^{}]*\}""".r
-    objectPattern.findAllIn(block).flatMap { obj =>
-      for {
-        path <- extractString(obj, "relativePath")
-        content <- extractString(obj, "content")
-      } yield NewFile(path, content)
-    }.toList
-  }
-
-  private def extractDeletions(json: String): List[FileDeletion] = {
-    val block = extractArrayBlock(json, "deletions")
-    if (block.isEmpty) return Nil
-
-    val objectPattern = """\{[^{}]*\}""".r
-    objectPattern.findAllIn(block).flatMap { obj =>
-      extractString(obj, "relativePath").map(FileDeletion)
-    }.toList
-  }
-
-  private def extractArrayBlock(json: String, key: String): String = {
-    val idx = json.indexOf(s""""$key"""")
-    if (idx < 0) return ""
-
-    val bracketStart = json.indexOf('[', idx)
-    if (bracketStart < 0) return ""
-
-    var depth = 0
-    var i = bracketStart
-    while (i < json.length) {
-      json.charAt(i) match {
-        case '[' => depth += 1
-        case ']' =>
-          depth -= 1
-          if (depth == 0) return json.substring(bracketStart, i + 1)
-        case _ =>
-      }
-      i += 1
-    }
-    ""
-  }
 }

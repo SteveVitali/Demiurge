@@ -134,6 +134,77 @@ object ClaudePromptBuilder extends RepairPromptBuilder {
     sb.toString
   }
 
+  // Spec §10.1: Build prompt from a RepairRequest (session-based interface)
+  override def buildRepairRequestPrompt(request: RepairRequest): String = {
+    val sb = new StringBuilder
+
+    sb.append("# Task\n")
+    sb.append(request.taskObjective).append("\n\n")
+
+    sb.append("# Repository Summary\n")
+    sb.append(request.repoSummary).append("\n\n")
+
+    sb.append("# Failure Summary\n")
+    sb.append(request.failurePacket.summary).append("\n\n")
+
+    // Failed requirements
+    sb.append("# Failed Requirements\n")
+    request.requirementSubset.filter(r =>
+      r.verdictStatus == VerdictStatus.Fail || r.verdictStatus == VerdictStatus.Timeout
+    ).foreach { r =>
+      sb.append(s"- ${r.requirementId}: ${r.humanDescription} (${r.category}, ${r.verdictStatus})")
+      r.failureMessage.foreach(msg => sb.append(s" — $msg"))
+      sb.append("\n")
+    }
+    sb.append("\n")
+
+    // Suspected root causes
+    if (request.failurePacket.suspectedRootCauses.nonEmpty) {
+      sb.append("# Suspected Root Causes\n")
+      request.failurePacket.suspectedRootCauses.foreach { cause =>
+        sb.append(s"- ${cause.description} (confidence: ${cause.confidence})\n")
+      }
+      sb.append("\n")
+    }
+
+    // Prior attempt summaries
+    if (request.priorAttemptSummaries.nonEmpty) {
+      sb.append("# Prior Attempts\n")
+      request.priorAttemptSummaries.foreach { prior =>
+        sb.append(s"- Attempt ${prior.attemptNumber}: ${prior.outcome}")
+        prior.patchSummary.foreach(s => sb.append(s" — $s"))
+        sb.append(s"\n  Files: ${prior.filesChanged.mkString(", ")}\n")
+      }
+      sb.append("\n")
+    }
+
+    // Relevant changed files
+    if (request.relevantChangedFiles.nonEmpty) {
+      sb.append("# Changed Files\n")
+      request.relevantChangedFiles.foreach(f => sb.append(s"- $f\n"))
+      sb.append("\n")
+    }
+
+    // Scoped artifacts
+    if (request.scopedArtifacts.nonEmpty) {
+      sb.append("# Available Artifacts\n")
+      request.scopedArtifacts.foreach { ref =>
+        sb.append(s"- [${ref.artifactType}] ${ref.description}")
+        ref.contentPreview.foreach(p => sb.append(s"\n  Preview: ${p.take(512)}"))
+        sb.append("\n")
+      }
+      sb.append("\n")
+    }
+
+    // Rules of engagement
+    if (request.rulesOfEngagement.nonEmpty) {
+      sb.append("# Rules of Engagement\n")
+      sb.append(request.rulesOfEngagement).append("\n\n")
+    }
+
+    sb.toString
+  }
+
   private def collectRelevantFiles(
     worktreePath: Path,
     maxFiles: Int,

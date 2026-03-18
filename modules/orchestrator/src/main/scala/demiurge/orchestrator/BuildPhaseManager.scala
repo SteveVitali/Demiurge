@@ -3,6 +3,8 @@ package demiurge.orchestrator
 import java.sql.Connection
 import java.time.Instant
 import java.util.UUID
+import scala.concurrent.Await
+import scala.concurrent.duration.Duration
 
 import demiurge.model._
 import demiurge.persistence._
@@ -71,7 +73,7 @@ object BuildPhaseManager {
       metadata = Map("task" -> taskText),
     )
 
-    inferenceService.infer(request) match {
+    Await.result(inferenceService.infer(request), Duration.Inf) match {
       case Right(response) => parsePlanResponse(runId, taskText, response)
       case Left(_) => None
     }

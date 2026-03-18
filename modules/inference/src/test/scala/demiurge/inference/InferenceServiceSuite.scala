@@ -1,6 +1,8 @@
 package demiurge.inference
 
 import java.util.UUID
+import scala.concurrent.Await
+import scala.concurrent.duration.Duration
 import demiurge.model._
 
 class InferenceServiceSuite extends munit.FunSuite {
@@ -34,7 +36,7 @@ class InferenceServiceSuite extends munit.FunSuite {
     val backend = new MockInferenceBackend()
     val service = new InferenceServiceImpl(backend, budget, cache)
 
-    val result = service.infer(mkRequest())
+    val result = Await.result(service.infer(mkRequest()), Duration.Inf)
     assert(result.isRight)
     val response = result.toOption.get
     assertEquals(response.provider, InferenceProvider.Mock)
@@ -52,7 +54,7 @@ class InferenceServiceSuite extends munit.FunSuite {
     val backend = new MockInferenceBackend()
     val service = new InferenceServiceImpl(backend, budget, cache)
 
-    val result = service.infer(mkRequest(component = "unauthorized_component"))
+    val result = Await.result(service.infer(mkRequest(component = "unauthorized_component")), Duration.Inf)
     assert(result.isLeft)
     result.left.foreach {
       case InferenceError.ProviderError(_, code, _) => assertEquals(code, 403)
@@ -71,7 +73,7 @@ class InferenceServiceSuite extends munit.FunSuite {
       budget.recordUsage("run-1", "failure_analyzer", Some(1), 20000L)
     }
 
-    val result = service.infer(mkRequest())
+    val result = Await.result(service.infer(mkRequest()), Duration.Inf)
     assert(result.isLeft)
     result.left.foreach {
       case _: InferenceError.BudgetExceeded => // expected
@@ -87,13 +89,13 @@ class InferenceServiceSuite extends munit.FunSuite {
 
     // First call — populates cache
     val req = mkRequest(cacheable = true)
-    val result1 = service.infer(req)
+    val result1 = Await.result(service.infer(req), Duration.Inf)
     assert(result1.isRight)
     assertEquals(backend.calls.size, 1)
 
     // Second call with same params — should hit cache
     val req2 = req.copy(requestId = UUID.randomUUID().toString)
-    val result2 = service.infer(req2)
+    val result2 = Await.result(service.infer(req2), Duration.Inf)
     assert(result2.isRight)
     assert(result2.toOption.get.cachedHit)
     // Backend should NOT have been called again
@@ -106,7 +108,7 @@ class InferenceServiceSuite extends munit.FunSuite {
     val backend = new MockInferenceBackend()
     val service = new InferenceServiceImpl(backend, budget, cache, replayMode = true)
 
-    val result = service.infer(mkRequest())
+    val result = Await.result(service.infer(mkRequest()), Duration.Inf)
     assert(result.isLeft)
     result.left.foreach {
       case InferenceError.ProviderError(_, _, msg) =>
@@ -123,12 +125,12 @@ class InferenceServiceSuite extends munit.FunSuite {
     // Pre-populate cache
     val service1 = new InferenceServiceImpl(backend, budget, cache, replayMode = false)
     val req = mkRequest(cacheable = true)
-    service1.infer(req)
+    Await.result(service1.infer(req), Duration.Inf)
 
     // Now replay mode
     val service2 = new InferenceServiceImpl(backend, budget, cache, replayMode = true)
     val req2 = req.copy(requestId = UUID.randomUUID().toString)
-    val result = service2.infer(req2)
+    val result = Await.result(service2.infer(req2), Duration.Inf)
     assert(result.isRight)
     assert(result.toOption.get.cachedHit)
   }
@@ -142,7 +144,7 @@ class InferenceServiceSuite extends munit.FunSuite {
     )
     val service = new InferenceServiceImpl(backend, budget, cache)
 
-    val result = service.infer(mkRequest())
+    val result = Await.result(service.infer(mkRequest()), Duration.Inf)
     assert(result.isLeft)
     result.left.foreach {
       case InferenceError.ProviderError(_, code, _) => assertEquals(code, 500)
@@ -156,7 +158,7 @@ class InferenceServiceSuite extends munit.FunSuite {
     val backend = new MockInferenceBackend()
     val service = new InferenceServiceImpl(backend, budget, cache)
 
-    service.infer(mkRequest())
+    Await.result(service.infer(mkRequest()), Duration.Inf)
     // failure_analyzer is per-attempt, so pass attemptNumber to get correct budget status
     val status = service.remainingBudget("run-1", "failure_analyzer", Some(1))
     assertEquals(status.component, "failure_analyzer")
@@ -173,11 +175,11 @@ class InferenceServiceSuite extends munit.FunSuite {
 
     // failure_analyzer has maxRequestsPerRun=5
     for (_ <- 1 to 5) {
-      val result = service.infer(mkRequest())
+      val result = Await.result(service.infer(mkRequest()), Duration.Inf)
       assert(result.isRight)
     }
     // 6th call should fail
-    val result = service.infer(mkRequest())
+    val result = Await.result(service.infer(mkRequest()), Duration.Inf)
     assert(result.isLeft)
     result.left.foreach {
       case _: InferenceError.BudgetExceeded => // expected

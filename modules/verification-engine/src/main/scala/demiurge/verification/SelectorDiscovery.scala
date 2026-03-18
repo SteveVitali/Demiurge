@@ -1,6 +1,8 @@
 package demiurge.verification
 
 import java.util.UUID
+import scala.concurrent.Await
+import scala.concurrent.duration.Duration
 
 import demiurge.model._
 import demiurge.inference.InferenceService
@@ -57,7 +59,7 @@ object SelectorDiscovery {
       metadata = Map("entry_url" -> spec.entryUrl),
     )
 
-    inferenceService.infer(request) match {
+    Await.result(inferenceService.infer(request), Duration.Inf) match {
       case Right(response) =>
         parseSelectorResponse(spec, response).getOrElse(spec)
       case Left(_) =>

@@ -7,12 +7,74 @@ import io.circe.syntax._
 
 object WorkerMessages {
 
-  // Spec §10.2: Initialize
-  def initializeParams(artifactRoot: String, worktreePath: String, runId: String): Json = Json.obj(
-    "artifactRoot" -> artifactRoot.asJson,
-    "worktreePath" -> worktreePath.asJson,
-    "runId"        -> runId.asJson,
+  // Spec §9.3.1: Browser options for initialize
+  case class BrowserOptions(
+    viewport:           Option[(Int, Int)]  = Some((1280, 720)),
+    locale:             Option[String]      = Some("en-US"),
+    timezone:           Option[String]      = None,
+    deviceScaleFactor:  Option[Double]      = None,
+    ignoreHTTPSErrors:  Boolean             = true,
   )
+
+  // Spec §9.3.1: Default timeouts for initialize
+  case class DefaultTimeouts(
+    navigationMs: Int = 30000,
+    actionMs:     Int = 15000,
+    assertionMs:  Int = 10000,
+  )
+
+  // Spec §9.3.1: Browser policy for initialize
+  case class BrowserPolicy(
+    allowedOrigins:   List[String] = Nil,
+    forbiddenOrigins: List[String] = Nil,
+  )
+
+  // Spec §9.3.1: Initialize with full params
+  def initializeParams(
+    artifactRoot:   String,
+    worktreePath:   String,
+    runId:          String,
+    browserOptions: BrowserOptions   = BrowserOptions(),
+    defaultTimeouts: DefaultTimeouts = DefaultTimeouts(),
+    browserPolicy:  BrowserPolicy    = BrowserPolicy(),
+  ): Json = {
+    var obj = Json.obj(
+      "artifactRoot" -> artifactRoot.asJson,
+      "worktreePath" -> worktreePath.asJson,
+      "runId"        -> runId.asJson,
+    )
+
+    // Spec §9.3.1: browserOptions
+    val boObj = Json.obj(
+      "ignoreHTTPSErrors" -> browserOptions.ignoreHTTPSErrors.asJson,
+    ).deepMerge(
+      browserOptions.viewport.map { case (w, h) =>
+        Json.obj("viewport" -> Json.obj("width" -> w.asJson, "height" -> h.asJson))
+      }.getOrElse(Json.obj())
+    ).deepMerge(
+      browserOptions.locale.map(l => Json.obj("locale" -> l.asJson)).getOrElse(Json.obj())
+    ).deepMerge(
+      browserOptions.timezone.map(t => Json.obj("timezone" -> t.asJson)).getOrElse(Json.obj())
+    ).deepMerge(
+      browserOptions.deviceScaleFactor.map(d => Json.obj("deviceScaleFactor" -> d.asJson)).getOrElse(Json.obj())
+    )
+    obj = obj.deepMerge(Json.obj("browserOptions" -> boObj))
+
+    // Spec §9.3.1: defaultTimeouts
+    obj = obj.deepMerge(Json.obj("defaultTimeouts" -> Json.obj(
+      "navigationMs" -> defaultTimeouts.navigationMs.asJson,
+      "actionMs"     -> defaultTimeouts.actionMs.asJson,
+      "assertionMs"  -> defaultTimeouts.assertionMs.asJson,
+    )))
+
+    // Spec §9.3.1: browserPolicy
+    obj = obj.deepMerge(Json.obj("browserPolicy" -> Json.obj(
+      "allowedOrigins"   -> browserPolicy.allowedOrigins.asJson,
+      "forbiddenOrigins" -> browserPolicy.forbiddenOrigins.asJson,
+    )))
+
+    obj
+  }
 
   case class InitializeResult(
     browserVersion: String,
@@ -200,6 +262,50 @@ object WorkerMessages {
     val artifacts = parseArtifacts(c.downField("artifacts"))
     val err = c.downField("errorMessage").as[String].toOption
     Right(PageSnapshotResult(artifacts, err))
+  }
+
+  // Spec §9.2: Heartbeat/progress notification types
+  case class HeartbeatNotification(
+    taskId:       String,
+    status:       String,       // "alive", "busy", "idle"
+    uptimeMs:     Long,
+    memoryUsageMb: Option[Double],
+  )
+
+  case class ProgressNotification(
+    taskId:           String,
+    phase:            String,     // "navigating", "acting", "asserting", "capturing"
+    stepIndex:        Int,
+    totalSteps:       Int,
+    currentAction:    Option[String],
+    elapsedMs:        Long,
+  )
+
+  def parseHeartbeatNotification(json: Json): Either[String, HeartbeatNotification] = {
+    val c = json.hcursor
+    for {
+      taskId   <- c.downField("taskId").as[String].left.map(_.getMessage)
+      status   <- c.downField("status").as[String].left.map(_.getMessage)
+      uptimeMs <- c.downField("uptimeMs").as[Long].left.map(_.getMessage)
+    } yield HeartbeatNotification(
+      taskId, status, uptimeMs,
+      c.downField("memoryUsageMb").as[Double].toOption,
+    )
+  }
+
+  def parseProgressNotification(json: Json): Either[String, ProgressNotification] = {
+    val c = json.hcursor
+    for {
+      taskId     <- c.downField("taskId").as[String].left.map(_.getMessage)
+      phase      <- c.downField("phase").as[String].left.map(_.getMessage)
+      stepIndex  <- c.downField("stepIndex").as[Int].left.map(_.getMessage)
+      totalSteps <- c.downField("totalSteps").as[Int].left.map(_.getMessage)
+      elapsedMs  <- c.downField("elapsedMs").as[Long].left.map(_.getMessage)
+    } yield ProgressNotification(
+      taskId, phase, stepIndex, totalSteps,
+      c.downField("currentAction").as[String].toOption,
+      elapsedMs,
+    )
   }
 
   // Shared parsers

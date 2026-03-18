@@ -33,7 +33,7 @@ object VerificationEngine {
     browserExecutor: Option[BrowserVerifierExecutor] = None,
     inferenceService: Option[InferenceService] = None,
     resolvedConfig: Option[ResolvedConfig] = None,
-    storageStatePath: Option[String] = None,
+    authContext: Option[AuthContext] = None,
   ): VerificationResult = {
     val plan = VerificationPlanner.buildPlan(graph)
     val verifierMap = buildVerifierMap(graph)
@@ -72,7 +72,7 @@ object VerificationEngine {
                     }
                     executeOneVerifier(
                       spec, verifier, runId, attemptNumber, graph, reqVerdicts.toMap,
-                      browserExecutor, inferenceService, resolvedConfig, storageStatePath,
+                      browserExecutor, inferenceService, resolvedConfig, authContext,
                     )
                   }
                 })
@@ -119,7 +119,7 @@ object VerificationEngine {
             } else {
               executeOneVerifier(
                 spec, verifier, runId, attemptNumber, graph, reqVerdicts.toMap,
-                browserExecutor, inferenceService, resolvedConfig, storageStatePath,
+                browserExecutor, inferenceService, resolvedConfig, authContext,
               )
             }
             reqVerdicts(verdict.requirementId) = verdict.status
@@ -154,7 +154,7 @@ object VerificationEngine {
     browserExecutor:  Option[BrowserVerifierExecutor],
     inferenceService: Option[InferenceService],
     resolvedConfig:   Option[ResolvedConfig],
-    storageStatePath: Option[String],
+    authContext:      Option[AuthContext],
   ): RequirementVerdict = {
     // Spec §12.4: Blocked detection
     if (VerificationPlanner.isBlocked(spec, graph, currentVerdicts)) {
@@ -178,7 +178,7 @@ object VerificationEngine {
     }
 
     val startTime = System.currentTimeMillis()
-    val firstResult = executeSingleVerifier(verifier, browserExecutor, inferenceService, resolvedConfig, storageStatePath, runId)
+    val firstResult = executeSingleVerifier(verifier, browserExecutor, inferenceService, resolvedConfig, authContext, runId)
 
     var finalOutcome = firstResult.outcome
     var finalObs = firstResult.observations
@@ -193,7 +193,7 @@ object VerificationEngine {
         attempts += 1
         retryCount += 1
         if (spec.retryDelayMs > 0) Thread.sleep(spec.retryDelayMs.toLong)
-        val retryResult = executeSingleVerifier(verifier, browserExecutor, inferenceService, resolvedConfig, storageStatePath, runId)
+        val retryResult = executeSingleVerifier(verifier, browserExecutor, inferenceService, resolvedConfig, authContext, runId)
         finalOutcome = retryResult.outcome
         finalObs = retryResult.observations
         finalArtifacts = retryResult.artifactRefs
@@ -238,7 +238,7 @@ object VerificationEngine {
     browserExecutor:  Option[BrowserVerifierExecutor],
     inferenceService: Option[InferenceService],
     resolvedConfig:   Option[ResolvedConfig],
-    storageStatePath: Option[String],
+    authContext:      Option[AuthContext],
     runId:            String,
   ): SingleResult = {
     verifier match {
@@ -246,7 +246,7 @@ object VerificationEngine {
         browserExecutor match {
           case Some(executor) =>
             val discoveredBv = discoverSelectorsIfNeeded(bv, executor, runId, inferenceService, resolvedConfig)
-            val resolvedBv = storageStatePath match {
+            val resolvedBv = authContext.flatMap(_.storageStatePath) match {
               case Some(path) if discoveredBv.storageStatePath.isEmpty =>
                 discoveredBv.copy(storageStatePath = Some(path))
               case _ => discoveredBv

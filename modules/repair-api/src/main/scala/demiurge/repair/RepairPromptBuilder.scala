@@ -8,4 +8,6 @@ import demiurge.model._
 trait RepairPromptBuilder {
   def buildSystemPrompt(mode: GenerationMode = GenerationMode.Repair): String
   def buildUserPrompt(packet: FailurePacket, context: RepairContext): String
+  // Spec §10.1: Build prompt from a RepairRequest (session-based interface)
+  def buildRepairRequestPrompt(request: RepairRequest): String
 }

@@ -86,7 +86,7 @@ object RunOrchestrator {
     var planResult: Option[RuntimePlan] = None
     var patchHistory: List[PatchProposal] = Nil
     var attemptNumber = 1
-    var storageStatePath: Option[String] = None
+    var authContext: Option[AuthContext] = None
 
     if (resumeFromStatus.isDefined) {
       val data = ResumeDataLoader.load(currentRun.runId)
@@ -254,39 +254,76 @@ object RunOrchestrator {
     }
 
     // --- Transition: PlanningEnvironment → BootstrappingEnvironment ---
+    // Spec §2.1: Retry boot up to max_env_boot_retries (default 2) on failure.
     if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
     if (shouldExecute(RunStatus.BootstrappingEnvironment, startPhase)) {
-      var bootResult: Option[RuntimeSupervisor.BootResult] = None
+      val maxEnvBootRetries = 2
+      var bootAttempt = 0
+      var bootSucceeded = false
 
-      currentRun = RunTransitionManager.transition(
-        currentCtx,
-        RunStatus.BootstrappingEnvironment,
-        sideEffect = { updatedCtx =>
-          bootResult = Some(supervisor.bootEnvironment(planResult.get, currentCtx.repoRoot))
-        },
-      )
-      currentCtx = currentCtx.copy(run = currentRun)
-      SignalHandler.updateContext(currentCtx)
+      while (bootAttempt <= maxEnvBootRetries && !bootSucceeded) {
+        if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
 
-      bootResult.get match {
-        case RuntimeSupervisor.BootFailure(reason, partialSnapshot) =>
-          // Persist partial snapshot if available
-          partialSnapshot.foreach(RuntimeSnapshotRepo.insert(_))
-          // Teardown on failure
-          try { supervisor.teardown(planResult.get, currentCtx.repoRoot) } catch { case _: Exception => }
+        var bootResult: Option[RuntimeSupervisor.BootResult] = None
 
-          currentRun = RunTransitionManager.transitionToTerminal(
-            currentCtx,
-            RunStatus.Exhausted,
-            summary = Some(s"Environment bootstrap failed: $reason"),
-          )
-          currentCtx = currentCtx.copy(run = currentRun)
-          SignalHandler.updateContext(currentCtx)
-          return currentRun
+        currentRun = RunTransitionManager.transition(
+          currentCtx,
+          RunStatus.BootstrappingEnvironment,
+          sideEffect = { updatedCtx =>
+            bootResult = Some(supervisor.bootEnvironment(planResult.get, currentCtx.repoRoot))
+          },
+        )
+        currentCtx = currentCtx.copy(run = currentRun)
+        SignalHandler.updateContext(currentCtx)
 
-        case RuntimeSupervisor.BootSuccess(snapshot) =>
-          // Persist runtime snapshot (Spec §7.2)
-          RuntimeSnapshotRepo.insert(snapshot)
+        bootResult.get match {
+          case RuntimeSupervisor.BootFailure(reason, partialSnapshot) =>
+            partialSnapshot.foreach(RuntimeSnapshotRepo.insert(_))
+            try { supervisor.teardown(planResult.get, currentCtx.repoRoot) } catch { case _: Exception => }
+
+            bootAttempt += 1
+            if (bootAttempt > maxEnvBootRetries) {
+              // Spec §2.1: Transition to EnvironmentFailed → Exhausted after all retries
+              currentRun = RunTransitionManager.transition(
+                currentCtx,
+                RunStatus.EnvironmentFailed,
+                sideEffect = { _ => },
+              )
+              currentCtx = currentCtx.copy(run = currentRun)
+              SignalHandler.updateContext(currentCtx)
+
+              currentRun = RunTransitionManager.transitionToTerminal(
+                currentCtx,
+                RunStatus.Exhausted,
+                summary = Some(s"Environment bootstrap failed after ${bootAttempt} attempt(s): $reason"),
+              )
+              currentCtx = currentCtx.copy(run = currentRun)
+              SignalHandler.updateContext(currentCtx)
+              return currentRun
+            } else {
+              // Spec §2.1: EnvironmentFailed → retry BootstrappingEnvironment
+              System.err.println(s"[orchestrator] Boot attempt $bootAttempt failed: $reason — retrying (${maxEnvBootRetries - bootAttempt} retries left)")
+              currentRun = RunTransitionManager.transition(
+                currentCtx,
+                RunStatus.EnvironmentFailed,
+                sideEffect = { _ => },
+              )
+              currentCtx = currentCtx.copy(run = currentRun)
+              SignalHandler.updateContext(currentCtx)
+            }
+
+          case RuntimeSupervisor.BootSuccess(snapshot) =>
+            RuntimeSnapshotRepo.insert(snapshot)
+            bootSucceeded = true
+        }
+      }
+
+      if (!bootSucceeded) {
+        currentRun = RunTransitionManager.transitionToTerminal(
+          currentCtx, RunStatus.Exhausted,
+          summary = Some("Environment bootstrap failed after all retries"),
+        )
+        return currentRun
       }
     }
 
@@ -325,8 +362,16 @@ object RunOrchestrator {
         SignalHandler.updateContext(currentCtx)
 
         authResult.foreach {
-          case AuthBootstrapExecutor.AuthResult(true, path, _, _) =>
-            storageStatePath = path
+          case AuthBootstrapExecutor.AuthResult(true, path, headers, _) =>
+            val devHeaders = if (authConfig.get.mode == AuthMode.DevBypassHeader) headers else Map.empty[String, String]
+            authContext = Some(AuthContext(
+              mode = authConfig.get.mode,
+              storageStatePath = path,
+              apiHeaders = headers,
+              staticToken = authConfig.get.staticToken,
+              devBypassHeaders = devHeaders,
+              expiresAt = None,
+            ))
           case AuthBootstrapExecutor.AuthResult(false, _, _, errOpt) =>
             val msg = errOpt.getOrElse("unknown reason")
             System.err.println(s"[orchestrator] Auth bootstrap failed (non-fatal): $msg")
@@ -405,7 +450,7 @@ object RunOrchestrator {
             browserExecutor,
             inferenceService,
             resolvedConfig,
-            storageStatePath,
+            authContext,
           )
           verificationResult = Some(result)
 
@@ -474,7 +519,14 @@ object RunOrchestrator {
       }
 
       // --- Repair cycle (Fail + attempts remain + repairBackend exists) ---
+      // Spec §10.9: Retry repair within attempt up to maxRepairRetriesPerAttempt
       val backend = repairBackend.get
+      val maxRepairRetriesPerAttempt = 2
+      var repairRetryCount = 0
+      var repairRetryLoop = true
+
+      while (repairRetryLoop) {
+      repairRetryLoop = false
 
       // Transition: → AnalyzingFailure
       if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
@@ -554,7 +606,7 @@ object RunOrchestrator {
       SignalHandler.updateContext(currentCtx)
 
       repairOutcome.get match {
-        case RepairExecutor.RepairApplied(packet, proposal, _) =>
+        case RepairExecutor.RepairApplied(packet, proposal, filesChanged) =>
           // Persist failure packet and patch record
           RepairManager.persistFailurePacket(packet)
           RepairManager.persistPatchRecord(proposal)
@@ -563,70 +615,122 @@ object RunOrchestrator {
               a.attemptId, proposal.patchId, packet.failurePacketId, proposal.backendId))
           patchHistory = patchHistory :+ proposal
 
-          // --- Transition: → SoftResettingEnvironment ---
-          if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
+          // Spec §13.11: Determine reset strategy based on infra-sensitive file detection
+          val needsFullRebuild = InfraSensitiveDetector.requiresRebuild(filesChanged)
 
-          var rebootResult: Option[RuntimeSupervisor.BootResult] = None
+          if (needsFullRebuild) {
+            // Spec §13.11: Full environment rebuild for infra-sensitive changes
+            if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
+
+            var rebuildResult: Option[RuntimeSupervisor.BootResult] = None
+            currentRun = RunTransitionManager.transition(
+              currentCtx,
+              RunStatus.RebuildingEnvironment,
+              sideEffect = { _ =>
+                try { supervisor.teardown(planResult.get, currentCtx.repoRoot) } catch { case _: Exception => }
+                rebuildResult = Some(supervisor.bootEnvironment(planResult.get, currentCtx.repoRoot))
+              },
+            )
+            currentCtx = currentCtx.copy(run = currentRun)
+            SignalHandler.updateContext(currentCtx)
+
+            rebuildResult.get match {
+              case RuntimeSupervisor.BootFailure(reason, partialSnapshot) =>
+                partialSnapshot.foreach(RuntimeSnapshotRepo.insert(_))
+                try { supervisor.teardown(planResult.get, currentCtx.repoRoot) } catch { case _: Exception => }
+                currentRun = RunTransitionManager.transitionToTerminal(
+                  currentCtx, RunStatus.Exhausted,
+                  summary = Some(s"Environment rebuild failed after repair: $reason"),
+                  finalVerdict = Some(VerdictStatus.Fail),
+                )
+                currentCtx = currentCtx.copy(run = currentRun)
+                SignalHandler.updateContext(currentCtx)
+                return currentRun
+              case RuntimeSupervisor.BootSuccess(snap) =>
+                RuntimeSnapshotRepo.insert(snap)
+            }
+          } else {
+            // Spec §13.11: Soft reset for non-infra changes
+            if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
+
+            var rebootResult: Option[RuntimeSupervisor.BootResult] = None
+            currentRun = RunTransitionManager.transition(
+              currentCtx,
+              RunStatus.SoftResettingEnvironment,
+              sideEffect = { _ =>
+                rebootResult = Some(supervisor.restartEnvironment(
+                  planResult.get, currentCtx.repoRoot))
+              },
+            )
+            currentCtx = currentCtx.copy(run = currentRun)
+            SignalHandler.updateContext(currentCtx)
+
+            rebootResult.get match {
+              case RuntimeSupervisor.BootFailure(reason, partialSnapshot) =>
+                partialSnapshot.foreach(RuntimeSnapshotRepo.insert(_))
+                try { supervisor.teardown(planResult.get, currentCtx.repoRoot) } catch { case _: Exception => }
+                currentRun = RunTransitionManager.transitionToTerminal(
+                  currentCtx, RunStatus.Exhausted,
+                  summary = Some(s"Environment reboot failed after repair: $reason"),
+                  finalVerdict = Some(VerdictStatus.Fail),
+                )
+                currentCtx = currentCtx.copy(run = currentRun)
+                SignalHandler.updateContext(currentCtx)
+                return currentRun
+              case RuntimeSupervisor.BootSuccess(rebootSnapshot) =>
+                RuntimeSnapshotRepo.insert(rebootSnapshot)
+            }
+          }
+
+          // Transition: → ReadyToVerify
+          if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
           currentRun = RunTransitionManager.transition(
             currentCtx,
-            RunStatus.SoftResettingEnvironment,
-            sideEffect = { _ =>
-              rebootResult = Some(supervisor.restartEnvironment(
-                planResult.get, currentCtx.repoRoot))
-            },
+            RunStatus.ReadyToVerify,
+            sideEffect = { _ => },
           )
           currentCtx = currentCtx.copy(run = currentRun)
           SignalHandler.updateContext(currentCtx)
 
-          rebootResult.get match {
-            case RuntimeSupervisor.BootFailure(reason, partialSnapshot) =>
-              partialSnapshot.foreach(RuntimeSnapshotRepo.insert(_))
-              try { supervisor.teardown(planResult.get, currentCtx.repoRoot) } catch { case _: Exception => }
-              currentRun = RunTransitionManager.transitionToTerminal(
-                currentCtx,
-                RunStatus.Exhausted,
-                summary = Some(s"Environment reboot failed after repair: $reason"),
-                finalVerdict = Some(VerdictStatus.Fail),
-              )
-              currentCtx = currentCtx.copy(run = currentRun)
-              SignalHandler.updateContext(currentCtx)
-              return currentRun
-
-            case RuntimeSupervisor.BootSuccess(rebootSnapshot) =>
-              RuntimeSnapshotRepo.insert(rebootSnapshot)
-
-              // Transition: → ReadyToVerify
-              if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
-              currentRun = RunTransitionManager.transition(
-                currentCtx,
-                RunStatus.ReadyToVerify,
-                sideEffect = { _ => },
-              )
-              currentCtx = currentCtx.copy(run = currentRun)
-              SignalHandler.updateContext(currentCtx)
-
-              attemptNumber += 1
-              // continue loop
-          }
+          attemptNumber += 1
+          // continue loop
 
         case RepairExecutor.RepairRejected(packet, reason) =>
-          // Repair failed — persist packet and transition to Exhausted
+          // Spec §10.9: RepairFailed retry within attempt (maxRepairRetriesPerAttempt)
           RepairManager.persistFailurePacket(packet)
           currentAttempt.foreach(a =>
             RepairManager.markAttemptRepairFailed(a.attemptId, packet.failurePacketId))
 
-          try { supervisor.teardown(planResult.get, currentCtx.repoRoot) } catch { case _: Exception => }
+          repairRetryCount += 1
+          if (repairRetryCount <= maxRepairRetriesPerAttempt) {
+            // Spec §10.9: Transition to RepairFailed and retry repair
+            System.err.println(s"[orchestrator] Repair failed (retry $repairRetryCount/$maxRepairRetriesPerAttempt): $reason")
+            currentRun = RunTransitionManager.transition(
+              currentCtx,
+              RunStatus.RepairFailed,
+              sideEffect = { _ => },
+            )
+            currentCtx = currentCtx.copy(run = currentRun)
+            SignalHandler.updateContext(currentCtx)
+            // Loop back to PlanningRepair for this attempt
+            repairRetryLoop = true
+          } else {
+            // All repair retries exhausted for this attempt
+            try { supervisor.teardown(planResult.get, currentCtx.repoRoot) } catch { case _: Exception => }
 
-          currentRun = RunTransitionManager.transitionToTerminal(
-            currentCtx,
-            RunStatus.Exhausted,
-            summary = Some(s"Repair failed: $reason"),
-            finalVerdict = Some(VerdictStatus.Fail),
-          )
-          currentCtx = currentCtx.copy(run = currentRun)
-          SignalHandler.updateContext(currentCtx)
-          return currentRun
+            currentRun = RunTransitionManager.transitionToTerminal(
+              currentCtx,
+              RunStatus.Exhausted,
+              summary = Some(s"Repair failed after $repairRetryCount retries: $reason"),
+              finalVerdict = Some(VerdictStatus.Fail),
+            )
+            currentCtx = currentCtx.copy(run = currentRun)
+            SignalHandler.updateContext(currentCtx)
+            return currentRun
+          }
       }
+
+      } // end repair retry while
     } // end while
 
     // Safety: unreachable under normal control flow — every path inside the loop

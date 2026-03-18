@@ -3,6 +3,7 @@ package demiurge.inference
 import java.security.MessageDigest
 import java.time.Instant
 import java.util.UUID
+import scala.concurrent.Future
 
 import demiurge.model._
 
@@ -13,12 +14,18 @@ class InferenceServiceImpl(
   budgetState: InferenceBudgetState,
   cache: InferenceCache,
   replayMode: Boolean = false,
+  usageRecordPersister: Option[UsageRecord => Unit] = None,
 ) extends InferenceService {
 
   private val usageRecords = scala.collection.mutable.ListBuffer.empty[UsageRecord]
 
   // Spec §5.3: infer with budget check, cache, timeout, retry, auditing
-  override def infer(request: InferenceRequest): Either[InferenceError, InferenceResponse] = {
+  override def infer(request: InferenceRequest): Future[Either[InferenceError, InferenceResponse]] = {
+    Future.successful(inferSync(request))
+  }
+
+  // Internal synchronous implementation
+  private def inferSync(request: InferenceRequest): Either[InferenceError, InferenceResponse] = {
     // Spec §5.2: Validate caller is allowed
     if (!InferenceBudgetTracker.allowedCallers.contains(request.component)) {
       return Left(InferenceError.ProviderError(
@@ -125,7 +132,7 @@ class InferenceServiceImpl(
     digest.digest(input.getBytes("UTF-8")).map("%02x".format(_)).mkString
   }
 
-  // Spec §5.9: Record usage for successful inference
+  // Spec §5.9: Record usage for successful inference — in-memory + SQLite persistence
   private def recordUsage(request: InferenceRequest, response: InferenceResponse): Unit = {
     val record = UsageRecord(
       usageRecordId = UUID.randomUUID().toString,
@@ -144,6 +151,7 @@ class InferenceServiceImpl(
       createdAt = Instant.now(),
     )
     usageRecords += record
+    persistRecord(record)
   }
 
   // Record failed usage (Spec §5.10 step 2)
@@ -165,5 +173,13 @@ class InferenceServiceImpl(
       createdAt = Instant.now(),
     )
     usageRecords += record
+    persistRecord(record)
+  }
+
+  // Spec §5.9: Persist UsageRecord to SQLite via callback (best-effort)
+  private def persistRecord(record: UsageRecord): Unit = {
+    usageRecordPersister.foreach { persister =>
+      try { persister(record) } catch { case _: Exception => /* best-effort */ }
+    }
   }
 }

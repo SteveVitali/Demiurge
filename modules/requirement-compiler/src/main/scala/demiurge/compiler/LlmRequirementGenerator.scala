@@ -2,6 +2,8 @@ package demiurge.compiler
 
 import java.time.{Duration, Instant}
 import java.util.UUID
+import scala.concurrent.Await
+import scala.concurrent.duration.{Duration => SDuration}
 
 import demiurge.model._
 import demiurge.inference.InferenceService
@@ -51,7 +53,7 @@ object LlmRequirementGenerator {
       metadata = Map("task" -> taskText),
     )
 
-    inferenceService.infer(request) match {
+    Await.result(inferenceService.infer(request), SDuration.Inf) match {
       case Right(response) =>
         parseRequirementGraph(runId, response, requestId)
           .getOrElse(buildFallbackGraph(runId, inspection, resolvedConfig, Some(requestId)))

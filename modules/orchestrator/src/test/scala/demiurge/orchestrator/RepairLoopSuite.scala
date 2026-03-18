@@ -159,8 +159,8 @@ class RepairLoopSuite extends FunSuite with TestFixtures {
 
         assertEquals(finalRun.status, RunStatus.Exhausted)
         assertEquals(finalRun.finalVerdict, Some(VerdictStatus.Fail))
-        // Repair rejected on first attempt → immediate Exhausted
-        assertEquals(backend.callCount, 1, "Backend should be called exactly once")
+        // Spec §10.9: Repair retries within attempt (1 initial + 2 retries = 3 calls)
+        assertEquals(backend.callCount, 3, "Backend should be called 3 times (1 + 2 retries)")
         assert(finalRun.finalSummary.exists(_.contains("Repair failed")))
       } finally {
         LockManager.release(repoRoot)
