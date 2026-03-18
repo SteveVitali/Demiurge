@@ -1,9 +1,26 @@
-load("@rules_scala//scala:scala.bzl", "scala_library")
+load("@rules_scala//scala:scala.bzl", "scala_junit_test", "scala_library")
 
-# Phase 2+: Requirement compilation module
 scala_library(
     name = "requirement-compiler",
-    srcs = glob(["src/main/scala/**/*.scala"], allow_empty = True),
+    srcs = glob(["src/main/scala/**/*.scala"]),
     visibility = ["//visibility:public"],
-    deps = ["//modules/core-model"],
+    deps = [
+        "//modules/core-model",
+        "//modules/requirements",
+        "//modules/selectors",
+    ],
+)
+
+scala_junit_test(
+    name = "requirement-compiler-tests",
+    srcs = glob(["src/test/scala/**/*.scala"], allow_empty = True),
+    suffixes = ["Suite"],
+    deps = [
+        ":requirement-compiler",
+        "//modules/core-model",
+        "//modules/requirements",
+        "//modules/selectors",
+        "@maven//:org_scalameta_munit_2_13",
+        "@maven//:org_scalameta_munit_diff_2_13",
+    ],
 )

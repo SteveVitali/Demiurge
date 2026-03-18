@@ -1,19 +1,21 @@
 load("@rules_scala//scala:scala.bzl", "scala_junit_test", "scala_library")
 
 scala_library(
-    name = "verification-engine",
+    name = "selectors",
     srcs = glob(["src/main/scala/**/*.scala"]),
     visibility = ["//visibility:public"],
-    deps = ["//modules/core-model"],
+    deps = [
+        "@maven//:org_yaml_snakeyaml",
+    ],
 )
 
 scala_junit_test(
-    name = "verification-engine-tests",
+    name = "selectors-tests",
     srcs = glob(["src/test/scala/**/*.scala"], allow_empty = True),
     suffixes = ["Suite"],
     deps = [
-        ":verification-engine",
-        "//modules/core-model",
+        ":selectors",
+        "@maven//:org_yaml_snakeyaml",
         "@maven//:org_scalameta_munit_2_13",
         "@maven//:org_scalameta_munit_diff_2_13",
     ],

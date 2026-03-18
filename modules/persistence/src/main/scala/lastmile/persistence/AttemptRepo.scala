@@ -99,6 +99,18 @@ object AttemptRepo {
     }
   }
 
+  // Phase 4: Update verdict summary on an attempt
+  def updateVerdictSummary(attemptId: String, summary: AttemptVerdictSummary)(implicit conn: Connection): Unit = {
+    val ps = conn.prepareStatement("UPDATE attempts SET verdict_summary_json = ? WHERE attempt_id = ?")
+    try {
+      ps.setString(1, summary.asJson.noSpaces)
+      ps.setString(2, attemptId)
+      ps.executeUpdate()
+    } finally {
+      ps.close()
+    }
+  }
+
   // Phase 2: Mark an attempt as aborted with endedAt timestamp
   def markAborted(attemptId: String, endedAt: Instant)(implicit conn: Connection): Unit = {
     val ps = conn.prepareStatement("UPDATE attempts SET status = ?, ended_at = ? WHERE attempt_id = ?")

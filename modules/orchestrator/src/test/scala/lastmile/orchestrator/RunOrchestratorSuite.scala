@@ -43,13 +43,14 @@ class RunOrchestratorSuite extends FunSuite with TestFixtures {
         val ctx = RunContext(run = run, repoRoot = repoRoot, worktreePath = worktreePath, conn = conn)
         val finalRun = RunOrchestrator.execute(ctx, StubRepoInspector, StubRequirementCompiler, StubEnvironmentPlanner, StubRuntimeSupervisor)
 
-        assertEquals(finalRun.status, RunStatus.Exhausted)
+        // Phase 4: stub compiler produces 0 requirements → all pass → Succeeded
+        assertEquals(finalRun.status, RunStatus.Succeeded)
         assert(finalRun.endedAt.isDefined, "endedAt should be set for terminal state")
 
         // Verify persisted state matches
         val persisted = TaskRunRepo.getById(runId)
         assert(persisted.isDefined)
-        assertEquals(persisted.get.status, RunStatus.Exhausted)
+        assertEquals(persisted.get.status, RunStatus.Succeeded)
       } finally {
         LockManager.release(repoRoot)
         WorktreeManager.remove(repoRoot, runId)
@@ -76,15 +77,16 @@ class RunOrchestratorSuite extends FunSuite with TestFixtures {
         val events = EventRepo.listByRunId(runId, limit = 100)
         val transitionEvents = events.filter(_.eventType == "state_transition")
 
-        // Should have 7 transitions (Phase 3 path):
+        // Phase 4: 8 transitions:
         // Created → InspectingRepo
         // InspectingRepo → CompilingRequirements
         // CompilingRequirements → PlanningEnvironment
         // PlanningEnvironment → BootstrappingEnvironment
         // BootstrappingEnvironment → SeedingFixtures
         // SeedingFixtures → ReadyToVerify
-        // ReadyToVerify → Exhausted
-        assertEquals(transitionEvents.size, 7, s"Expected 7 transition events, got ${transitionEvents.size}")
+        // ReadyToVerify → Verifying
+        // Verifying → Succeeded
+        assertEquals(transitionEvents.size, 8, s"Expected 8 transition events, got ${transitionEvents.size}")
 
         // Verify order
         val expectedTransitions = List(
@@ -94,7 +96,8 @@ class RunOrchestratorSuite extends FunSuite with TestFixtures {
           ("PlanningEnvironment", "BootstrappingEnvironment"),
           ("BootstrappingEnvironment", "SeedingFixtures"),
           ("SeedingFixtures", "ReadyToVerify"),
-          ("ReadyToVerify", "Exhausted"),
+          ("ReadyToVerify", "Verifying"),
+          ("Verifying", "Succeeded"),
         )
 
         transitionEvents.zip(expectedTransitions).foreach { case (event, (from, to)) =>
@@ -156,9 +159,10 @@ class RunOrchestratorSuite extends FunSuite with TestFixtures {
         val ctx = RunContext(run = run, repoRoot = repoRoot, worktreePath = worktreePath, conn = conn)
         val finalRun = RunOrchestrator.execute(ctx, StubRepoInspector, StubRequirementCompiler, StubEnvironmentPlanner, StubRuntimeSupervisor)
 
-        assertEquals(finalRun.status, RunStatus.Exhausted)
-        assert(finalRun.finalSummary.exists(_.contains("Phase 3 completed")),
-          s"Summary should mention Phase 3: ${finalRun.finalSummary}")
+        // Phase 4: stub compiler produces 0 requirements → all pass → Succeeded
+        assertEquals(finalRun.status, RunStatus.Succeeded)
+        assert(finalRun.finalSummary.exists(_.contains("passed")),
+          s"Summary should mention passed: ${finalRun.finalSummary}")
 
         // Verify we passed through ReadyToVerify by checking events
         val events = EventRepo.listByRunId(runId, limit = 100)

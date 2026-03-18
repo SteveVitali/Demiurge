@@ -185,6 +185,18 @@ object TaskRunRepo {
     }
   }
 
+  // Phase 4: Set final verdict
+  def setFinalVerdict(runId: String, verdict: VerdictStatus)(implicit conn: Connection): Unit = {
+    val ps = conn.prepareStatement("UPDATE task_runs SET final_verdict = ? WHERE run_id = ?")
+    try {
+      ps.setString(1, verdict.toString)
+      ps.setString(2, runId)
+      ps.executeUpdate()
+    } finally {
+      ps.close()
+    }
+  }
+
   // Phase 2: Set final summary
   def setFinalSummary(runId: String, summary: String)(implicit conn: Connection): Unit = {
     val ps = conn.prepareStatement("UPDATE task_runs SET final_summary = ? WHERE run_id = ?")
