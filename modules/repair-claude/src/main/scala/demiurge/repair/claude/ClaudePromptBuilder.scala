@@ -7,46 +7,67 @@ import demiurge.repair._
 
 // Phase 5: ClaudePromptBuilder — builds system and user prompts for Claude repair.
 // Includes: failure packet, repo files, requirements, verifier failures, patch history.
-object ClaudePromptBuilder {
+// Spec §2.3: Extends RepairPromptBuilder trait for use with InferenceBackedRepairBackend.
+object ClaudePromptBuilder extends RepairPromptBuilder {
 
-  def buildSystemPrompt(): String = {
-    """You are a code repair agent. You receive a failure packet describing verification failures
-      |in a web application, along with the relevant source code and requirements.
-      |
-      |Your job is to propose a patch that fixes the failing verifications.
-      |
-      |RESPONSE FORMAT:
-      |You must respond with a JSON object containing the patch proposal. The format is:
-      |{
-      |  "summary": "Brief description of what the patch does",
-      |  "hypotheses": ["hypothesis about the root cause"],
-      |  "edits": [
-      |    {
-      |      "relativePath": "path/to/file.ext",
-      |      "oldContent": "the exact text to replace",
-      |      "newContent": "the replacement text"
-      |    }
-      |  ],
-      |  "newFiles": [
-      |    {
-      |      "relativePath": "path/to/new/file.ext",
-      |      "content": "full file content"
-      |    }
-      |  ],
-      |  "deletions": [
-      |    {
-      |      "relativePath": "path/to/delete.ext"
-      |    }
-      |  ]
-      |}
-      |
-      |RULES:
-      |1. Only modify files in the worktree.
-      |2. Keep changes minimal — fix only what is needed.
-      |3. Do not add unrelated changes.
-      |4. Ensure edits contain exact text matches for oldContent.
-      |5. Respond ONLY with the JSON object, no other text.""".stripMargin
+  private val JsonResponseFormat: String =
+    """|RESPONSE FORMAT:
+       |You must respond with a JSON object containing the patch proposal. The format is:
+       |{
+       |  "summary": "Brief description of what the patch does",
+       |  "hypotheses": ["hypothesis about the root cause"],
+       |  "edits": [
+       |    {
+       |      "relativePath": "path/to/file.ext",
+       |      "oldContent": "the exact text to replace",
+       |      "newContent": "the replacement text"
+       |    }
+       |  ],
+       |  "newFiles": [
+       |    {
+       |      "relativePath": "path/to/new/file.ext",
+       |      "content": "full file content"
+       |    }
+       |  ],
+       |  "deletions": [
+       |    {
+       |      "relativePath": "path/to/delete.ext"
+       |    }
+       |  ]
+       |}""".stripMargin
+
+  override def buildSystemPrompt(mode: GenerationMode = GenerationMode.Repair): String = mode match {
+    case GenerationMode.Repair =>
+      s"""You are a code repair agent. You receive a failure packet describing verification failures
+         |in a web application, along with the relevant source code and requirements.
+         |
+         |Your job is to propose a patch that fixes the failing verifications.
+         |
+         |$JsonResponseFormat
+         |
+         |RULES:
+         |1. Only modify files in the worktree.
+         |2. Keep changes minimal — fix only what is needed.
+         |3. Do not add unrelated changes.
+         |4. Ensure edits contain exact text matches for oldContent.
+         |5. Respond ONLY with the JSON object, no other text.""".stripMargin
+
+    case GenerationMode.InitialBuild =>
+      s"""You are a code generation agent. You receive a task description, requirements,
+         |and the current state of a repository. Your job is to produce code that implements
+         |the requested feature from scratch.
+         |
+         |$JsonResponseFormat
+         |
+         |RULES:
+         |1. Only modify files in the worktree.
+         |2. Implement the feature fully — create all necessary files and modifications.
+         |3. Follow existing code conventions in the repository.
+         |4. Ensure edits contain exact text matches for oldContent.
+         |5. Respond ONLY with the JSON object, no other text.""".stripMargin
   }
+
+  def buildSystemPrompt(): String = buildSystemPrompt(GenerationMode.Repair)
 
   def buildUserPrompt(
     packet: FailurePacket,

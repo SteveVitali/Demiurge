@@ -17,7 +17,9 @@ import demiurge.planner.EnvironmentPlannerImpl
 import demiurge.runtime.RuntimeSupervisorImpl
 import demiurge.artifact.{ArtifactSinkImpl, EvidenceCollectorImpl}
 import demiurge.config.ConfigResolverImpl
-import demiurge.inference.{InferenceServiceImpl, InferenceBudgetState, InMemoryInferenceCache, MockInferenceBackend}
+import demiurge.inference.{InferenceServiceImpl, InferenceBudgetState, InMemoryInferenceCache, AnthropicInferenceBackend}
+import demiurge.repair.{InferenceBackedRepairBackend, RepairBackend}
+import demiurge.repair.claude.ClaudePromptBuilder
 
 // Shared orchestration runner used by both RunCommand and ResumeCommand.
 // Encapsulates: API server lifecycle, SSE wiring, compiler construction,
@@ -54,13 +56,18 @@ object OrchestrationRunner {
     RunTransitionManager.setEventListener(event => EventStream.publish(event))
 
     val compiler = RunCommand.buildCompiler(worktreePath)
-    val repairBackend = RunCommand.buildRepairBackend()
     val (browserExecutor, workerManager) = RunCommand.buildBrowserExecutor(worktreePath, artifactRoot, runId)
     val artifactSink = new ArtifactSinkImpl(artifactRoot)
     val evidenceCollector = new EvidenceCollectorImpl(artifactSink)
 
     // Phase E: Build InferenceService if API key is available
     val inferenceServiceOpt = buildInferenceService()
+
+    // Spec §2.6: Prefer InferenceBackedRepairBackend when InferenceService is available
+    val repairBackend: Option[RepairBackend] = inferenceServiceOpt match {
+      case Some(svc) => Some(new InferenceBackedRepairBackend(svc, ClaudePromptBuilder))
+      case None => RunCommand.buildRepairBackend()
+    }
 
     val ctx = RunContext(
       run = taskRun,
@@ -92,21 +99,12 @@ object OrchestrationRunner {
     }
   }
 
-  /**
-   * Phase E: Build InferenceService if ANTHROPIC_API_KEY is available.
-   * Currently uses MockInferenceBackend — real AnthropicBackend will be
-   * swapped in when the HTTP client integration is complete.
-   * The mock backend still exercises the full pipeline (budget, cache, prompts)
-   * which is useful for testing the wiring end-to-end.
-   */
+  // Spec §2.5: Build InferenceService with real AnthropicInferenceBackend.
   private def buildInferenceService(): Option[demiurge.inference.InferenceService] = {
     val apiKey = System.getenv("ANTHROPIC_API_KEY")
     if (apiKey != null && apiKey.nonEmpty) {
       try {
-        // TODO(inference): Replace MockInferenceBackend with AnthropicBackend(apiKey)
-        // when the HTTP client integration is complete. The mock still validates
-        // budget enforcement, caching, and prompt construction.
-        val backend = new MockInferenceBackend()
+        val backend = new AnthropicInferenceBackend(apiKey)
         val budgetState = new InferenceBudgetState()
         val cache = new InMemoryInferenceCache()
         Some(new InferenceServiceImpl(backend, budgetState, cache))

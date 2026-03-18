@@ -21,6 +21,7 @@ object InferenceBudgetTracker {
     "failure_analyzer"        -> ComponentBudget(100000L, 5, perAttempt = true),
     "impact_analysis"         -> ComponentBudget(50000L, 3),
     "exploratory_verifier"    -> ComponentBudget(100000L, 10, perAttempt = true),
+    "repair_backend"          -> ComponentBudget(200000L, 20, perAttempt = true),
   )
 
   // Spec §5.2: Only these components may call inference
@@ -32,6 +33,7 @@ object InferenceBudgetTracker {
     "failure_analyzer",
     "impact_analysis",
     "exploratory_verifier",
+    "repair_backend",
   )
 }
 
