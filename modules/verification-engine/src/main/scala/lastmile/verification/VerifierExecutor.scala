@@ -34,6 +34,10 @@ object VerifierExecutor {
         case v: ExecVerifier        => executeExec(v)
         case v: LogContainsVerifier => executeLogContains(v)
         case v: StateVerifier       => executeState(v)
+        // Phase 6: BrowserFlowVerifier is handled by VerificationEngine directly
+        // via the worker process manager — not by this in-process executor.
+        case _: BrowserFlowVerifier =>
+          VerifierOutcome.Error("BrowserFlowVerifier must be executed via WorkerProcessManager")
       }
     } catch {
       case _: java.net.SocketTimeoutException => VerifierOutcome.TimedOut

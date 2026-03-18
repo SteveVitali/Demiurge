@@ -58,6 +58,26 @@ case class StateVerifier(
   maxRetries:    Int,
 ) extends Verifier
 
+// Phase 6: BrowserFlowVerifier — dispatches to worker process via WorkerProcessManager
+case class BrowserFlowVerifier(
+  id:               String,
+  requirementId:    String,
+  entryUrl:         String,
+  actions:          List[lastmile.model.BrowserAction],
+  assertions:       List[lastmile.model.Assertion],
+  artifactPlan:     List[lastmile.model.ArtifactCapture],
+  storageStatePath: Option[String],
+  timeout:          Duration,
+  maxRetries:       Int,
+) extends Verifier
+
+// Phase 6: Extended verifier outcome with artifact refs and observations
+case class BrowserVerifierResult(
+  outcome:      VerifierOutcome,
+  observations: List[lastmile.model.Observation],
+  artifactRefs: List[String],
+)
+
 // Phase 4: Verifier execution result
 sealed trait VerifierOutcome
 object VerifierOutcome {

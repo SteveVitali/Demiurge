@@ -119,11 +119,75 @@ class VerifierGeneratorSuite extends FunSuite {
   }
 
   test("generates StateVerifier for unsupported types") {
-    val graph = makeGraph(List(makeNode("req-1", VerifierType.BrowserFlow)))
+    // Phase 6: BrowserFlow now requires browserFlowSpec; use QueueJob as truly unsupported
+    val graph = makeGraph(List(makeNode("req-1", VerifierType.QueueJob)))
     val verifiers = VerifierGenerator.generate(graph)
 
     assertEquals(verifiers.size, 1)
     assert(verifiers.head.isInstanceOf[StateVerifier])
+  }
+
+  test("generates BrowserFlowVerifier from BrowserFlow spec") {
+    val browserSpec = BrowserFlowVerifierSpec(
+      entryUrl = "http://localhost:3000",
+      selectorMapRef = None,
+      entryConditions = Nil,
+      actions = List(BrowserAction("click", Some(SelectorRef("css", "#btn", None)), None, None, None, "Click button")),
+      assertions = List(Assertion("elementVisible", Some(SelectorRef("css", "#result", None)), None, None, None, "Result visible")),
+      artifactPlan = Nil,
+      cleanup = Nil,
+    )
+    val node = RequirementNode(
+      requirementId = "req-browser",
+      humanDescription = "Browser test",
+      machineDescription = "Browser test",
+      priority = RequirementPriority.Required,
+      category = RequirementCategory.UiFlow,
+      dependencies = Set.empty,
+      verifiers = List(VerifierSpec(
+        verifierId = "v-browser",
+        verifierType = VerifierType.BrowserFlow,
+        displayName = "Browser flow",
+        requirementId = "req-browser",
+        executionLayer = 0,
+        parallelSafe = false,
+        timeout = Duration.ofSeconds(30),
+        maxRetries = 0,
+        retryDelayMs = 1000,
+        browserFlowSpec = Some(browserSpec),
+        apiContractSpec = None,
+        stateAssertionSpec = None,
+        envReadinessSpec = None,
+        consoleLogSpec = None,
+        networkSpec = None,
+        queueJobSpec = None,
+        persistenceSpec = None,
+        regressionSpec = None,
+      )),
+      evidenceRequired = Nil,
+      destructiveRiskLevel = 0,
+      inferredFrom = Nil,
+      confidence = 1.0,
+      stopOnFailure = true,
+    )
+    val graph = makeGraph(List(node))
+    val verifiers = VerifierGenerator.generate(graph)
+
+    assertEquals(verifiers.size, 1)
+    verifiers.head match {
+      case v: BrowserFlowVerifier =>
+        assertEquals(v.entryUrl, "http://localhost:3000")
+        assertEquals(v.actions.size, 1)
+        assertEquals(v.assertions.size, 1)
+      case other => fail(s"Expected BrowserFlowVerifier, got $other")
+    }
+  }
+
+  test("BrowserFlow without browserFlowSpec throws") {
+    val graph = makeGraph(List(makeNode("req-1", VerifierType.BrowserFlow)))
+    intercept[IllegalStateException] {
+      VerifierGenerator.generate(graph)
+    }
   }
 
   test("deterministic generation - same input produces same output") {

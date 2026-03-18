@@ -62,8 +62,25 @@ object VerifierGenerator {
           maxRetries = spec.maxRetries,
         )
 
+      // Phase 6: BrowserFlow verifier — dispatches to worker
+      case VerifierType.BrowserFlow =>
+        val browser = spec.browserFlowSpec.getOrElse(
+          throw new IllegalStateException(s"BrowserFlow verifier ${spec.verifierId} missing browserFlowSpec")
+        )
+        BrowserFlowVerifier(
+          id = spec.verifierId,
+          requirementId = spec.requirementId,
+          entryUrl = browser.entryUrl,
+          actions = browser.actions,
+          assertions = browser.assertions,
+          artifactPlan = browser.artifactPlan,
+          storageStatePath = None, // Set by orchestrator at execution time via auth context
+          timeout = spec.timeout,
+          maxRetries = spec.maxRetries,
+        )
+
       case _ =>
-        // For unsupported types in Phase 4 (BrowserFlow, etc.), create a stub StateVerifier
+        // For unsupported types, create a stub StateVerifier
         StateVerifier(
           id = spec.verifierId,
           requirementId = spec.requirementId,
