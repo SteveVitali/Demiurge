@@ -49,8 +49,10 @@ object ClaudePromptBuilder extends RepairPromptBuilder {
          |1. Only modify files in the worktree.
          |2. Keep changes minimal — fix only what is needed.
          |3. Do not add unrelated changes.
-         |4. Ensure edits contain exact text matches for oldContent.
-         |5. Respond ONLY with the JSON object, no other text.""".stripMargin
+         |4. For edits, oldContent MUST be copied character-for-character from the source files provided below. NEVER paraphrase or guess file contents. If you cannot find the exact text, use newFiles instead.
+         |5. Prefer "newFiles" when adding new functionality (e.g. new route handlers, new modules). Only use "edits" when you must modify existing lines and can copy oldContent exactly from the provided source.
+         |6. Keep oldContent as short as possible — just the minimal unique snippet needed to locate the edit point.
+         |7. Respond ONLY with the JSON object, no other text.""".stripMargin
 
     case GenerationMode.InitialBuild =>
       s"""You are a code generation agent. You receive a task description, requirements,
@@ -63,8 +65,10 @@ object ClaudePromptBuilder extends RepairPromptBuilder {
          |1. Only modify files in the worktree.
          |2. Implement the feature fully — create all necessary files and modifications.
          |3. Follow existing code conventions in the repository.
-         |4. Ensure edits contain exact text matches for oldContent.
-         |5. Respond ONLY with the JSON object, no other text.""".stripMargin
+         |4. For edits, oldContent MUST be copied character-for-character from the source files provided below. NEVER paraphrase or guess file contents.
+         |5. Prefer "newFiles" for new functionality. Only use "edits" when modifying existing lines and you can copy oldContent exactly.
+         |6. Keep oldContent as short as possible — just the minimal unique snippet needed to locate the edit point.
+         |7. Respond ONLY with the JSON object, no other text.""".stripMargin
   }
 
   def buildSystemPrompt(): String = buildSystemPrompt(GenerationMode.Repair)
@@ -124,11 +128,15 @@ object ClaudePromptBuilder extends RepairPromptBuilder {
       sb.append(logText).append("\n\n")
     }
 
-    // Relevant source files from worktree
+    // Relevant source files from worktree (with line numbers for exact reference)
     sb.append("# Relevant Source Files\n")
+    sb.append("IMPORTANT: When using edits, copy oldContent EXACTLY from these files. Do NOT guess or paraphrase.\n")
     val relevantFiles = collectRelevantFiles(context.worktreePath, maxFiles = 20, maxSizeBytes = 50000)
     relevantFiles.foreach { case (relPath, content) =>
-      sb.append(s"\n## $relPath\n```\n$content\n```\n")
+      val numbered = content.split("\n").zipWithIndex.map { case (line, i) =>
+        f"${i + 1}%4d| $line"
+      }.mkString("\n")
+      sb.append(s"\n## $relPath\n```\n$numbered\n```\n")
     }
 
     sb.toString
@@ -243,6 +251,15 @@ object ClaudePromptBuilder extends RepairPromptBuilder {
     }
 
     walk(worktreePath, 0)
-    result.toList
+    // Prioritize likely-relevant files: entry points, routes, configs first
+    result.toList.sortBy { case (path, _) =>
+      val lower = path.toLowerCase
+      val priority = if (lower.contains("index.") || lower.contains("main.") || lower.contains("app.")) 0
+        else if (lower.contains("route") || lower.contains("router") || lower.contains("health")) 1
+        else if (lower.contains("config") || lower.contains("server")) 2
+        else if (lower.endsWith(".json") || lower.endsWith(".yaml") || lower.endsWith(".yml")) 3
+        else 4
+      (priority, path)
+    }
   }
 }
