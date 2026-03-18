@@ -6,4 +6,5 @@ bazel-*
 MODULE.bazel.lock
 worker/node_modules/
 worker/dist/
+.env
 

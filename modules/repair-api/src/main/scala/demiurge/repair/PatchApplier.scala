@@ -37,6 +37,10 @@ object PatchApplier {
             val updatedContent = fuzzyReplace(currentContent, edit.oldContent, edit.newContent)
             Files.write(filePath, updatedContent.getBytes("UTF-8"))
           } else {
+            val preview = edit.oldContent.take(200).replace("\n", "\\n")
+            System.err.println(s"[PatchApplier] oldContent mismatch in ${edit.relativePath}")
+            System.err.println(s"[PatchApplier]   oldContent (first 200): $preview")
+            System.err.println(s"[PatchApplier]   file length: ${currentContent.length}, oldContent length: ${edit.oldContent.length}")
             return ApplyFailure(
               s"Edit target not found in ${edit.relativePath}: oldContent not present in file")
           }

@@ -11,6 +11,13 @@ import demiurge.model._
 class AnthropicInferenceBackend(apiKey: String) extends InferenceBackend {
 
   override def call(request: InferenceRequest): Either[InferenceError, InferenceResponse] = {
+    callWithRetry(request, retryCount = 0)
+  }
+
+  private val MaxRateLimitRetries = 3
+  private val MaxRateLimitWaitMs = 120000L // Cap wait at 2 minutes per retry
+
+  private def callWithRetry(request: InferenceRequest, retryCount: Int): Either[InferenceError, InferenceResponse] = {
     val startMs = System.currentTimeMillis()
     try {
       val requestJson = buildRequestJson(request)
@@ -37,8 +44,15 @@ class AnthropicInferenceBackend(apiKey: String) extends InferenceBackend {
         } else if (statusCode == 429) {
           val retryAfter = Option(conn.getHeaderField("retry-after"))
             .flatMap(s => scala.util.Try(s.toLong * 1000L).toOption)
-            .getOrElse(0L)
-          Left(InferenceError.RateLimited(request.requestId, retryAfter))
+            .getOrElse(30000L) // Default 30s if no header
+          if (retryCount < MaxRateLimitRetries) {
+            val waitMs = Math.min(retryAfter, MaxRateLimitWaitMs)
+            System.err.println(s"[inference] Rate limited, waiting ${waitMs / 1000}s before retry ${retryCount + 1}/$MaxRateLimitRetries")
+            Thread.sleep(waitMs)
+            callWithRetry(request, retryCount + 1)
+          } else {
+            Left(InferenceError.RateLimited(request.requestId, retryAfter))
+          }
         } else {
           val errorBody = try { readStream(conn.getErrorStream) } catch { case _: Exception => "" }
           Left(InferenceError.ProviderError(request.requestId, statusCode, s"HTTP $statusCode: $errorBody"))
