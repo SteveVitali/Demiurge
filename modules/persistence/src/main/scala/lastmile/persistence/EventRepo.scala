@@ -77,6 +77,41 @@ object EventRepo {
     }
   }
 
+  // Phase 7: Paginated event query for operator API
+  def listByRunPaginated(runId: String, offset: Int, limit: Int)(implicit conn: Connection): List[SystemEvent] = {
+    val ps = conn.prepareStatement(
+      "SELECT * FROM events WHERE run_id = ? ORDER BY timestamp ASC LIMIT ? OFFSET ?")
+    try {
+      ps.setString(1, runId)
+      ps.setInt(2, limit)
+      ps.setInt(3, offset)
+      val rs = ps.executeQuery()
+      try {
+        val buf = scala.collection.mutable.ListBuffer[SystemEvent]()
+        while (rs.next()) { buf += rowToEvent(rs) }
+        buf.toList
+      } finally { rs.close() }
+    } finally { ps.close() }
+  }
+
+  // Phase 7: Count events for a run
+  def countByRunId(runId: String)(implicit conn: Connection): Int = {
+    val ps = conn.prepareStatement("SELECT COUNT(*) FROM events WHERE run_id = ?")
+    try {
+      ps.setString(1, runId)
+      val rs = ps.executeQuery()
+      try { if (rs.next()) rs.getInt(1) else 0 }
+      finally { rs.close() }
+    } finally { ps.close() }
+  }
+
+  // Phase 7: Delete events for a run
+  def deleteByRunId(runId: String)(implicit conn: Connection): Unit = {
+    val ps = conn.prepareStatement("DELETE FROM events WHERE run_id = ?")
+    try { ps.setString(1, runId); ps.executeUpdate() }
+    finally { ps.close() }
+  }
+
   private def rowToEvent(rs: java.sql.ResultSet): SystemEvent = {
     val payloadJson = rs.getString("payload_json")
     val payload: Map[String, Json] = decode[Map[String, Json]](payloadJson).getOrElse(Map.empty)

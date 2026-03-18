@@ -113,6 +113,45 @@ object ArtifactRecordRepo {
     }
   }
 
+  // Phase 7: Paginated artifact listing for operator API
+  def listByRunPaginated(runId: String, offset: Int, limit: Int, artifactType: Option[ArtifactType] = None, attemptNumber: Option[Int] = None)(implicit conn: Connection): List[ArtifactRecord] = {
+    val conditions = scala.collection.mutable.ListBuffer[String]("run_id = ?")
+    artifactType.foreach(_ => conditions += "artifact_type = ?")
+    attemptNumber.foreach(_ => conditions += "attempt_number = ?")
+    val sql = s"SELECT * FROM artifact_records WHERE ${conditions.mkString(" AND ")} ORDER BY created_at LIMIT ? OFFSET ?"
+    val ps = conn.prepareStatement(sql)
+    try {
+      var idx = 1
+      ps.setString(idx, runId); idx += 1
+      artifactType.foreach { t => ps.setString(idx, ArtifactTypeCodec.toString(t)); idx += 1 }
+      attemptNumber.foreach { n => ps.setInt(idx, n); idx += 1 }
+      ps.setInt(idx, limit); idx += 1
+      ps.setInt(idx, offset)
+      val rs = ps.executeQuery()
+      val buf = scala.collection.mutable.ListBuffer[ArtifactRecord]()
+      while (rs.next()) buf += readRow(rs)
+      buf.toList
+    } finally { ps.close() }
+  }
+
+  // Phase 7: Count artifacts for a run
+  def countByRunId(runId: String)(implicit conn: Connection): Int = {
+    val ps = conn.prepareStatement("SELECT COUNT(*) FROM artifact_records WHERE run_id = ?")
+    try {
+      ps.setString(1, runId)
+      val rs = ps.executeQuery()
+      try { if (rs.next()) rs.getInt(1) else 0 }
+      finally { rs.close() }
+    } finally { ps.close() }
+  }
+
+  // Phase 7: Delete artifact records for a run
+  def deleteByRunId(runId: String)(implicit conn: Connection): Unit = {
+    val ps = conn.prepareStatement("DELETE FROM artifact_records WHERE run_id = ?")
+    try { ps.setString(1, runId); ps.executeUpdate() }
+    finally { ps.close() }
+  }
+
   private def readRow(rs: java.sql.ResultSet): ArtifactRecord = {
     val attemptNum = rs.getInt("attempt_number")
     val attemptNumberOpt = if (rs.wasNull()) None else Some(attemptNum)
