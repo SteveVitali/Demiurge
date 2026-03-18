@@ -1,5 +1,5 @@
 .idea/*
-*_*.md
+.internal-docs/
 Demiurge.iml
 .DS_Store
 bazel-*
