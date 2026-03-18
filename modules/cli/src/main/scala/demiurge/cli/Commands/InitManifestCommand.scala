@@ -22,47 +22,92 @@ object InitManifestCommand {
       return ExitCodes.InputError
     }
 
+    // --smart: Use Claude Code CLI to explore the repo and generate config
+    if (cmd.smart) {
+      return executeSmartInit(global, outputPath, cmd.force)
+    }
+
+    // Deterministic path: filesystem heuristics only
     if (!global.quiet) System.err.println("Inspecting repository...")
 
-    // Use ConfigResolver to produce a smart, inferred config
     val runId = s"init-${java.util.UUID.randomUUID().toString.take(8)}"
     val inspection = RepoInspectorImpl.inspect(runId, global.repo, None)
 
-    val resolvedConfig = ConfigResolverImpl.resolve(
+    val resolvedConfig = ConfigResolverImpl.resolveFromManifestOrCache(
       repoPath = global.repo,
-      taskText = "Initialize configuration",
-      changedFiles = None,
       inspection = inspection,
-      inferenceService = None,
     )
 
-    // Generate manifest YAML from the resolved config
-    val manifest = InferredConfigWriter.toManifestYaml(resolvedConfig)
+    resolvedConfig match {
+      case Some(config) =>
+        // Had an existing manifest or cache — re-write it
+        val manifest = InferredConfigWriter.toManifestYaml(config)
+        Files.createDirectories(outputPath.getParent)
+        Files.writeString(outputPath, manifest)
 
-    Files.createDirectories(outputPath.getParent)
-    Files.writeString(outputPath, manifest)
-
-    if (!global.quiet) {
-      System.err.println(s"  Detected: ${inspection.languages.map(_.value).mkString(", ")}")
-      System.err.println(s"  Frameworks: ${inspection.frameworks.map(_.value).mkString(", ")}")
-      System.err.println(s"  Services: ${resolvedConfig.services.map(_.serviceId).mkString(", ")}")
-    }
-
-    // Also generate requirements.yaml with environment readiness checks
-    val reqsPath = global.repo.resolve("requirements.yaml")
-    if (!Files.exists(reqsPath) || cmd.force) {
-      val reqsYaml = generateRequirementsYaml(resolvedConfig)
-      if (reqsYaml.nonEmpty) {
-        Files.writeString(reqsPath, reqsYaml)
         if (!global.quiet) {
-          System.err.println(s"  Requirements written to $reqsPath")
+          System.err.println(s"  Services: ${config.services.map(_.serviceId).mkString(", ")}")
+        }
+
+        val reqsPath = global.repo.resolve("requirements.yaml")
+        if (!Files.exists(reqsPath) || cmd.force) {
+          val reqsYaml = generateRequirementsYaml(config)
+          if (reqsYaml.nonEmpty) {
+            Files.writeString(reqsPath, reqsYaml)
+            if (!global.quiet) System.err.println(s"  Requirements written to $reqsPath")
+          }
+        }
+
+        System.out.println(OutputFormatter.formatSuccess(
+          s"Manifest written to $outputPath", global.format))
+        ExitCodes.Success
+
+      case None =>
+        // No manifest or cache — produce scaffold from inspection and warn
+        val scaffold = generateScaffoldYaml(inspection)
+        Files.createDirectories(outputPath.getParent)
+        Files.writeString(outputPath, scaffold)
+
+        if (!global.quiet) {
+          System.err.println(s"  Detected: ${inspection.languages.map(_.value).mkString(", ")}")
+          System.err.println(s"  Frameworks: ${inspection.frameworks.map(_.value).mkString(", ")}")
+          System.err.println("  ⚠ Generated scaffold config from heuristics — review and edit before use.")
+          System.err.println("  Tip: Use 'demiurge init --smart' for higher-quality config via Claude Code CLI.")
+        }
+
+        System.out.println(OutputFormatter.formatSuccess(
+          s"Scaffold manifest written to $outputPath", global.format))
+        ExitCodes.Success
+    }
+  }
+
+  /** Smart init: uses Claude Code CLI to explore the repo and generate config files. */
+  private def executeSmartInit(global: GlobalOpts, outputPath: Path, force: Boolean): Int = {
+    if (!global.quiet) System.err.println("Running smart init with Claude Code CLI...")
+
+    val result = AgentInitExecutor.execute(
+      repoRoot = global.repo,
+      outputPath = outputPath,
+      force = force,
+      quiet = global.quiet,
+    )
+
+    if (result.success) {
+      if (!global.quiet) {
+        System.err.println(s"  ${result.summary}")
+        result.demiurgeYaml.foreach { _ =>
+          System.err.println(s"  ✓ ${outputPath.getFileName} written")
+        }
+        result.requirementsYaml.foreach { _ =>
+          System.err.println(s"  ✓ requirements.yaml written")
         }
       }
+      System.out.println(OutputFormatter.formatSuccess(result.summary, global.format))
+      ExitCodes.Success
+    } else {
+      System.err.println(OutputFormatter.formatError(result.summary, global.format))
+      ExitCodes.Errored
     }
-
-    System.out.println(OutputFormatter.formatSuccess(
-      s"Manifest written to $outputPath", global.format))
-    ExitCodes.Success
   }
 
   /** Generate requirements.yaml from resolved config readiness probes. */
@@ -90,6 +135,78 @@ object InitManifestCommand {
         sb.append(s"    severity: required\n")
       }
     }
+
+    sb.toString()
+  }
+
+  /** Generate a minimal scaffold YAML from inspection heuristics (no manifest/cache available). */
+  private def generateScaffoldYaml(inspection: demiurge.model.RepoInspectionReport): String = {
+    val sb = new StringBuilder
+    sb.append("# Scaffold generated by demiurge init — review and edit before use\n")
+    sb.append("# For better results, run: demiurge init --smart\n")
+    sb.append("version: 1\n\n")
+
+    // Infer app type from frameworks
+    val hasReact = inspection.frameworks.exists(f =>
+      f.value == "react" || f.value == "nextjs" || f.value == "vue" || f.value == "angular")
+    val hasExpress = inspection.frameworks.exists(f =>
+      f.value == "express" || f.value == "fastify")
+    val appType = if (hasReact && hasExpress) "fullstack"
+      else if (hasReact) "frontend"
+      else if (hasExpress) "api"
+      else "api"
+
+    val portHint = inspection.candidateServices.flatMap(_.portHint).headOption.getOrElse(3000)
+
+    sb.append("app:\n")
+    sb.append(s"  type: $appType\n")
+    sb.append(s"  root_url: http://localhost:$portHint\n")
+    if (appType == "fullstack") sb.append(s"  api_url: http://localhost:$portHint/api\n")
+
+    // Build services from candidate services
+    if (inspection.candidateServices.nonEmpty) {
+      sb.append("\nservices:\n")
+      inspection.candidateServices.foreach { cs =>
+        val port = cs.portHint.getOrElse(3000)
+        sb.append(s"  ${cs.serviceId}:\n")
+        sb.append(s"    kind: ${cs.kind.toString.toLowerCase}\n")
+        sb.append(s"    startup_mode: script\n")
+        cs.startupHint.foreach(cmd => sb.append(s"    startup_command: $cmd\n"))
+        sb.append(s"    ports:\n")
+        sb.append(s"      - host: $port\n")
+        sb.append(s"        container: $port\n")
+        sb.append(s"    readiness:\n")
+        sb.append(s"      probe_type: tcp\n")
+        sb.append(s"      target: localhost:$port\n")
+        sb.append(s"      interval_ms: 2000\n")
+        sb.append(s"      timeout_ms: 30000\n")
+        sb.append(s"      max_failures: 15\n")
+        sb.append(s"    required: true\n")
+      }
+    } else {
+      sb.append("\nservices:\n")
+      sb.append(s"  app:\n")
+      sb.append(s"    kind: $appType\n")
+      sb.append(s"    startup_mode: script\n")
+      sb.append(s"    startup_command: npm start\n")
+      sb.append(s"    ports:\n")
+      sb.append(s"      - host: $portHint\n")
+      sb.append(s"        container: $portHint\n")
+      sb.append(s"    readiness:\n")
+      sb.append(s"      probe_type: tcp\n")
+      sb.append(s"      target: localhost:$portHint\n")
+      sb.append(s"      interval_ms: 2000\n")
+      sb.append(s"      timeout_ms: 30000\n")
+      sb.append(s"      max_failures: 15\n")
+      sb.append(s"    required: true\n")
+    }
+
+    sb.append("\ninference:\n")
+    sb.append("  default_provider: anthropic\n")
+
+    sb.append("\npolicies:\n")
+    sb.append("  max_attempts: 3\n")
+    sb.append("  run_timeout_ms: 600000\n")
 
     sb.toString()
   }

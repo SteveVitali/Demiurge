@@ -13,11 +13,10 @@ import demiurge.requirements.{RequirementsParser, RequirementsFile}
 import demiurge.selectors.{SelectorsParser, SelectorsFile}
 import demiurge.inference.InferenceService
 
-// Phase A: Layered configuration resolver implementation.
+// Layered configuration resolver implementation.
 // Layer 1: Explicit YAML (demiurge.yaml, requirements.yaml, selectors.yaml)
 // Layer 2: Cached inference (.demiurge/inferred/*.yaml)
-// Layer 3: Live inference (RepoInspector data + LLM)
-// Each layer fills gaps left by previous layers.
+// No config found: error telling user to run `demiurge init`.
 object ConfigResolverImpl extends ConfigResolver {
 
   private val DefaultVerificationConfig = ResolvedVerificationConfig(
@@ -47,6 +46,9 @@ object ConfigResolverImpl extends ConfigResolver {
     models = Map.empty,
   )
 
+  /** Error thrown when no configuration is found and no fallback is available. */
+  case class NoConfigError(message: String) extends RuntimeException(message)
+
   override def resolve(
     repoPath: Path,
     taskText: String,
@@ -68,59 +70,63 @@ object ConfigResolverImpl extends ConfigResolver {
       .orElse(cachedManifest.map(_ -> ConfigSource.Cached))
       .getOrElse(null, null) match {
       case (m: DemiurgeManifest, s: ConfigSource) => (Some(m), s)
-      case _ => (None, ConfigSource.Inferred)
+      case _ => (None, null)
     }
 
-    // Resolve app config
-    val (app, appSource) = manifest.map(m => resolveAppFromManifest(m) -> manifestSource)
-      .getOrElse(inferAppFromInspection(inspection) -> ConfigSource.Inferred)
-
-    // Resolve services
-    val (services, servicesSources) = manifest.filter(_.services.nonEmpty) match {
-      case Some(m) =>
-        val svcs = resolveServicesFromManifest(m)
-        val sources = svcs.map(s => s.serviceId -> manifestSource).toMap
-        (svcs, sources)
-      case None =>
-        val svcs = inferServicesFromInspection(inspection, app)
-        val sources = svcs.map(s => s.serviceId -> ConfigSource.Inferred).toMap
-        (svcs, sources)
+    // No manifest found: error — user must run `demiurge init` first
+    if (manifest.isEmpty) {
+      throw NoConfigError(
+        "No demiurge.yaml found (checked repo root and .demiurge/inferred/). " +
+        "Run 'demiurge init --smart' to generate configuration, or create demiurge.yaml manually."
+      )
     }
 
-    // Resolve fixtures
-    val fixtures = manifest.flatMap(_.fixtures).map(resolveFixturesFromManifest)
-      .orElse(inferFixturesFromInspection(inspection))
+    val m = manifest.get
+    val source = manifestSource
 
-    // Resolve auth
-    val auth = manifest.flatMap(_.auth).map(resolveAuthFromManifest)
-      .orElse(inferAuthFromInspection(inspection))
+    // Resolve app config from manifest
+    val app = resolveAppFromManifest(m)
+
+    // Resolve services from manifest
+    val (services, servicesSources) = if (m.services.nonEmpty) {
+      val svcs = resolveServicesFromManifest(m)
+      val sources = svcs.map(s => s.serviceId -> source).toMap
+      (svcs, sources)
+    } else {
+      (List.empty[ResolvedServiceConfig], Map.empty[String, ConfigSource])
+    }
+
+    // Resolve fixtures from manifest
+    val fixtures = m.fixtures.map(resolveFixturesFromManifest)
+
+    // Resolve auth from manifest
+    val auth = m.auth.map(resolveAuthFromManifest)
 
     // Resolve verification config
-    val verification = manifest.flatMap(_.verification)
+    val verification = m.verification
       .map(resolveVerificationFromManifest)
       .getOrElse(DefaultVerificationConfig)
 
     // Resolve inference config
-    val inference = manifest.flatMap(_.inference)
+    val inference = m.inference
       .map(resolveInferenceFromManifest)
       .getOrElse(inferInferenceConfig(inferenceService))
 
     // Resolve policies
-    val policies = manifest.flatMap(_.policies)
+    val policies = m.policies
       .map(resolvePoliciesFromManifest)
       .getOrElse(DefaultPoliciesConfig)
 
     // Resolve observability
-    val observability = manifest.flatMap(_.observability).map(resolveObservabilityFromManifest)
+    val observability = m.observability.map(resolveObservabilityFromManifest)
 
     // Build provenance
     val reqSources = explicitRequirements.map(_ => Map("yaml" -> ConfigSource.Explicit))
       .orElse(cachedRequirements.map(_ => Map("yaml" -> ConfigSource.Cached)))
-      .getOrElse(Map("inferred" -> ConfigSource.Inferred))
-      .asInstanceOf[Map[String, ConfigSource]]
+      .getOrElse(Map.empty[String, ConfigSource])
 
     val provenance = ConfigProvenance(
-      manifestSource = manifestSource,
+      manifestSource = source,
       requirementSources = reqSources,
       serviceSources = servicesSources,
       resolvedAt = Instant.now(),
@@ -137,6 +143,22 @@ object ConfigResolverImpl extends ConfigResolver {
       observability = observability,
       provenance = provenance,
     )
+  }
+
+  /**
+   * Resolve config from manifest or cache only (no error on missing).
+   * Used by `demiurge init` to check if config already exists.
+   * Returns None if no manifest or cache is found.
+   */
+  def resolveFromManifestOrCache(
+    repoPath: Path,
+    inspection: RepoInspectionReport,
+  ): Option[ResolvedConfig] = {
+    try {
+      Some(resolve(repoPath, "init", None, inspection, None))
+    } catch {
+      case _: NoConfigError => None
+    }
   }
 
   // --- Layer 1: Explicit YAML loading ---
@@ -291,132 +313,6 @@ object ConfigResolverImpl extends ConfigResolver {
       logQueries = oc.logQueries.getOrElse(Nil).map(q =>
         ResolvedLogQueryConfig(q.id, q.serviceId, q.query, q.description)),
     )
-
-  // --- Layer 3: Inference from RepoInspectionReport ---
-
-  private[config] def inferAppFromInspection(inspection: RepoInspectionReport): ResolvedAppConfig = {
-    val hasReact = inspection.frameworks.exists(f => f.value == "react" || f.value == "nextjs" || f.value == "vue" || f.value == "angular")
-    val hasExpress = inspection.frameworks.exists(f => f.value == "express" || f.value == "fastify")
-
-    val appType = if (hasReact && hasExpress) "fullstack"
-      else if (hasReact) "frontend"
-      else if (hasExpress) "api"
-      else "api"
-
-    // Infer root URL from candidate services
-    val portHint = inspection.candidateServices
-      .flatMap(_.portHint)
-      .headOption
-      .getOrElse(3000)
-
-    ResolvedAppConfig(
-      appType = appType,
-      rootUrl = s"http://localhost:$portHint",
-      apiUrl = if (appType == "fullstack") Some(s"http://localhost:$portHint/api") else None,
-    )
-  }
-
-  private[config] def inferServicesFromInspection(
-    inspection: RepoInspectionReport,
-    app: ResolvedAppConfig,
-  ): List[ResolvedServiceConfig] = {
-    if (inspection.candidateServices.nonEmpty) {
-      inspection.candidateServices.map { cs =>
-        val portHint = cs.portHint.getOrElse(3000)
-        ResolvedServiceConfig(
-          serviceId = cs.serviceId,
-          kind = cs.kind.toString.toLowerCase,
-          startupMode = if (cs.startupHint.exists(_.contains("compose"))) "compose" else "script",
-          startupCommand = cs.startupHint.filterNot(_.contains("compose")),
-          composeTarget = if (cs.startupHint.exists(_.contains("compose"))) Some(cs.serviceId) else None,
-          cwd = None,
-          env = Map.empty,
-          ports = List(ResolvedPortConfig(Some(portHint), portHint)),
-          dependsOn = Nil,
-          readiness = Some(ResolvedReadinessConfig(
-            probeType = if (cs.kind == ServiceKind.Db) "tcp" else "http",
-            target = cs.healthHint.getOrElse(s"http://localhost:$portHint/"),
-            intervalMs = 1000,
-            timeoutMs = 3000,
-            maxFailures = 10,
-          )),
-          required = true,
-        )
-      }
-    } else {
-      // Fallback: create a single service from the app config
-      val port = try {
-        new java.net.URI(app.rootUrl).getPort match { case -1 => 3000; case p => p }
-      } catch { case _: Exception => 3000 }
-
-      List(ResolvedServiceConfig(
-        serviceId = "app",
-        kind = app.appType,
-        startupMode = "script",
-        startupCommand = Some("npm start"),
-        composeTarget = None,
-        cwd = None,
-        env = Map.empty,
-        ports = List(ResolvedPortConfig(Some(port), port)),
-        dependsOn = Nil,
-        readiness = Some(ResolvedReadinessConfig(
-          probeType = "http",
-          target = app.rootUrl,
-          intervalMs = 1000,
-          timeoutMs = 3000,
-          maxFailures = 10,
-        )),
-        required = true,
-      ))
-    }
-  }
-
-  private[config] def inferFixturesFromInspection(inspection: RepoInspectionReport): Option[ResolvedFixturesConfig] = {
-    val startupCommands = inspection.startupCommands.map(_.value)
-    val hasMigrate = startupCommands.exists(c => c.contains("migrate"))
-    val hasSeed = startupCommands.exists(c => c.contains("seed"))
-
-    if (!hasMigrate && !hasSeed) return None
-
-    val steps = scala.collection.mutable.ListBuffer[ResolvedSeedStep]()
-    if (hasMigrate) {
-      steps += ResolvedSeedStep(
-        stepId = "migrate",
-        command = "npm run migrate",
-        cwd = None,
-        timeoutMs = 30000,
-        runOnReset = false,
-        runOnInitOnly = true,
-      )
-    }
-    if (hasSeed) {
-      steps += ResolvedSeedStep(
-        stepId = "seed",
-        command = "npm run seed",
-        cwd = None,
-        timeoutMs = 30000,
-        runOnReset = true,
-        runOnInitOnly = false,
-      )
-    }
-
-    Some(ResolvedFixturesConfig(
-      resetStrategy = ResetStrategy.SoftReset,
-      seedSteps = steps.toList,
-    ))
-  }
-
-  private[config] def inferAuthFromInspection(inspection: RepoInspectionReport): Option[ResolvedAuthConfig] = {
-    if (inspection.authHints.nonEmpty) {
-      Some(ResolvedAuthConfig(
-        mode = AuthMode.StaticTestToken,
-        loginUrl = None,
-        credentials = Map.empty,
-        staticToken = Some("test-token"),
-        storageStateOutput = None,
-      ))
-    } else None
-  }
 
   private[config] def inferInferenceConfig(inferenceService: Option[InferenceService]): ResolvedInferenceConfig = {
     // If an inference service is available, default to Anthropic; otherwise Mock

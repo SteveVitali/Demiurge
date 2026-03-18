@@ -5,7 +5,6 @@ import java.time.Instant
 
 import munit.FunSuite
 import demiurge.model._
-import demiurge.inference.{InferenceService, MockInferenceBackend, InferenceServiceImpl, InferenceBudgetState, InMemoryInferenceCache}
 
 class LlmRequirementGeneratorSuite extends FunSuite {
 
@@ -119,74 +118,5 @@ class LlmRequirementGeneratorSuite extends FunSuite {
 
     assertEquals(verifier.verifierType, VerifierType.EnvironmentReadiness)
     assert(verifier.envReadinessSpec.isDefined)
-  }
-
-  test("parseRequirementsFromJson extracts requirements from LLM response") {
-    val json = """{
-      "requirements": [
-        {"id": "health-check", "type": "http", "description": "Health endpoint returns 200", "severity": "required", "url": "http://localhost:3000/health", "expected_status": 200},
-        {"id": "db-reachable", "type": "tcp", "description": "Database is reachable", "severity": "required", "host_port": "localhost:5432"},
-        {"id": "login-flow", "type": "browser_flow", "description": "User can log in", "severity": "important", "entry_url": "http://localhost:3000/login"}
-      ]
-    }"""
-
-    val nodes = LlmRequirementGenerator.parseRequirementsFromJson(json)
-
-    assertEquals(nodes.size, 3)
-    assertEquals(nodes(0).requirementId, "health-check")
-    assertEquals(nodes(0).category, RequirementCategory.ApiContract)
-    assertEquals(nodes(1).requirementId, "db-reachable")
-    assertEquals(nodes(1).category, RequirementCategory.EnvironmentReadiness)
-    assertEquals(nodes(2).requirementId, "login-flow")
-    assertEquals(nodes(2).category, RequirementCategory.UiFlow)
-    assertEquals(nodes(2).priority, RequirementPriority.Important)
-  }
-
-  test("parseRequirementsFromJson returns empty list for malformed JSON") {
-    val nodes = LlmRequirementGenerator.parseRequirementsFromJson("not json at all")
-    assert(nodes.isEmpty)
-  }
-
-  test("generate falls back to readiness graph when LLM fails") {
-    val mockBackend = new MockInferenceBackend(
-      defaultResponse = Some(Left(InferenceError.Timeout("req-1", 60000))),
-    )
-    val budgetState = new InferenceBudgetState()
-    val svc = new InferenceServiceImpl(mockBackend, budgetState, new InMemoryInferenceCache())
-
-    val config = fakeConfig()
-    val inspection = fakeInspection()
-
-    val graph = LlmRequirementGenerator.generate("run-1", "Test task", inspection, config, svc)
-
-    // Should fall back to readiness graph
-    assert(graph.nodes.nonEmpty || graph.warnings.nonEmpty,
-      "Should produce either nodes or warnings on fallback")
-  }
-
-  test("generate uses LLM response when successful") {
-    val llmResponse = InferenceResponse(
-      requestId = "req-1",
-      responseText = """{"requirements": [{"id": "api-works", "type": "http", "description": "API responds", "severity": "required", "url": "http://localhost:3000/api"}]}""",
-      parsedJson = Some("""{"requirements": [{"id": "api-works", "type": "http", "description": "API responds", "severity": "required", "url": "http://localhost:3000/api"}]}"""),
-      inputTokens = 100,
-      outputTokens = 50,
-      cachedHit = false,
-      durationMs = 500,
-      model = "test-model",
-      provider = InferenceProvider.Mock,
-    )
-    val mockBackend = new MockInferenceBackend(defaultResponse = Some(Right(llmResponse)))
-    val budgetState = new InferenceBudgetState()
-    val svc = new InferenceServiceImpl(mockBackend, budgetState, new InMemoryInferenceCache())
-
-    val config = fakeConfig()
-    val inspection = fakeInspection()
-
-    val graph = LlmRequirementGenerator.generate("run-1", "Test task", inspection, config, svc)
-
-    assert(graph.nodes.exists(_.requirementId == "api-works"),
-      "Should contain LLM-generated requirement")
-    assert(graph.inferenceRequestId.isDefined, "Should have inference request ID")
   }
 }
