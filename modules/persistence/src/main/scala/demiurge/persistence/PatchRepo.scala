@@ -7,17 +7,24 @@ import java.time.Instant
 object PatchRepo {
 
   case class PatchRecord(
-    patchRecordId:      String,
-    runId:              String,
-    attemptNumber:      Int,
-    filesChangedJson:   String,
-    totalLinesAdded:    Int,
-    totalLinesRemoved:  Int,
-    repairBackend:      String,
-    repairSummary:      String,
-    hypothesesJson:     String,
-    requiresEnvRebuild: Boolean,
-    appliedAt:          Instant,
+    patchRecordId:        String,
+    runId:                String,
+    attemptNumber:        Int,
+    diffArtifactId:       Option[String] = None,
+    filesChangedJson:     String,
+    totalLinesAdded:      Int,
+    totalLinesRemoved:    Int,
+    repairBackend:        String,
+    repairSummary:        String,
+    hypothesesJson:       String,
+    requiresEnvRebuild:   Boolean,
+    infraSensitiveFiles:  List[String] = Nil,
+    transcriptArtifactId: Option[String] = None,
+    usageRecordId:        Option[String] = None,
+    appliedAt:            Instant,
+    patchApplicationMethod: String = "direct_write",
+    preApplyCommitSha:    Option[String] = None,
+    postApplyCommitSha:   Option[String] = None,
   )
 
   def insert(record: PatchRecord)(implicit conn: Connection): Unit = {
@@ -35,7 +42,7 @@ object PatchRepo {
       ps.setString(1, record.patchRecordId)
       ps.setString(2, record.runId)
       ps.setInt(3, record.attemptNumber)
-      ps.setString(4, "")  // diff_artifact_id — no artifact store yet
+      ps.setString(4, record.diffArtifactId.getOrElse(""))
       ps.setString(5, record.filesChangedJson)
       ps.setInt(6, record.totalLinesAdded)
       ps.setInt(7, record.totalLinesRemoved)
@@ -43,13 +50,13 @@ object PatchRepo {
       ps.setString(9, record.repairSummary)
       ps.setString(10, record.hypothesesJson)
       ps.setInt(11, if (record.requiresEnvRebuild) 1 else 0)
-      ps.setString(12, "[]")  // infra_sensitive_files_json
-      ps.setString(13, null)  // transcript_artifact_id
-      ps.setString(14, "")  // usage_record_id — placeholder
+      ps.setString(12, infraSensitiveToJson(record.infraSensitiveFiles))
+      ps.setString(13, record.transcriptArtifactId.orNull)
+      ps.setString(14, record.usageRecordId.getOrElse(""))
       ps.setString(15, record.appliedAt.toString)
-      ps.setString(16, "direct_write")  // patch_application_method
-      ps.setString(17, "")  // pre_apply_commit_sha — placeholder
-      ps.setString(18, null)  // post_apply_commit_sha
+      ps.setString(16, record.patchApplicationMethod)
+      ps.setString(17, record.preApplyCommitSha.getOrElse(""))
+      ps.setString(18, record.postApplyCommitSha.orNull)
       ps.executeUpdate()
     } finally {
       ps.close()
@@ -101,6 +108,7 @@ object PatchRepo {
       patchRecordId = rs.getString("patch_record_id"),
       runId = rs.getString("run_id"),
       attemptNumber = rs.getInt("attempt_number"),
+      diffArtifactId = Option(rs.getString("diff_artifact_id")).filter(_.nonEmpty),
       filesChangedJson = rs.getString("files_changed_json"),
       totalLinesAdded = rs.getInt("total_lines_added"),
       totalLinesRemoved = rs.getInt("total_lines_removed"),
@@ -108,7 +116,28 @@ object PatchRepo {
       repairSummary = rs.getString("repair_summary"),
       hypothesesJson = rs.getString("hypotheses_json"),
       requiresEnvRebuild = rs.getInt("requires_env_rebuild") != 0,
+      infraSensitiveFiles = jsonToInfraSensitive(rs.getString("infra_sensitive_files_json")),
+      transcriptArtifactId = Option(rs.getString("transcript_artifact_id")),
+      usageRecordId = Option(rs.getString("usage_record_id")).filter(_.nonEmpty),
       appliedAt = Instant.parse(rs.getString("applied_at")),
+      patchApplicationMethod = Option(rs.getString("patch_application_method")).getOrElse("direct_write"),
+      preApplyCommitSha = Option(rs.getString("pre_apply_commit_sha")).filter(_.nonEmpty),
+      postApplyCommitSha = Option(rs.getString("post_apply_commit_sha")),
     )
+  }
+
+  private def infraSensitiveToJson(files: List[String]): String = {
+    if (files.isEmpty) "[]"
+    else files.map(f => s""""$f"""").mkString("[", ",", "]")
+  }
+
+  private def jsonToInfraSensitive(json: String): List[String] = {
+    if (json == null || json.isEmpty || json == "[]") Nil
+    else {
+      // Simple JSON array parsing
+      json.stripPrefix("[").stripSuffix("]").split(",")
+        .map(_.trim.stripPrefix("\"").stripSuffix("\""))
+        .filter(_.nonEmpty).toList
+    }
   }
 }

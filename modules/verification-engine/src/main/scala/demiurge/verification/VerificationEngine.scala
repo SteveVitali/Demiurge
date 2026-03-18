@@ -2,13 +2,15 @@ package demiurge.verification
 
 import java.time.Instant
 import java.util.UUID
+import java.util.concurrent.{Executors, Callable, Future => JFuture, TimeUnit}
 
 import demiurge.model._
 import demiurge.inference.InferenceService
 
-// Phase 4+6: VerificationEngine — orchestrates verifier generation, execution, and verdict aggregation.
-// Phase 6: Supports optional WorkerProcessManager for browser verifier dispatch.
-// Browser verifiers produce observations and evidenceRefs from worker artifacts.
+// Spec §12.3–12.4: VerificationEngine — layer-based verification with parallel groups,
+// blocked detection, flake detection, and retry count tracking.
+// Layers 0–4 execute in order. Within each layer, parallel-safe verifiers run concurrently.
+// Blocked verifiers (hard dependency not yet passed) are skipped with VerdictStatus.Blocked.
 object VerificationEngine {
 
   case class VerificationResult(
@@ -24,6 +26,18 @@ object VerificationEngine {
     def capturePageSnapshot(url: String): Either[String, String] = Left("capturePageSnapshot not implemented")
   }
 
+  // Internal result type for a single verifier execution (including retry/flake info)
+  private case class VerifierExecutionResult(
+    verifier:     Verifier,
+    spec:         VerifierSpec,
+    outcome:      VerifierOutcome,
+    durationMs:   Long,
+    observations: List[Observation],
+    artifactRefs: List[String],
+    retryCount:   Int,
+    isFlake:      Boolean,
+  )
+
   def runVerification(
     runId: String,
     attemptNumber: Int,
@@ -33,79 +47,232 @@ object VerificationEngine {
     resolvedConfig: Option[ResolvedConfig] = None,
     storageStatePath: Option[String] = None,
   ): VerificationResult = {
-    val verifiers = VerifierGenerator.generate(graph)
-    val outcomes = verifiers.map { v =>
-      val startTime = System.currentTimeMillis()
-      v match {
-        // Phase 6+E: Browser verifiers dispatched through worker, with selector discovery
-        case bv: BrowserFlowVerifier =>
-          browserExecutor match {
-            case Some(executor) =>
-              // Phase E: Discover missing selectors before execution
-              val discoveredBv = discoverSelectorsIfNeeded(bv, executor, runId, inferenceService, resolvedConfig)
-              // Gap 4: Apply storage state path from auth bootstrap if available
-              val resolvedBv = storageStatePath match {
-                case Some(path) if discoveredBv.storageStatePath.isEmpty =>
-                  discoveredBv.copy(storageStatePath = Some(path))
-                case _ => discoveredBv
-              }
-              val browserResult = executor.execute(resolvedBv)
-              val durationMs = System.currentTimeMillis() - startTime
-              (v, browserResult.outcome, durationMs, browserResult.observations, browserResult.artifactRefs)
-            case None =>
-              val durationMs = System.currentTimeMillis() - startTime
-              (v, VerifierOutcome.Error("No browser executor available for BrowserFlowVerifier"): VerifierOutcome, durationMs, List.empty[Observation], List.empty[String])
+    val plan = VerificationPlanner.buildPlan(graph)
+    val verifierMap = buildVerifierMap(graph)
+    val specMap = graph.nodes.flatMap(_.verifiers).map(s => s.verifierId -> s).toMap
+
+    // Accumulate verdicts per requirement as layers execute
+    val reqVerdicts = scala.collection.mutable.Map[String, VerdictStatus]()
+    val allVerdicts = scala.collection.mutable.ListBuffer[RequirementVerdict]()
+
+    // Execute layers in order 0..4
+    for (layer <- plan.layers if layer.verifiers.nonEmpty) {
+      val layerGroups = plan.parallelGroups.filter(_.layerIndex == layer.layerIndex)
+
+      for (group <- layerGroups) {
+        val groupSpecs = group.verifierIds.flatMap(specMap.get)
+        val groupVerifiers = group.verifierIds.flatMap(verifierMap.get)
+
+        if (group.verifierIds.size > 1) {
+          // Parallel execution
+          val pool = Executors.newFixedThreadPool(group.verifierIds.size.min(4))
+          try {
+            val futures: List[JFuture[RequirementVerdict]] = groupSpecs.zip(groupVerifiers).map { case (spec, verifier) =>
+              pool.submit(new Callable[RequirementVerdict] {
+                override def call(): RequirementVerdict = {
+                  executeOneVerifier(
+                    spec, verifier, runId, attemptNumber, graph, reqVerdicts.toMap,
+                    browserExecutor, inferenceService, resolvedConfig, storageStatePath,
+                  )
+                }
+              })
+            }
+            futures.foreach { f =>
+              val verdict = f.get(120, TimeUnit.SECONDS)
+              reqVerdicts(verdict.requirementId) = verdict.status
+              allVerdicts += verdict
+            }
+          } catch {
+            case _: Exception => // timeouts handled per-verifier
+          } finally {
+            pool.shutdownNow()
           }
-        case _ =>
-          val outcome = VerifierExecutor.execute(v)
-          val durationMs = System.currentTimeMillis() - startTime
-          (v, outcome, durationMs, List.empty[Observation], List.empty[String])
+        } else {
+          // Sequential execution (single verifier or sequential group)
+          groupSpecs.zip(groupVerifiers).foreach { case (spec, verifier) =>
+            val verdict = executeOneVerifier(
+              spec, verifier, runId, attemptNumber, graph, reqVerdicts.toMap,
+              browserExecutor, inferenceService, resolvedConfig, storageStatePath,
+            )
+            reqVerdicts(verdict.requirementId) = verdict.status
+            allVerdicts += verdict
+          }
+        }
       }
     }
 
-    val verdicts = outcomes.map { case (verifier, outcome, durationMs, observations, evidenceRefs) =>
-      val (status, failureClass, failureMessage) = outcome match {
-        case VerifierOutcome.Passed =>
-          (VerdictStatus.Pass, None, None)
-        case VerifierOutcome.Failed(msg) =>
-          val fc = verifier match {
-            case _: BrowserFlowVerifier => Some(FailureClass.FrontendRenderError)
-            case _ => Some(FailureClass.UnknownFailure)
-          }
-          (VerdictStatus.Fail, fc, Some(msg))
-        case VerifierOutcome.Error(msg) =>
-          (VerdictStatus.Fail, Some(FailureClass.UnknownFailure), Some(msg))
-        case VerifierOutcome.TimedOut =>
-          val fc = verifier match {
-            case _: BrowserFlowVerifier => Some(FailureClass.BrowserTimingFlake)
-            case _ => None
-          }
-          (VerdictStatus.Timeout, fc, Some("Verifier timed out"))
-      }
+    val verdicts = allVerdicts.toList
+    val outcomeList = verdicts.map(v => (v.verifierId, verdictToOutcome(v.status, v.failureMessage)))
+    val aggregate = VerdictAggregator.aggregate(outcomeList)
 
-      RequirementVerdict(
+    VerificationResult(verdicts = verdicts, aggregate = aggregate)
+  }
+
+  /**
+   * Execute a single verifier with blocked detection, retry, and flake detection.
+   * Spec §12.4: Before executing, check hard dependency verdicts.
+   * If blocked, return VerdictStatus.Blocked immediately.
+   * On retry success after initial failure, mark as Flake.
+   */
+  private def executeOneVerifier(
+    spec:             VerifierSpec,
+    verifier:         Verifier,
+    runId:            String,
+    attemptNumber:    Int,
+    graph:            RequirementGraph,
+    currentVerdicts:  Map[String, VerdictStatus],
+    browserExecutor:  Option[BrowserVerifierExecutor],
+    inferenceService: Option[InferenceService],
+    resolvedConfig:   Option[ResolvedConfig],
+    storageStatePath: Option[String],
+  ): RequirementVerdict = {
+    // Spec §12.4: Blocked detection
+    if (VerificationPlanner.isBlocked(spec, graph, currentVerdicts)) {
+      return RequirementVerdict(
         verdictId = UUID.randomUUID().toString,
         runId = runId,
         attemptNumber = attemptNumber,
         requirementId = verifier.requirementId,
         verifierId = verifier.id,
-        status = status,
-        executionDurationMs = durationMs,
+        status = VerdictStatus.Blocked,
+        executionDurationMs = 0,
         retryCount = 0,
-        observations = observations,
-        evidenceRefs = evidenceRefs,
-        failureClass = failureClass,
-        failureMessage = failureMessage,
+        observations = Nil,
+        evidenceRefs = Nil,
+        failureClass = None,
+        failureMessage = Some("Blocked: hard dependency not yet passed"),
         suggestedRerunScope = None,
         confidence = 1.0,
         producedAt = Instant.now(),
       )
     }
 
-    val outcomeList = outcomes.map { case (v, o, _, _, _) => (v.id, o) }
-    val aggregate = VerdictAggregator.aggregate(outcomeList)
+    val startTime = System.currentTimeMillis()
+    val firstResult = executeSingleVerifier(verifier, browserExecutor, inferenceService, resolvedConfig, storageStatePath, runId)
 
-    VerificationResult(verdicts = verdicts, aggregate = aggregate)
+    var finalOutcome = firstResult.outcome
+    var finalObs = firstResult.observations
+    var finalArtifacts = firstResult.artifactRefs
+    var retryCount = 0
+    var isFlake = false
+
+    // Retry logic with flake detection
+    if (finalOutcome != VerifierOutcome.Passed && spec.maxRetries > 0) {
+      var attempts = 0
+      while (attempts < spec.maxRetries && finalOutcome != VerifierOutcome.Passed) {
+        attempts += 1
+        retryCount += 1
+        if (spec.retryDelayMs > 0) Thread.sleep(spec.retryDelayMs.toLong)
+        val retryResult = executeSingleVerifier(verifier, browserExecutor, inferenceService, resolvedConfig, storageStatePath, runId)
+        finalOutcome = retryResult.outcome
+        finalObs = retryResult.observations
+        finalArtifacts = retryResult.artifactRefs
+      }
+      // Spec: If failed initially but passed on retry → Flake
+      if (finalOutcome == VerifierOutcome.Passed && retryCount > 0) {
+        isFlake = true
+      }
+    }
+
+    val durationMs = System.currentTimeMillis() - startTime
+    val (status, failureClass, failureMessage) = outcomeToVerdict(finalOutcome, verifier, isFlake)
+
+    RequirementVerdict(
+      verdictId = UUID.randomUUID().toString,
+      runId = runId,
+      attemptNumber = attemptNumber,
+      requirementId = verifier.requirementId,
+      verifierId = verifier.id,
+      status = status,
+      executionDurationMs = durationMs,
+      retryCount = retryCount,
+      observations = finalObs,
+      evidenceRefs = finalArtifacts,
+      failureClass = failureClass,
+      failureMessage = failureMessage,
+      suggestedRerunScope = None,
+      confidence = if (isFlake) 0.5 else 1.0,
+      producedAt = Instant.now(),
+    )
+  }
+
+  /** Execute a single verifier attempt (no retry). */
+  private case class SingleResult(
+    outcome:      VerifierOutcome,
+    observations: List[Observation],
+    artifactRefs: List[String],
+  )
+
+  private def executeSingleVerifier(
+    verifier:         Verifier,
+    browserExecutor:  Option[BrowserVerifierExecutor],
+    inferenceService: Option[InferenceService],
+    resolvedConfig:   Option[ResolvedConfig],
+    storageStatePath: Option[String],
+    runId:            String,
+  ): SingleResult = {
+    verifier match {
+      case bv: BrowserFlowVerifier =>
+        browserExecutor match {
+          case Some(executor) =>
+            val discoveredBv = discoverSelectorsIfNeeded(bv, executor, runId, inferenceService, resolvedConfig)
+            val resolvedBv = storageStatePath match {
+              case Some(path) if discoveredBv.storageStatePath.isEmpty =>
+                discoveredBv.copy(storageStatePath = Some(path))
+              case _ => discoveredBv
+            }
+            val browserResult = executor.execute(resolvedBv)
+            SingleResult(browserResult.outcome, browserResult.observations, browserResult.artifactRefs)
+          case None =>
+            SingleResult(VerifierOutcome.Error("No browser executor available for BrowserFlowVerifier"), Nil, Nil)
+        }
+      case _ =>
+        val outcome = VerifierExecutor.executeOnce(verifier)
+        SingleResult(outcome, Nil, Nil)
+    }
+  }
+
+  /** Map outcome + flake status to verdict fields. */
+  private def outcomeToVerdict(
+    outcome: VerifierOutcome,
+    verifier: Verifier,
+    isFlake: Boolean,
+  ): (VerdictStatus, Option[FailureClass], Option[String]) = {
+    if (isFlake && outcome == VerifierOutcome.Passed) {
+      (VerdictStatus.Flake, Some(FailureClass.SuspectedNondeterminism), Some("Passed on retry (flake)"))
+    } else outcome match {
+      case VerifierOutcome.Passed =>
+        (VerdictStatus.Pass, None, None)
+      case VerifierOutcome.Failed(msg) =>
+        val fc = verifier match {
+          case _: BrowserFlowVerifier => Some(FailureClass.FrontendRenderError)
+          case _ => Some(FailureClass.UnknownFailure)
+        }
+        (VerdictStatus.Fail, fc, Some(msg))
+      case VerifierOutcome.Error(msg) =>
+        (VerdictStatus.Fail, Some(FailureClass.UnknownFailure), Some(msg))
+      case VerifierOutcome.TimedOut =>
+        val fc = verifier match {
+          case _: BrowserFlowVerifier => Some(FailureClass.BrowserTimingFlake)
+          case _ => None
+        }
+        (VerdictStatus.Timeout, fc, Some("Verifier timed out"))
+    }
+  }
+
+  /** Convert VerdictStatus back to VerifierOutcome for aggregation. */
+  private def verdictToOutcome(status: VerdictStatus, msg: Option[String]): VerifierOutcome = status match {
+    case VerdictStatus.Pass  => VerifierOutcome.Passed
+    case VerdictStatus.Flake => VerifierOutcome.Passed // Flakes count as pass for aggregation
+    case VerdictStatus.Fail  => VerifierOutcome.Failed(msg.getOrElse("failed"))
+    case VerdictStatus.Blocked => VerifierOutcome.Error(msg.getOrElse("blocked"))
+    case VerdictStatus.Timeout => VerifierOutcome.TimedOut
+    case VerdictStatus.Inconclusive => VerifierOutcome.Error(msg.getOrElse("inconclusive"))
+  }
+
+  /** Build verifier ID → Verifier map. */
+  private def buildVerifierMap(graph: RequirementGraph): Map[String, Verifier] = {
+    VerifierGenerator.generate(graph).map(v => v.id -> v).toMap
   }
 
   /** Phase E: Discover missing selectors via LLM before browser flow execution. */

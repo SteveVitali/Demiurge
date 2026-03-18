@@ -38,6 +38,11 @@ export const ErrorCodes = {
   BROWSER_ERROR: -32001,
   ARTIFACT_ERROR: -32002,
   NOT_INITIALIZED: -32003,
+  // Spec §9.13: Browser-specific error codes
+  NAVIGATION_FAILED: -32010,
+  SELECTOR_NOT_FOUND: -32011,
+  ASSERTION_ERROR: -32012,
+  POLICY_VIOLATION: -32013,
 } as const;
 
 // Spec §10.2: Worker capability advertisement

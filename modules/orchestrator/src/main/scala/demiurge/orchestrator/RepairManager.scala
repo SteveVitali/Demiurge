@@ -116,6 +116,53 @@ object RepairManager {
     }
   }
 
+  // Spec §10.6: Persist repair transcript as artifact and update patch record with commit SHAs
+  def persistRepairTranscript(
+    runId: String,
+    attemptNumber: Int,
+    transcriptJson: String,
+    preCommitSha: Option[String],
+    postCommitSha: Option[String],
+  )(implicit conn: Connection): Unit = {
+    // Write transcript artifact record
+    val artifactId = java.util.UUID.randomUUID().toString
+    ArtifactRecordRepo.insert(ArtifactRecord(
+      artifactId = artifactId,
+      runId = runId,
+      attemptNumber = Some(attemptNumber),
+      artifactType = ArtifactType.RepairTranscript,
+      producerComponent = "repair_session",
+      logicalScope = Some(s"attempt_$attemptNumber"),
+      relativePath = s"$runId/attempt_$attemptNumber/repair_transcript.json",
+      contentType = "application/json",
+      sizeBytes = transcriptJson.length.toLong,
+      checksumSha256 = "",
+      compressed = false,
+      compressionFormat = None,
+      createdAt = Instant.now(),
+      metadata = Map.empty,
+    ))
+
+    // Update matching patch record with commit SHAs and transcript artifact ID
+    val ps = conn.prepareStatement(
+      """UPDATE patch_records SET
+        |  transcript_artifact_id = ?,
+        |  pre_apply_commit_sha = COALESCE(?, pre_apply_commit_sha),
+        |  post_apply_commit_sha = COALESCE(?, post_apply_commit_sha)
+        |WHERE run_id = ? AND attempt_number = ?
+      """.stripMargin)
+    try {
+      ps.setString(1, artifactId)
+      ps.setString(2, preCommitSha.orNull)
+      ps.setString(3, postCommitSha.orNull)
+      ps.setString(4, runId)
+      ps.setInt(5, attemptNumber)
+      ps.executeUpdate()
+    } finally {
+      ps.close()
+    }
+  }
+
   // Update attempt with repair failure
   def markAttemptRepairFailed(attemptId: String, failurePacketId: String)(implicit conn: Connection): Unit = {
     TransactionManager.atomic(conn) { txn =>

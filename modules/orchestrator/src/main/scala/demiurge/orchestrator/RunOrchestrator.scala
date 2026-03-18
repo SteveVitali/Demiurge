@@ -6,7 +6,7 @@ import demiurge.model._
 import demiurge.inspector.RepoInspector
 import demiurge.compiler.RequirementCompiler
 import demiurge.planner.EnvironmentPlanner
-import demiurge.runtime.RuntimeSupervisor
+import demiurge.runtime.{RuntimeSupervisor, EnvironmentHealthMonitor}
 import demiurge.verification.VerificationEngine
 import demiurge.persistence._
 import demiurge.repair._
@@ -356,6 +356,35 @@ object RunOrchestrator {
       // --- Check for interrupt at top of loop ---
       if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
 
+      // --- Spec §8: Environment health check before verification ---
+      planResult.foreach { plan =>
+        val health = EnvironmentHealthMonitor.checkHealth(plan)
+        health.status match {
+          case EnvironmentHealthMonitor.Degraded(services, details) =>
+            System.err.println(s"[orchestrator] Environment degraded: ${services.mkString(", ")}. Attempting recovery...")
+            EnvironmentHealthMonitor.attemptRecovery(plan, currentCtx.repoRoot, health) match {
+              case EnvironmentHealthMonitor.RecoverySuccess =>
+                System.err.println("[orchestrator] Environment recovery succeeded")
+              case EnvironmentHealthMonitor.RecoveryPartial(recovered, failed) =>
+                System.err.println(s"[orchestrator] Partial recovery: recovered=${recovered.mkString(",")}, failed=${failed.mkString(",")}")
+              case EnvironmentHealthMonitor.RecoveryFailed(reason) =>
+                System.err.println(s"[orchestrator] Recovery failed: $reason — continuing with degraded environment")
+            }
+          case EnvironmentHealthMonitor.Failed(reason) =>
+            System.err.println(s"[orchestrator] Environment failed: $reason — attempting full restart")
+            try {
+              supervisor.restartEnvironment(plan, currentCtx.repoRoot) match {
+                case RuntimeSupervisor.BootSuccess(snap) =>
+                  RuntimeSnapshotRepo.insert(snap)
+                  System.err.println("[orchestrator] Environment restart succeeded")
+                case RuntimeSupervisor.BootFailure(r, _) =>
+                  System.err.println(s"[orchestrator] Environment restart failed: $r")
+              }
+            } catch { case _: Exception => }
+          case EnvironmentHealthMonitor.Healthy => // OK
+        }
+      }
+
       // --- Transition: → Verifying ---
       var verificationResult: Option[VerificationEngine.VerificationResult] = None
       var currentAttempt: Option[Attempt] = None
@@ -501,10 +530,20 @@ object RunOrchestrator {
             logs = logsString,
           )
 
-          // Execute repair
-          repairOutcome = Some(RepairExecutor.executeRepair(
+          // Execute repair with session lifecycle (Spec §10)
+          val sessionResult = RepairSession.executeWithSession(
             backend, currentCtx.worktreePath, failureInput, repairContext,
-          ))
+          )
+          repairOutcome = Some(sessionResult.outcome)
+
+          // Persist repair transcript as artifact (best-effort)
+          try {
+            val transcriptJson = RepairSession.serializeTranscript(sessionResult.session)
+            RepairManager.persistRepairTranscript(
+              currentRun.runId, attemptNumber, transcriptJson,
+              sessionResult.session.preCommitSha, sessionResult.session.postCommitSha,
+            )
+          } catch { case _: Exception => /* best-effort */ }
         },
       )
       currentCtx = currentCtx.copy(run = currentRun)

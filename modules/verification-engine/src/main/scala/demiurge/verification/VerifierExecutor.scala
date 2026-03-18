@@ -9,6 +9,7 @@ import java.nio.file.{Files, Paths}
 // Executes verifiers synchronously. No worker, no Playwright.
 object VerifierExecutor {
 
+  /** Execute with built-in retry (legacy — prefer executeOnce + engine-level retry). */
   def execute(verifier: Verifier): VerifierOutcome = {
     val result = executeOnce(verifier)
     result match {
@@ -26,7 +27,8 @@ object VerifierExecutor {
     }
   }
 
-  private def executeOnce(verifier: Verifier): VerifierOutcome = {
+  /** Execute a single attempt with no retry. Used by VerificationEngine for retry+flake tracking. */
+  def executeOnce(verifier: Verifier): VerifierOutcome = {
     try {
       verifier match {
         case v: HttpVerifier        => executeHttp(v)
