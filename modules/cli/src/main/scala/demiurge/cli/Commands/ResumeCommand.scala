@@ -11,7 +11,9 @@ import demiurge.persistence._
 import demiurge.orchestrator._
 import demiurge.api.EventStream
 
-// Phase 10: `demiurge resume` command — resumes interrupted runs via orchestrator
+// Phase 10: `demiurge resume` command — resumes interrupted runs via orchestrator.
+// Gap 6: Now uses ResumeManager.prepareResume() and passes resumeFromStatus
+// to OrchestrationRunner so the orchestrator skips completed phases.
 object ResumeCommand {
 
   private val resumableStatuses: Set[RunStatus] = Set(
@@ -43,19 +45,43 @@ object ResumeCommand {
           return ExitCodes.ResumeFailed
         }
 
-        // Reset status to Created so the orchestrator re-runs the full pipeline
-        TaskRunRepo.updateStatus(cmd.runId, RunStatus.Created)
-        TaskRunRepo.setStartedAt(cmd.runId, Instant.now())
-        val resumedRun = run.copy(status = RunStatus.Created, startedAt = Some(Instant.now()))
-
-        if (!global.quiet) {
-          System.out.println(OutputFormatter.formatSuccess(
-            s"Resuming run ${cmd.runId} from status ${run.status}", global.format))
+        // Gap 6: Determine correct resume state.
+        // ResumeManager.prepareResume() only handles Interrupted status (it does
+        // orphan cleanup, worktree verification, etc.). For other resumable statuses
+        // (ReadyToVerify, AnalyzingFailure, PlanningRepair), we map directly to a
+        // resume state using ResumeManager.resumeStateFor().
+        val now = Instant.now()
+        val (resumedRun, resumeFromStatus) = if (run.status == RunStatus.Interrupted) {
+          val resumeResult = ResumeManager.prepareResume(cmd.runId, global.repo)
+          resumeResult match {
+            case ResumeManager.ResumeReady(updatedRun, resumeState) =>
+              TaskRunRepo.setStartedAt(cmd.runId, now)
+              (updatedRun.copy(startedAt = Some(now)), Some(resumeState))
+            case ResumeManager.ResumeFailed(_) =>
+              // Fallback: reset to Created for full re-run
+              TaskRunRepo.updateStatus(cmd.runId, RunStatus.Created)
+              TaskRunRepo.setStartedAt(cmd.runId, now)
+              (run.copy(status = RunStatus.Created, startedAt = Some(now)), None)
+          }
+        } else {
+          // Non-Interrupted resumable status — map directly to resume point
+          val resumeState = ResumeManager.resumeStateFor(
+            run.status, run.attemptCount, run.maxAttempts)
+          TaskRunRepo.updateStatus(cmd.runId, resumeState)
+          TaskRunRepo.setStartedAt(cmd.runId, now)
+          (run.copy(status = resumeState, startedAt = Some(now)), Some(resumeState))
         }
 
-        // Delegate to shared orchestration runner
+        if (!global.quiet) {
+          val fromDesc = resumeFromStatus.map(s => s" from $s").getOrElse(" from scratch")
+          System.out.println(OutputFormatter.formatSuccess(
+            s"Resuming run ${cmd.runId}$fromDesc", global.format))
+        }
+
+        // Delegate to shared orchestration runner with resume state
         val finalRun = try {
-          OrchestrationRunner.run(resumedRun, global, worktreePath, conn)
+          OrchestrationRunner.run(resumedRun, global, worktreePath, conn,
+            resumeFromStatus = resumeFromStatus)
         } catch {
           case e: Exception =>
             System.err.println(OutputFormatter.formatError(s"Resume failed: ${e.getMessage}", global.format))

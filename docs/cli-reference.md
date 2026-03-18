@@ -90,7 +90,7 @@ demiurge resume --run-id <id>
 
 **Resumable statuses:** `Interrupted`, `ReadyToVerify`, `AnalyzingFailure`, `PlanningRepair`.
 
-Resets the run to `Created` and re-runs the full orchestration pipeline from the beginning. The existing worktree is reused.
+Uses `ResumeManager` to determine the optimal resume point based on the last persisted state transition. Phases that completed successfully before interruption are skipped — persisted inspection reports, requirement graphs, runtime plans, and patch history are loaded from the database. The attempt counter continues from where it left off. The existing worktree is reused.
 
 ### `status`
 

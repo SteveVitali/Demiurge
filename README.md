@@ -12,7 +12,9 @@ Demiurge orchestrates environment setup, requirement verification, failure analy
 - **LLM-powered repair** — when verification fails, Demiurge analyzes the failure and proposes code patches via Claude API
 - **Isolated execution** — each run operates in a dedicated git worktree with its own SQLite database, artifacts, and lock file
 - **Structured observability** — JSON event stream, SSE-capable local API, structured logging, full artifact capture
-- **Resume & signal handling** — interrupted runs can be resumed; SIGINT/SIGTERM are handled gracefully with state persistence
+- **Smart resume** — interrupted runs resume from the last completed phase, skipping already-persisted work; attempt counters continue where they left off
+- **Signal handling** — SIGINT/SIGTERM are handled gracefully with state persistence
+- **CI/CD** — GitHub Actions workflow builds all targets and runs all tests on every push and PR
 
 ## Architecture Overview
 
@@ -90,7 +92,7 @@ bazel build //...
 ### Test
 
 ```bash
-# Scala tests (19+ test targets)
+# Scala tests (20+ test targets)
 bazel test //...
 
 # TypeScript worker tests

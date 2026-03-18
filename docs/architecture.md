@@ -114,11 +114,12 @@ Data is stored at `<repo>/.demiurge/demiurge.db`.
 
 The heart of the system — drives the run state machine:
 
-- **RunOrchestrator** — main execution loop; takes pluggable inspector, compiler, planner, supervisor, repair backend, and browser executor
+- **RunOrchestrator** — main execution loop; takes pluggable inspector, compiler, planner, supervisor, repair backend, and browser executor; supports resume via `resumeFromStatus` parameter that skips completed phases
 - **RunTransitionManager** — enforces persist-before-side-effects; publishes events to SSE listeners
 - **AttemptManager** — creates and manages verification attempts
 - **RepairManager** — builds failure inputs, repair contexts; persists failure packets and patch records
-- **ResumeManager** — maps interrupted run states to resumption points
+- **ResumeManager** — maps interrupted run states to resumption points; prepares runs for smart resume
+- **ResumeDataLoader** — loads persisted inspection reports, requirement graphs, runtime plans, patch history, and attempt counts from the database to reconstruct state for resumed runs
 - **SignalHandler** — registers JVM shutdown hooks for SIGINT/SIGTERM; persists `Interrupted` status
 - **TimeoutEnforcer** — tracks run-level and attempt-level timeouts via `RunClock`
 - **LockManager** — file-based run locking (one active run per repo)
@@ -245,6 +246,24 @@ Orchestrator → RunTransitionManager.transition()
     → EventStream.publish()
       → SSE subscribers (GET /runs/{id}/events)
 ```
+
+## CI/CD
+
+GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every push to `main` and on pull requests:
+
+1. **Bazel build** — `bazel build //...` (all 43+ targets)
+2. **Bazel tests** — `bazel test //...` (all 20+ test targets, including unit and integration)
+3. **Worker tests** — `npm ci && npm test` in the `worker/` directory
+
+Bazel caching is configured via `bazel-contrib/setup-bazel` for fast incremental builds.
+
+## Testing Strategy
+
+- **Unit tests** — per-module, exercising individual components with stubs (e.g., `OrchestratorSuite`, `ResumeSuite`)
+- **End-to-end integration tests** — `EndToEndSuite` exercises the full orchestration pipeline with in-memory SQLite and configurable stub backends (`EndToEndTestHarness`). Covers: full pass, build mode, multi-attempt repair, exhaustion, auth bootstrap, resume from checkpoint, and signal interruption.
+- **Resume tests** — `ResumeSuite` validates that `ResumeDataLoader` correctly loads persisted state and that `RunOrchestrator` skips completed phases when resuming.
+
+All tests are deterministic and fast — no external network calls, no real Docker containers, no real LLM API calls.
 
 ## Technology Stack
 
