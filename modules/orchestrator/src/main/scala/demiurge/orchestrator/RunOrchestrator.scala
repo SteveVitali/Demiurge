@@ -7,11 +7,12 @@ import demiurge.inspector.RepoInspector
 import demiurge.compiler.RequirementCompiler
 import demiurge.planner.EnvironmentPlanner
 import demiurge.runtime.RuntimeSupervisor
-import demiurge.verification.{VerificationEngine, BrowserFlowVerifier, BrowserVerifierResult}
+import demiurge.verification.VerificationEngine
 import demiurge.persistence._
 import demiurge.repair._
 import demiurge.config.{ConfigResolver, ConfigResolverImpl}
 import demiurge.inference.InferenceService
+import demiurge.worker.WorkerProcessManager
 
 // Spec §4.1: Synchronous orchestrator loop.
 // Executes the path: Created → InspectingRepo → CompilingRequirements →
@@ -39,6 +40,7 @@ object RunOrchestrator {
     browserExecutor: Option[VerificationEngine.BrowserVerifierExecutor] = None,
     configResolver: Option[ConfigResolver] = None,
     inferenceService: Option[InferenceService] = None,
+    workerManager: Option[WorkerProcessManager] = None,
   ): TaskRun = {
     // Register signal handler for interruption persistence (Spec §4.4)
     SignalHandler.register(ctx, ctx.repoRoot)
@@ -104,6 +106,74 @@ object RunOrchestrator {
       )
       currentCtx = currentCtx.copy(run = currentRun)
       SignalHandler.updateContext(currentCtx)
+
+      // --- Build Mode: PlanningFeature → GeneratingCode ---
+      // Declared early so build mode code gen can append to patchHistory
+      // before the multi-attempt repair loop reads it.
+      var patchHistory: List[PatchProposal] = Nil
+
+      if (currentRun.runMode == RunMode.Build && repairBackend.isDefined) {
+        if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
+
+        var featurePlan: Option[FeaturePlan] = None
+
+        currentRun = RunTransitionManager.transition(
+          currentCtx,
+          RunStatus.PlanningFeature,
+          sideEffect = { _ =>
+            featurePlan = Some(BuildPhaseManager.planFeature(
+              currentRun.runId,
+              currentRun.taskText,
+              inspectionResult.get,
+              requirementResult.get,
+              inferenceService,
+              resolvedConfig,
+            ))
+          },
+        )
+        currentCtx = currentCtx.copy(run = currentRun)
+        SignalHandler.updateContext(currentCtx)
+
+        if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
+
+        var codeGenOutcome: Option[RepairExecutor.RepairOutcome] = None
+
+        currentRun = RunTransitionManager.transition(
+          currentCtx,
+          RunStatus.GeneratingCode,
+          sideEffect = { _ =>
+            codeGenOutcome = Some(BuildPhaseManager.generateCode(
+              currentCtx,
+              repairBackend.get,
+              currentRun.taskText,
+              featurePlan.get,
+              inspectionResult.get,
+              requirementResult.get,
+              None, // planResult not yet computed — PlanningEnvironment happens after
+            ))
+          },
+        )
+        currentCtx = currentCtx.copy(run = currentRun)
+        SignalHandler.updateContext(currentCtx)
+
+        // Handle code generation outcome
+        codeGenOutcome.get match {
+          case RepairExecutor.RepairApplied(packet, proposal, filesChanged) =>
+            RepairManager.persistFailurePacket(packet)
+            RepairManager.persistPatchRecord(proposal)
+            patchHistory = patchHistory :+ proposal
+            // Continue to PlanningEnvironment → verification loop
+
+          case RepairExecutor.RepairRejected(packet, reason) =>
+            RepairManager.persistFailurePacket(packet)
+            currentRun = RunTransitionManager.transitionToTerminal(
+              currentCtx,
+              RunStatus.Exhausted,
+              summary = Some(s"Code generation failed: $reason"),
+            )
+            return currentRun
+        }
+      }
 
       // --- Transition: CompilingRequirements → PlanningEnvironment ---
       if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
@@ -171,6 +241,36 @@ object RunOrchestrator {
           currentCtx = currentCtx.copy(run = currentRun)
           SignalHandler.updateContext(currentCtx)
 
+          // --- Auth Bootstrap (if configured) ---
+          val authConfig: Option[ResolvedAuthConfig] = resolvedConfig.flatMap(_.auth)
+          var storageStatePath: Option[String] = None
+
+          if (authConfig.isDefined) {
+            if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
+
+            var authResult: Option[AuthBootstrapExecutor.AuthResult] = None
+
+            currentRun = RunTransitionManager.transition(
+              currentCtx,
+              RunStatus.BootstrappingAuth,
+              sideEffect = { _ =>
+                authResult = Some(AuthBootstrapExecutor.execute(
+                  authConfig.get, workerManager, currentCtx.worktreePath, currentRun.runId,
+                ))
+              },
+            )
+            currentCtx = currentCtx.copy(run = currentRun)
+            SignalHandler.updateContext(currentCtx)
+
+            authResult.foreach {
+              case AuthBootstrapExecutor.AuthResult(true, path, _, _) =>
+                storageStatePath = path
+              case AuthBootstrapExecutor.AuthResult(false, _, _, errOpt) =>
+                val msg = errOpt.getOrElse("unknown reason")
+                System.err.println(s"[orchestrator] Auth bootstrap failed (non-fatal): $msg")
+            }
+          }
+
           // --- Transition: SeedingFixtures → ReadyToVerify ---
           if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
 
@@ -184,9 +284,8 @@ object RunOrchestrator {
 
           // --- Phase 5: Verification + multi-attempt repair loop ---
           var attemptNumber = 1
-          var patchHistory: List[PatchProposal] = Nil
-          // Note: if there are any patchHistory entries from build mode code generation
-          // (Gap 3, not yet implemented), they would be passed in. For now, start empty.
+          // patchHistory is declared above — may already contain entries from
+          // build mode code generation (PlanningFeature → GeneratingCode).
 
           while (attemptNumber <= currentRun.maxAttempts) {
 
@@ -211,6 +310,7 @@ object RunOrchestrator {
                   browserExecutor,
                   inferenceService,
                   resolvedConfig,
+                  storageStatePath,
                 )
                 verificationResult = Some(result)
 
@@ -310,6 +410,10 @@ object RunOrchestrator {
               sideEffect = { _ =>
                 currentAttempt.foreach(a => RepairManager.markAttemptRepairing(a.attemptId))
 
+                // Gap 5: Collect service logs after failed verification (best-effort)
+                val collected = planResult.map(LogCollector.collectAfterVerification)
+                val logsString = collected.flatMap(_.serialize())
+
                 val failureInput = RepairManager.buildFailureInput(
                   runId = currentRun.runId,
                   attemptNumber = attemptNumber,
@@ -319,7 +423,7 @@ object RunOrchestrator {
                   inspectionReport = inspectionResult,
                   runtimePlan = planResult,
                   patchHistory = patchHistory,
-                  logs = None,
+                  logs = logsString,
                 )
 
                 val repairContext = RepairManager.buildRepairContext(
@@ -330,6 +434,7 @@ object RunOrchestrator {
                   inspectionReport = inspectionResult,
                   runtimePlan = planResult,
                   patchHistory = patchHistory,
+                  logs = logsString,
                 )
 
                 // Execute repair

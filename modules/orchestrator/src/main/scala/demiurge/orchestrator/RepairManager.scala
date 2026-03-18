@@ -48,6 +48,7 @@ object RepairManager {
     inspectionReport: Option[RepoInspectionReport],
     runtimePlan: Option[RuntimePlan],
     patchHistory: List[PatchProposal],
+    logs: Option[String] = None,
   ): RepairContext = {
     RepairContext(
       runId = ctx.run.runId,
@@ -59,6 +60,7 @@ object RepairManager {
       inspectionReport = inspectionReport,
       runtimePlan = runtimePlan,
       patchHistory = patchHistory,
+      logs = logs,
     )
   }
 

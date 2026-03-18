@@ -118,6 +118,12 @@ object ClaudePromptBuilder extends RepairPromptBuilder {
       sb.append("\n")
     }
 
+    // Service logs (Gap 5: observability taps)
+    context.logs.foreach { logText =>
+      sb.append("# Service Logs\n")
+      sb.append(logText).append("\n\n")
+    }
+
     // Relevant source files from worktree
     sb.append("# Relevant Source Files\n")
     val relevantFiles = collectRelevantFiles(context.worktreePath, maxFiles = 20, maxSizeBytes = 50000)
