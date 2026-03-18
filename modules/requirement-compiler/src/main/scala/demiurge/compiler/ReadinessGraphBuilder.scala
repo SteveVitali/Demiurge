@@ -7,7 +7,7 @@ import demiurge.model._
 // Utility for building readiness-based requirement graphs from resolved config.
 // Used by `demiurge init` to generate minimal requirements.yaml scaffolds.
 // Runtime requirement compilation uses RequirementCompilerImpl with explicit YAML only.
-object LlmRequirementGenerator {
+object ReadinessGraphBuilder {
 
   /**
    * Build a minimal requirement graph from environment readiness probes in the config.

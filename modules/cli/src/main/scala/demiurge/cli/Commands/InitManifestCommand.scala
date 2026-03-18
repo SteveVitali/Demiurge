@@ -168,9 +168,10 @@ object InitManifestCommand {
       sb.append("\nservices:\n")
       inspection.candidateServices.foreach { cs =>
         val port = cs.portHint.getOrElse(3000)
+        val isCompose = cs.startupHint.exists(_.contains("docker compose"))
         sb.append(s"  ${cs.serviceId}:\n")
         sb.append(s"    kind: ${cs.kind.toString.toLowerCase}\n")
-        sb.append(s"    startup_mode: script\n")
+        sb.append(s"    startup_mode: ${if (isCompose) "compose" else "script"}\n")
         cs.startupHint.foreach(cmd => sb.append(s"    startup_command: $cmd\n"))
         sb.append(s"    ports:\n")
         sb.append(s"      - host: $port\n")

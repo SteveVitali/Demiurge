@@ -6,7 +6,7 @@ import java.time.Instant
 import munit.FunSuite
 import demiurge.model._
 
-class LlmRequirementGeneratorSuite extends FunSuite {
+class ReadinessGraphBuilderSuite extends FunSuite {
 
   private def fakeInspection(runId: String = "test-run"): RepoInspectionReport =
     RepoInspectionReport(
@@ -60,7 +60,7 @@ class LlmRequirementGeneratorSuite extends FunSuite {
     val config = fakeConfig()
     val inspection = fakeInspection()
 
-    val graph = LlmRequirementGenerator.buildFallbackGraph("run-1", inspection, config, None)
+    val graph = ReadinessGraphBuilder.buildFallbackGraph("run-1", inspection, config, None)
 
     assert(graph.nodes.nonEmpty, "Should have at least one requirement node")
     assertEquals(graph.nodes.head.requirementId, "api-readiness")
@@ -74,7 +74,7 @@ class LlmRequirementGeneratorSuite extends FunSuite {
     ))
     val inspection = fakeInspection()
 
-    val graph = LlmRequirementGenerator.buildFallbackGraph("run-1", inspection, config, None)
+    val graph = ReadinessGraphBuilder.buildFallbackGraph("run-1", inspection, config, None)
 
     assert(graph.nodes.isEmpty, "Should have no requirements")
     assert(graph.warnings.nonEmpty, "Should have a warning")
@@ -85,7 +85,7 @@ class LlmRequirementGeneratorSuite extends FunSuite {
     val config = fakeConfig()
     val inspection = fakeInspection()
 
-    val graph = LlmRequirementGenerator.buildFallbackGraph("run-1", inspection, config, None)
+    val graph = ReadinessGraphBuilder.buildFallbackGraph("run-1", inspection, config, None)
     val node = graph.nodes.head
     val verifier = node.verifiers.head
 
@@ -112,7 +112,7 @@ class LlmRequirementGeneratorSuite extends FunSuite {
     ))
     val inspection = fakeInspection()
 
-    val graph = LlmRequirementGenerator.buildFallbackGraph("run-1", inspection, config, None)
+    val graph = ReadinessGraphBuilder.buildFallbackGraph("run-1", inspection, config, None)
     val node = graph.nodes.head
     val verifier = node.verifiers.head
 

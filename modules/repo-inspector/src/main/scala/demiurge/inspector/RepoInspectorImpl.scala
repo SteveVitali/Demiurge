@@ -33,9 +33,9 @@ object RepoInspectorImpl extends RepoInspector {
     val candidateServices = detectCandidateServices(repoRoot, packageJsonParsed)
     val startupCommands = detectStartupCommands(repoRoot, packageJsonParsed)
     val healthEndpointHints = detectHealthEndpoints(repoRoot, packageJsonParsed)
-    val dbDependencies = detectDbDependencies(repoRoot, packageJsonParsed)
+    val composeServices = parseComposeFile(repoRoot)
+    val dbDependencies = detectDbDependencies(packageJsonParsed, composeServices)
     val manifestsFound = detectManifests(repoRoot)
-    val envFileHints = detectEnvFiles(repoRoot)
     val apiBasePaths = detectApiBasePaths(repoRoot)
     val authHints = detectAuthHints(repoRoot, packageJsonParsed)
     val testFrameworkHints = detectTestFrameworks(packageJsonParsed)
@@ -89,6 +89,8 @@ object RepoInspectorImpl extends RepoInspector {
 
     if (hasFileWithExtension(repoRoot, ".py"))
       results += ScoredInference("python", 0.9, ".py files found")
+    else if (fileExists(repoRoot, "requirements.txt") || fileExists(repoRoot, "pyproject.toml") || fileExists(repoRoot, "Pipfile"))
+      results += ScoredInference("python", 0.7, "Python manifest found")
 
     if (hasFileWithExtension(repoRoot, ".rb"))
       results += ScoredInference("ruby", 0.8, ".rb files found")
@@ -176,7 +178,8 @@ object RepoInspectorImpl extends RepoInspector {
       val allDeps = extractAllDependencies(json)
 
       if (scripts.contains("start") || scripts.contains("dev")) {
-        val startCmd = scripts.get("start").orElse(scripts.get("dev")).map(s => s"npm run ${if (scripts.contains("start")) "start" else "dev"}")
+        val scriptName = if (scripts.contains("start")) "start" else "dev"
+        val startCmd = Some(s"npm run $scriptName")
         val portHint = detectPortFromScripts(scripts, allDeps)
         val isFrontend = allDeps.contains("react") || allDeps.contains("next") || allDeps.contains("vue") || allDeps.contains("@angular/core")
 
@@ -236,8 +239,8 @@ object RepoInspectorImpl extends RepoInspector {
     val results = scala.collection.mutable.ListBuffer[ScoredInference[String]]()
     val allDeps = packageJson.map(extractAllDependencies).getOrElse(Set.empty)
 
-    // Scan source files for route definitions with common health patterns
-    val healthPatterns = List("/health", "/healthz", "/api/health", "/status", "/readiness", "/ready")
+    // Scan source files for health endpoint patterns (require quote context to reduce false positives)
+    val healthPatterns = List("/health", "/healthz", "/api/health", "/readiness")
     val portHint = packageJson.flatMap(json => detectPortFromScripts(extractScripts(json), allDeps)).getOrElse(3000)
 
     scanSourceFilesForPatterns(repoRoot, healthPatterns).foreach { pattern =>
@@ -254,7 +257,10 @@ object RepoInspectorImpl extends RepoInspector {
 
   // --- Database dependency detection ---
 
-  private def detectDbDependencies(repoRoot: Path, packageJson: Option[Json]): List[ScoredInference[String]] = {
+  private def detectDbDependencies(
+    packageJson: Option[Json],
+    composeServices: Option[List[(String, String)]],
+  ): List[ScoredInference[String]] = {
     val results = scala.collection.mutable.ListBuffer[ScoredInference[String]]()
     val allDeps = packageJson.map(extractAllDependencies).getOrElse(Set.empty)
 
@@ -278,8 +284,8 @@ object RepoInspectorImpl extends RepoInspector {
     if (allDeps.contains("drizzle-orm"))
       results += ScoredInference("drizzle-orm", 0.7, "package.json: drizzle")
 
-    // Check compose file for DB services
-    parseComposeFile(repoRoot).foreach { services =>
+    // Check compose file for DB services (reuse already-parsed data)
+    composeServices.foreach { services =>
       services.foreach { case (name, image) =>
         if (image.contains("postgres")) results += ScoredInference("postgresql", 0.9, s"compose service: $name (postgres)")
         if (image.contains("mysql") || image.contains("mariadb")) results += ScoredInference("mysql", 0.9, s"compose service: $name")
@@ -339,13 +345,6 @@ object RepoInspectorImpl extends RepoInspector {
       fileExists(repoRoot, "nx.json")
 
     hasWorkspaces || hasMonorepoConfig
-  }
-
-  // --- .env file detection ---
-
-  private def detectEnvFiles(repoRoot: Path): List[String] = {
-    val envNames = List(".env", ".env.example", ".env.sample", ".env.local", ".env.development")
-    envNames.filter(name => fileExists(repoRoot, name))
   }
 
   // --- API base path detection ---

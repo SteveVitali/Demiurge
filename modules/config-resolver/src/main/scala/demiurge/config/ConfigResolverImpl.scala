@@ -56,93 +56,12 @@ object ConfigResolverImpl extends ConfigResolver {
     inspection: RepoInspectionReport,
     inferenceService: Option[InferenceService],
   ): ResolvedConfig = {
-
-    // Layer 1: Try explicit YAML
-    val explicitManifest = loadExplicitManifest(repoPath)
-    val explicitRequirements = loadExplicitRequirements(repoPath)
-
-    // Layer 2: Try cached inference
-    val cachedManifest = if (explicitManifest.isEmpty) loadCachedManifest(repoPath) else None
-    val cachedRequirements = if (explicitRequirements.isEmpty) loadCachedRequirements(repoPath) else None
-
-    // Determine manifest source
-    val (manifest, manifestSource) = explicitManifest.map(_ -> ConfigSource.Explicit)
-      .orElse(cachedManifest.map(_ -> ConfigSource.Cached))
-      .getOrElse(null, null) match {
-      case (m: DemiurgeManifest, s: ConfigSource) => (Some(m), s)
-      case _ => (None, null)
-    }
-
-    // No manifest found: error — user must run `demiurge init` first
-    if (manifest.isEmpty) {
+    tryResolve(repoPath, inferenceService).getOrElse {
       throw NoConfigError(
         "No demiurge.yaml found (checked repo root and .demiurge/inferred/). " +
         "Run 'demiurge init --smart' to generate configuration, or create demiurge.yaml manually."
       )
     }
-
-    val m = manifest.get
-    val source = manifestSource
-
-    // Resolve app config from manifest
-    val app = resolveAppFromManifest(m)
-
-    // Resolve services from manifest
-    val (services, servicesSources) = if (m.services.nonEmpty) {
-      val svcs = resolveServicesFromManifest(m)
-      val sources = svcs.map(s => s.serviceId -> source).toMap
-      (svcs, sources)
-    } else {
-      (List.empty[ResolvedServiceConfig], Map.empty[String, ConfigSource])
-    }
-
-    // Resolve fixtures from manifest
-    val fixtures = m.fixtures.map(resolveFixturesFromManifest)
-
-    // Resolve auth from manifest
-    val auth = m.auth.map(resolveAuthFromManifest)
-
-    // Resolve verification config
-    val verification = m.verification
-      .map(resolveVerificationFromManifest)
-      .getOrElse(DefaultVerificationConfig)
-
-    // Resolve inference config
-    val inference = m.inference
-      .map(resolveInferenceFromManifest)
-      .getOrElse(inferInferenceConfig(inferenceService))
-
-    // Resolve policies
-    val policies = m.policies
-      .map(resolvePoliciesFromManifest)
-      .getOrElse(DefaultPoliciesConfig)
-
-    // Resolve observability
-    val observability = m.observability.map(resolveObservabilityFromManifest)
-
-    // Build provenance
-    val reqSources = explicitRequirements.map(_ => Map("yaml" -> ConfigSource.Explicit))
-      .orElse(cachedRequirements.map(_ => Map("yaml" -> ConfigSource.Cached)))
-      .getOrElse(Map.empty[String, ConfigSource])
-
-    val provenance = ConfigProvenance(
-      manifestSource = source,
-      requirementSources = reqSources,
-      serviceSources = servicesSources,
-      resolvedAt = Instant.now(),
-    )
-
-    ResolvedConfig(
-      app = app,
-      services = services,
-      fixtures = fixtures,
-      auth = auth,
-      verification = verification,
-      inference = inference,
-      policies = policies,
-      observability = observability,
-      provenance = provenance,
-    )
   }
 
   /**
@@ -153,11 +72,92 @@ object ConfigResolverImpl extends ConfigResolver {
   def resolveFromManifestOrCache(
     repoPath: Path,
     inspection: RepoInspectionReport,
+  ): Option[ResolvedConfig] = tryResolve(repoPath, inferenceService = None)
+
+  /**
+   * Core resolution logic. Returns None if no manifest is found.
+   * Layer 1: Explicit YAML (demiurge.yaml, requirements.yaml)
+   * Layer 2: Cached inference (.demiurge/inferred/)
+   */
+  private def tryResolve(
+    repoPath: Path,
+    inferenceService: Option[InferenceService],
   ): Option[ResolvedConfig] = {
-    try {
-      Some(resolve(repoPath, "init", None, inspection, None))
-    } catch {
-      case _: NoConfigError => None
+
+    // Layer 1: Try explicit YAML
+    val explicitManifest = loadExplicitManifest(repoPath)
+    val explicitRequirements = loadExplicitRequirements(repoPath)
+
+    // Layer 2: Try cached inference
+    val cachedManifest = if (explicitManifest.isEmpty) loadCachedManifest(repoPath) else None
+    val cachedRequirements = if (explicitRequirements.isEmpty) loadCachedRequirements(repoPath) else None
+
+    // Determine manifest source
+    val manifestWithSource: Option[(DemiurgeManifest, ConfigSource)] =
+      explicitManifest.map(_ -> ConfigSource.Explicit)
+        .orElse(cachedManifest.map(_ -> ConfigSource.Cached))
+
+    manifestWithSource.map { case (m, source) =>
+
+      // Resolve app config from manifest
+      val app = resolveAppFromManifest(m)
+
+      // Resolve services from manifest
+      val (services, servicesSources) = if (m.services.nonEmpty) {
+        val svcs = resolveServicesFromManifest(m)
+        val sources = svcs.map(s => s.serviceId -> source).toMap
+        (svcs, sources)
+      } else {
+        (List.empty[ResolvedServiceConfig], Map.empty[String, ConfigSource])
+      }
+
+      // Resolve fixtures from manifest
+      val fixtures = m.fixtures.map(resolveFixturesFromManifest)
+
+      // Resolve auth from manifest
+      val auth = m.auth.map(resolveAuthFromManifest)
+
+      // Resolve verification config
+      val verification = m.verification
+        .map(resolveVerificationFromManifest)
+        .getOrElse(DefaultVerificationConfig)
+
+      // Resolve inference config
+      val inference = m.inference
+        .map(resolveInferenceFromManifest)
+        .getOrElse(inferInferenceConfig(inferenceService))
+
+      // Resolve policies
+      val policies = m.policies
+        .map(resolvePoliciesFromManifest)
+        .getOrElse(DefaultPoliciesConfig)
+
+      // Resolve observability
+      val observability = m.observability.map(resolveObservabilityFromManifest)
+
+      // Build provenance
+      val reqSources = explicitRequirements.map(_ => Map("yaml" -> ConfigSource.Explicit))
+        .orElse(cachedRequirements.map(_ => Map("yaml" -> ConfigSource.Cached)))
+        .getOrElse(Map.empty[String, ConfigSource])
+
+      val provenance = ConfigProvenance(
+        manifestSource = source,
+        requirementSources = reqSources,
+        serviceSources = servicesSources,
+        resolvedAt = Instant.now(),
+      )
+
+      ResolvedConfig(
+        app = app,
+        services = services,
+        fixtures = fixtures,
+        auth = auth,
+        verification = verification,
+        inference = inference,
+        policies = policies,
+        observability = observability,
+        provenance = provenance,
+      )
     }
   }
 
