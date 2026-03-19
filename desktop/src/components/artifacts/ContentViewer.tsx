@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/query-keys';
 import { getArtifactContent } from '@/api/endpoints';
+import { formatFileSize } from '@/lib/utils';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { ArtifactTypeIcon } from '@/components/shared/ArtifactTypeIcon';
@@ -15,38 +16,33 @@ interface ContentViewerProps {
   artifact: ArtifactRecord;
 }
 
-const jsonTypes: Set<ArtifactType> = new Set([
-  'Plan', 'StructuredVerdict', 'FailurePacketArtifact',
-  'ApiRequestResponse', 'NetworkSummary', 'DbQueryResult',
-  'QueueObservation', 'AuthStorageState', 'RepoInspectionArtifact',
-  'InferenceLog', 'PromptPackage', 'StartupTimeline',
-]);
+type RendererCategory = 'json' | 'log' | 'markdown' | 'image' | 'diff';
 
-const logTypes: Set<ArtifactType> = new Set([
-  'ServiceLog', 'StdoutExcerpt', 'StderrExcerpt', 'ConsoleLog',
-  'RepairTranscript',
-]);
+const rendererMap: Partial<Record<ArtifactType, RendererCategory>> = {
+  // JSON
+  Plan: 'json', StructuredVerdict: 'json', FailurePacketArtifact: 'json',
+  ApiRequestResponse: 'json', NetworkSummary: 'json', DbQueryResult: 'json',
+  QueueObservation: 'json', AuthStorageState: 'json', RepoInspectionArtifact: 'json',
+  InferenceLog: 'json', PromptPackage: 'json', StartupTimeline: 'json',
+  // Log
+  ServiceLog: 'log', StdoutExcerpt: 'log', StderrExcerpt: 'log',
+  ConsoleLog: 'log', RepairTranscript: 'log',
+  // Markdown
+  FinalReport: 'markdown', AttemptReport: 'markdown',
+  // Image
+  Screenshot: 'image',
+  // Diff
+  PatchDiff: 'diff',
+};
 
-const markdownTypes: Set<ArtifactType> = new Set([
-  'FinalReport', 'AttemptReport',
-]);
-
-const imageTypes: Set<ArtifactType> = new Set([
-  'Screenshot',
-]);
-
-const diffTypes: Set<ArtifactType> = new Set([
-  'PatchDiff',
-]);
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+function getRendererCategory(artifact: ArtifactRecord): RendererCategory {
+  if (artifact.contentType.startsWith('image/')) return 'image';
+  return rendererMap[artifact.artifactType] ?? 'log';
 }
 
 export function ContentViewer({ artifact }: ContentViewerProps) {
-  const isImage = imageTypes.has(artifact.artifactType) || artifact.contentType.startsWith('image/');
+  const category = getRendererCategory(artifact);
+  const isImage = category === 'image';
 
   // Don't fetch content for images — they're rendered directly via URL
   const { data: content, isLoading, isError } = useQuery({
@@ -64,7 +60,7 @@ export function ContentViewer({ artifact }: ContentViewerProps) {
           {artifact.relativePath.split('/').pop()}
         </span>
         <span className="text-xs text-muted-foreground ml-auto">
-          {artifact.artifactType} · {formatSize(artifact.sizeBytes)}
+          {artifact.artifactType} · {formatFileSize(artifact.sizeBytes)}
           {artifact.attemptNumber !== null && ` · Attempt ${artifact.attemptNumber}`}
         </span>
       </div>
@@ -75,7 +71,6 @@ export function ContentViewer({ artifact }: ContentViewerProps) {
           <ScreenshotGallery
             runId={artifact.runId}
             artifactId={artifact.artifactId}
-            contentType={artifact.contentType}
           />
         )}
 
@@ -88,21 +83,19 @@ export function ContentViewer({ artifact }: ContentViewerProps) {
         )}
 
         {!isImage && content !== undefined && (
-          <>
-            {jsonTypes.has(artifact.artifactType) && <JsonViewer data={content} />}
-            {logTypes.has(artifact.artifactType) && <LogRenderer content={String(content)} />}
-            {markdownTypes.has(artifact.artifactType) && <MarkdownRenderer content={String(content)} />}
-            {diffTypes.has(artifact.artifactType) && <DiffViewer diffContent={String(content)} />}
-            {/* Fallback for types not explicitly handled */}
-            {!jsonTypes.has(artifact.artifactType) &&
-              !logTypes.has(artifact.artifactType) &&
-              !markdownTypes.has(artifact.artifactType) &&
-              !diffTypes.has(artifact.artifactType) && (
-                <LogRenderer content={typeof content === 'string' ? content : JSON.stringify(content, null, 2)} />
-              )}
-          </>
+          <ContentRenderer category={category} content={content} />
         )}
       </div>
     </div>
   );
+}
+
+function ContentRenderer({ category, content }: { category: RendererCategory; content: unknown }) {
+  switch (category) {
+    case 'json': return <JsonViewer data={content} />;
+    case 'diff': return <DiffViewer diffContent={String(content)} />;
+    case 'markdown': return <MarkdownRenderer content={String(content)} />;
+    case 'log': return <LogRenderer content={String(content)} />;
+    default: return <LogRenderer content={typeof content === 'string' ? content : JSON.stringify(content, null, 2)} />;
+  }
 }

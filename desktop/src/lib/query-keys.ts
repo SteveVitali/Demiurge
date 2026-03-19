@@ -25,6 +25,12 @@ export const queryKeys = {
     graph: (runId: string) => ['runs', runId, 'requirement-graph'] as const,
     featurePlan: (runId: string) => ['runs', runId, 'feature-plan'] as const,
   },
+  failures: {
+    packet: (runId: string, attemptNum: number) =>
+      ['runs', runId, 'attempts', attemptNum, 'failure-packet'] as const,
+    patches: (runId: string, attemptNum: number) =>
+      ['runs', runId, 'attempts', attemptNum, 'patches'] as const,
+  },
   environment: {
     snapshot: (runId: string) => ['runs', runId, 'environment'] as const,
     services: (runId: string) => ['runs', runId, 'services'] as const,

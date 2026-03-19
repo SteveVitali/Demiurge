@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { formatTimestamp } from '@/lib/utils';
+import { cn, formatTimestamp } from '@/lib/utils';
 import { useRunStore } from '@/stores/run.store';
 import type { SystemEvent } from '@/api/types';
 

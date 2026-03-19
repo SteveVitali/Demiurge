@@ -2,9 +2,11 @@ package demiurge.api
 
 import java.sql.Connection
 
-import com.sun.net.httpserver.{HttpExchange, HttpHandler}
+import com.sun.net.httpserver.HttpHandler
 import io.circe._
 import io.circe.syntax._
+
+import RouteHelpers.{sendJson, extractRunIdFromPath}
 
 import demiurge.model._
 import demiurge.model.JsonCodecs._
@@ -86,20 +88,5 @@ object InspectionRoutes {
         case None => sendJson(exchange, 404, ApiEnvelope.error(404, s"Run not found: $runId"))
       }
     } finally { conn.close() }
-  }
-
-  // --- Helpers ---
-
-  private def sendJson(exchange: HttpExchange, status: Int, body: String): Unit = {
-    val bytes = body.getBytes("UTF-8")
-    exchange.getResponseHeaders.set("Content-Type", "application/json")
-    exchange.sendResponseHeaders(status, bytes.length.toLong)
-    val os = exchange.getResponseBody
-    try { os.write(bytes) } finally { os.close() }
-  }
-
-  private def extractRunIdFromPath(path: String): String = {
-    val parts = path.split("/").filter(_.nonEmpty)
-    if (parts.length >= 2) parts(1) else ""
   }
 }

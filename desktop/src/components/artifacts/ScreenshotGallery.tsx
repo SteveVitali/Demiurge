@@ -6,7 +6,6 @@ import { API_BASE_URL } from '@/lib/constants';
 interface ScreenshotGalleryProps {
   runId: string;
   artifactId: string;
-  contentType: string;
   className?: string;
 }
 

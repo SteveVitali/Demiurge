@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, formatFileSize } from '@/lib/utils';
 import type { ArtifactRecord, ArtifactType } from '@/api/types';
 import { ArtifactTypeIcon } from '@/components/shared/ArtifactTypeIcon';
 
@@ -9,12 +9,6 @@ interface ArtifactTreeProps {
   selectedId: string | null;
   onSelect: (artifact: ArtifactRecord) => void;
   className?: string;
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 interface GroupedArtifacts {
@@ -81,7 +75,7 @@ export function ArtifactTree({ artifacts, selectedId, onSelect, className }: Art
                     )}
                   >
                     <span className="truncate flex-1 text-left">{fileName}</span>
-                    <span className="text-[10px] opacity-60 shrink-0">{formatSize(artifact.sizeBytes)}</span>
+                    <span className="text-[10px] opacity-60 shrink-0">{formatFileSize(artifact.sizeBytes)}</span>
                   </button>
                 );
               })}

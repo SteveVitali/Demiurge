@@ -6,11 +6,11 @@ import { getRequirementGraph } from '@/api/endpoints';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import type { RequirementGraph as RequirementGraphType } from '@/api/types';
 
+import '@xyflow/react/dist/style.css';
+
 const ReactFlow = lazy(() => import('@xyflow/react').then((m) => ({ default: m.ReactFlow })));
 const Background = lazy(() => import('@xyflow/react').then((m) => ({ default: m.Background })));
 const Controls = lazy(() => import('@xyflow/react').then((m) => ({ default: m.Controls })));
-
-import '@xyflow/react/dist/style.css';
 
 interface RequirementGraphProps {
   runId: string;

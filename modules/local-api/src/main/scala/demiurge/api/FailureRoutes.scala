@@ -2,9 +2,11 @@ package demiurge.api
 
 import java.sql.Connection
 
-import com.sun.net.httpserver.{HttpExchange, HttpHandler}
+import com.sun.net.httpserver.HttpHandler
 import io.circe._
 import io.circe.syntax._
+
+import RouteHelpers.sendJson
 
 import demiurge.model._
 import demiurge.model.JsonCodecs._
@@ -19,7 +21,7 @@ object FailureRoutes {
     val parts = path.split("/").filter(_.nonEmpty)
     if (parts.length >= 5) {
       val runId = parts(1)
-      val attemptNum = try { parts(3).toInt } catch { case _: Exception => -1 }
+      val attemptNum = try { parts(3).toInt } catch { case _: NumberFormatException => -1 }
       if (attemptNum < 0) {
         sendJson(exchange, 400, ApiEnvelope.error(400, "Invalid attempt number"))
       } else {
@@ -42,7 +44,7 @@ object FailureRoutes {
     val parts = path.split("/").filter(_.nonEmpty)
     if (parts.length >= 5) {
       val runId = parts(1)
-      val attemptNum = try { parts(3).toInt } catch { case _: Exception => -1 }
+      val attemptNum = try { parts(3).toInt } catch { case _: NumberFormatException => -1 }
       if (attemptNum < 0) {
         sendJson(exchange, 400, ApiEnvelope.error(400, "Invalid attempt number"))
       } else {
@@ -69,15 +71,5 @@ object FailureRoutes {
     } else {
       sendJson(exchange, 400, ApiEnvelope.error(400, "Invalid path"))
     }
-  }
-
-  // --- Helpers ---
-
-  private def sendJson(exchange: HttpExchange, status: Int, body: String): Unit = {
-    val bytes = body.getBytes("UTF-8")
-    exchange.getResponseHeaders.set("Content-Type", "application/json")
-    exchange.sendResponseHeaders(status, bytes.length.toLong)
-    val os = exchange.getResponseBody
-    try { os.write(bytes) } finally { os.close() }
   }
 }

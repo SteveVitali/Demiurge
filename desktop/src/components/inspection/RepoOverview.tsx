@@ -93,7 +93,7 @@ export function RepoOverview({ report }: RepoOverviewProps) {
                 key={m}
                 className="inline-flex items-center rounded bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-400"
               >
-                ✅ {m}
+                {m}
               </span>
             ))}
           </div>
