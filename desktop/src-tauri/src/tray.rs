@@ -2,11 +2,11 @@ use serde::Deserialize;
 use std::sync::Mutex;
 use tauri::{
     AppHandle, Emitter, Listener, Manager,
-    menu::{MenuBuilder, MenuItem, SubmenuBuilder},
+    menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
     tray::TrayIconBuilder,
 };
 
-// Desktop Phase 5 — §12.4: Dynamic system tray with state-aware tooltip,
+// Desktop Phase 5 — §12.4: Dynamic system tray with state-aware icon color,
 // active run info, recent runs submenu, and quick actions.
 
 #[derive(Debug, Clone, Deserialize)]
@@ -21,7 +21,7 @@ pub struct TrayRunState {
 pub struct TrayRecentRun {
     pub run_id: String,
     pub task: String,
-    pub verdict: String,
+    pub verdict: String, // "Pass" | "Exhausted" | "Cancelled" | etc.
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -52,13 +52,13 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let tray_state = TrayState::default();
     app.manage(tray_state);
 
-    let idle_state = TrayRunState {
+    // Build initial menu
+    let menu = build_tray_menu(app, &TrayRunState {
         status: "idle".into(),
         task: None,
         elapsed: None,
         run_id: None,
-    };
-    let menu = build_tray_menu(app, &idle_state, &[])?;
+    }, &[])?;
 
     let tray = TrayIconBuilder::new()
         .menu(&menu)
@@ -105,15 +105,14 @@ fn build_tray_menu(
     app: &AppHandle,
     run_state: &TrayRunState,
     recent_runs: &[TrayRecentRun],
-) -> Result<tauri::menu::Menu<tauri::Wry>, Box<dyn std::error::Error>> {
+) -> Result<Menu<tauri::Wry>, Box<dyn std::error::Error>> {
     let show = MenuItem::with_id(app, "show", "Show Demiurge", true, None::<&str>)?;
-    let new_run = MenuItem::with_id(app, "new_run", "New Run...", true, None::<&str>)?;
-    let settings = MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit Demiurge", true, None::<&str>)?;
+    let sep1 = PredefinedMenuItem::separator(app)?;
 
-    let mut builder = MenuBuilder::new(app)
-        .item(&show)
-        .separator();
+    let mut items: Vec<Box<dyn AsRef<dyn tauri::menu::IsMenuItem<tauri::Wry>>>> = vec![
+        Box::new(show),
+        Box::new(sep1),
+    ];
 
     // Active run info (if running)
     if run_state.status == "running" {
@@ -127,14 +126,19 @@ fn build_tray_menu(
             true,
             None::<&str>,
         )?;
-        builder = builder.item(&active_item).separator();
+        items.push(Box::new(active_item));
+
+        let sep_active = PredefinedMenuItem::separator(app)?;
+        items.push(Box::new(sep_active));
     }
 
-    builder = builder.item(&new_run);
+    // New Run...
+    let new_run = MenuItem::with_id(app, "new_run", "New Run...", true, None::<&str>)?;
+    items.push(Box::new(new_run));
 
     // Recent Runs submenu
     if !recent_runs.is_empty() {
-        let mut sub = SubmenuBuilder::new(app, "Recent Runs");
+        let mut sub_items: Vec<MenuItem<tauri::Wry>> = Vec::new();
         for (i, run) in recent_runs.iter().take(5).enumerate() {
             let verdict_icon = match run.verdict.as_str() {
                 "Pass" | "Succeeded" => "✓",
@@ -150,18 +154,31 @@ fn build_tray_menu(
                 true,
                 None::<&str>,
             )?;
-            sub = sub.item(&item);
+            sub_items.push(item);
         }
-        let submenu = sub.build()?;
-        builder = builder.item(&submenu);
+        let refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> =
+            sub_items.iter().map(|i| i as &dyn tauri::menu::IsMenuItem<tauri::Wry>).collect();
+        let recent_submenu = Submenu::with_items(app, "Recent Runs", true, &refs)?;
+        items.push(Box::new(recent_submenu));
     }
 
-    builder = builder
-        .separator()
-        .item(&settings)
-        .item(&quit);
+    let sep2 = PredefinedMenuItem::separator(app)?;
+    items.push(Box::new(sep2));
 
-    let menu = builder.build()?;
+    let settings = MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
+    items.push(Box::new(settings));
+
+    let quit = MenuItem::with_id(app, "quit", "Quit Demiurge", true, None::<&str>)?;
+    items.push(Box::new(quit));
+
+    let refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = items
+        .iter()
+        .map(|b| {
+            let r: &dyn tauri::menu::IsMenuItem<tauri::Wry> = (*b).as_ref().as_ref();
+            r
+        })
+        .collect();
+    let menu = Menu::with_items(app, &refs)?;
     Ok(menu)
 }
 
@@ -171,6 +188,7 @@ fn update_tray(
     run_state: &TrayRunState,
     recent_runs: &[TrayRecentRun],
 ) {
+    // Update tooltip
     let tooltip = match run_state.status.as_str() {
         "running" => {
             let task = run_state.task.as_deref().unwrap_or("Task");
@@ -183,6 +201,21 @@ fn update_tray(
 
     if let Some(tray) = app.tray_by_id(tray_id) {
         let _ = tray.set_tooltip(Some(&tooltip));
+
+        // §12.4: Dynamic tray icon color based on run state
+        let icon_name = match run_state.status.as_str() {
+            "running"   => "icons/icon-blue.png",
+            "succeeded" => "icons/icon-green.png",
+            "failed"    => "icons/icon-red.png",
+            _           => "icons/icon.png",
+        };
+        if let Ok(icon) = tauri::image::Image::from_path(
+            app.path().resource_dir()
+                .unwrap_or_default()
+                .join(icon_name),
+        ) {
+            let _ = tray.set_icon(Some(icon));
+        }
 
         // Rebuild menu with current state
         if let Ok(menu) = build_tray_menu(app, run_state, recent_runs) {

@@ -12,7 +12,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { keygen, KeygenApiError } from '@/lib/keygen';
 import { getClerkUser } from '@/lib/clerk-helpers';
-import { PLAN_CONFIG, type PlanTier } from '@/lib/constants';
 import type { ClerkPublicMetadata } from '@/lib/clerk-helpers';
 
 export async function GET(req: NextRequest) {
@@ -20,6 +19,7 @@ export async function GET(req: NextRequest) {
   const fingerprint = req.headers.get('x-machine-fingerprint');
 
   let resolvedLicenseKey = licenseKey;
+  let clerkPlanTier: string | null = null;
 
   // If no license key header, try to get it from the authenticated user's metadata
   if (!resolvedLicenseKey) {
@@ -32,8 +32,9 @@ export async function GET(req: NextRequest) {
     }
 
     const user = await getClerkUser(userId);
-    resolvedLicenseKey = (user.publicMetadata as ClerkPublicMetadata)
-      ?.license_key ?? null;
+    const publicMeta = user.publicMetadata as ClerkPublicMetadata;
+    resolvedLicenseKey = publicMeta?.license_key ?? null;
+    clerkPlanTier = publicMeta?.plan_tier ?? null;
 
     if (!resolvedLicenseKey) {
       return NextResponse.json(
@@ -50,8 +51,8 @@ export async function GET(req: NextRequest) {
     );
 
     if (validation.valid) {
-      // Determine plan tier from the license metadata or policy
-      const planTier = (validation.metadata.status === 'ACTIVE' ? 'starter' : 'trial') as PlanTier;
+      // Use Clerk metadata for plan tier (authoritative), fall back to 'trial'
+      const planTier = clerkPlanTier ?? 'trial';
 
       // Gather entitlements from Keygen response
       const entitlements = validation.entitlements?.map(

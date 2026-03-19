@@ -69,8 +69,8 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     if (err instanceof KeygenApiError) {
-      // 422 with TOO_MANY_MACHINES code
-      if (err.status === 422 || err.code === 'MACHINE_LIMIT_EXCEEDED') {
+      // Machine limit exceeded
+      if (err.code === 'MACHINE_LIMIT_EXCEEDED') {
         return NextResponse.json(
           {
             activated: false,

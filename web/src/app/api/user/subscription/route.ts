@@ -10,7 +10,7 @@ import { auth } from '@clerk/nextjs/server';
 import { getClerkUser } from '@/lib/clerk-helpers';
 import { getSubscription } from '@/lib/stripe-helpers';
 import { keygen } from '@/lib/keygen';
-import { PLAN_CONFIG, type PlanTier } from '@/lib/constants';
+import { getPlanMaxUses, type PlanTier } from '@/lib/constants';
 import type { ClerkPublicMetadata, ClerkPrivateMetadata } from '@/lib/clerk-helpers';
 
 export async function GET() {
@@ -48,7 +48,7 @@ export async function GET() {
 
     // Get usage from Keygen
     let usesThisPeriod = 0;
-    const maxUses = PLAN_CONFIG[planTier]?.maxRuns ?? 0;
+    const maxUses = getPlanMaxUses(planTier);
 
     if (keygenLicenseId) {
       try {
