@@ -41,14 +41,14 @@ Demiurge is a verifier-first orchestration platform for automating last-mile web
 │  Artifact Store · Evidence     │  Page Snapshots          │
 ├────────────────────────────────┴─────────────────────────┤
 │               Persistence (SQLite WAL mode)               │
-│  16 tables · TaskRun · Attempt · Verdict · Event ·       │
+│  17 tables · TaskRun · Attempt · Verdict · Event ·       │
 │  Artifact · FailurePacket · Patch · RuntimePlan · ...    │
 └──────────────────────────────────────────────────────────┘
 ```
 
 ## Run State Machine
 
-A run progresses through these states (defined in `RunStatus` enum, 21 values):
+A run progresses through these states (defined in `RunStatus` enum, 23 values including build mode states):
 
 ```
 Created
@@ -94,14 +94,14 @@ This ensures that if the process crashes during a side effect, the persisted sta
 
 Foundation types shared across all modules:
 
-- **21 enums** — `RunStatus`, `AttemptStatus`, `VerdictStatus`, `FailureClass`, `VerifierType`, `ArtifactType`, `ServiceKind`, `StartupMode`, `AuthMode`, `RunMode`, `ResetStrategy`, `InferenceProvider`, etc.
+- **22 enums** — `RunStatus`, `AttemptStatus`, `VerdictStatus`, `FailureClass`, `VerifierType`, `ArtifactType`, `ServiceKind`, `StartupMode`, `AuthMode`, `RunMode`, `ResetStrategy`, `InferenceProvider`, `GenerationMode`, etc.
 - **79+ case classes** — `TaskRun`, `Attempt`, `RequirementVerdict`, `SystemEvent`, `ArtifactRecord`, `RuntimePlan`, `RuntimeSnapshot`, `RequirementGraph`, `FailurePacket`, `InferenceRequest`/`Response`, `BrowserAction`, `Assertion`, `Observation`, etc.
 - **JSON codecs** — circe semiauto derivation for all DTOs
 - **ExecutionBudgetDefaults** — default budget values (max attempts, timeouts, disk limits)
 
 ### Persistence (`modules/persistence`)
 
-SQLite WAL-mode database with 16 tables (defined in `V001__initial.sql`):
+SQLite WAL-mode database with 17 tables (defined in `V001__initial.sql` + `V002__build_mode.sql`):
 
 - **Database** — connection factory with WAL mode, busy timeout, and pragmas
 - **Migrator** — schema migration runner
@@ -130,7 +130,7 @@ The heart of the system — drives the run state machine:
 
 Entry point: `demiurge.cli.Main` → `CliApp.run(args)`.
 
-11 commands, hand-rolled arg parser (no external dependency):
+13 commands, hand-rolled arg parser (no external dependency):
 
 | Command | Description |
 |---------|-------------|
@@ -145,7 +145,8 @@ Entry point: `demiurge.cli.Main` → `CliApp.run(args)`.
 | `cancel` | Cancel an active run |
 | `clean` | Clean up old runs and artifacts |
 | `doctor` | Check system prerequisites |
-| `init` | Generate `demiurge.yaml` and `requirements.yaml` (deterministic or `--smart` agentic) |
+| `init` | Generate `demiurge.yaml` and `requirements.yaml` (deterministic or `--smart` agentic). Also aliased as `init-manifest`. |
+| `serve` | Start persistent backend server (desktop app sidecar) — REST + WebSocket on configurable ports |
 
 Output supports `--format human` (default) and `--format json`.
 
@@ -163,7 +164,7 @@ All responses use a JSON envelope (`ApiEnvelope`). The SSE endpoint streams `Sys
 
 Generates and executes verifiers from a `RequirementGraph`:
 
-- **Verifier types** — `HttpVerifier`, `TcpVerifier`, `ExecVerifier`, `LogContainsVerifier`, `StateVerifier`, `BrowserFlowVerifier`
+- **Verifier types** — `HttpVerifier`, `TcpVerifier`, `ExecVerifier`, `LogContainsVerifier`, `StateVerifier`, `BrowserFlowVerifier`, `AgentBrowserVerifier`
 - **VerifierGenerator** — maps `RequirementGraph` nodes to executable verifiers
 - **VerifierExecutor** — runs HTTP/TCP/exec/log/state verifiers in-process
 - **VerdictAggregator** — aggregates individual outcomes into an overall verdict
@@ -185,7 +186,7 @@ TypeScript + Playwright process communicating via stdio JSON-RPC 2.0:
 - **RPC server** — newline-delimited JSON, method registration
 - **BrowserManager** — launches Chromium, creates fresh contexts per task, reuses browser process
 - **ArtifactWriter** — temp-file-then-rename, SHA-256 checksums, gzip compression >1MB
-- **Methods** — `initialize`, `executeBrowserFlow` (navigate, actions, assertions, artifact capture), `executeAuthBootstrap` (form login, API login, static token, dev bypass), `executeApiRequest`, `capturePageSnapshot`, `cancel`, `shutdown`, `ping`
+- **Methods** — `initialize`, `executeBrowserFlow` (navigate, actions, assertions, artifact capture), `executeAuthBootstrap` (form login, API login, static token, dev bypass), `executeApiRequest`, `capturePageSnapshot`, `cancel`, `shutdown`, `ping`, `agent/execute` (agentic operations via Claude Code SDK with MCP tools)
 
 ### Config Resolver (`modules/config-resolver`)
 
@@ -291,6 +292,41 @@ Bazel caching is configured via `bazel-contrib/setup-bazel` for fast incremental
 
 All tests are deterministic and fast — no external network calls, no real Docker containers, no real LLM API calls.
 
+## Desktop Application
+
+Demiurge includes a native **desktop GUI** built with **Tauri v2 + React**. It provides full CLI parity through an interactive interface with real-time observability, artifact browsing, and configuration editing.
+
+### Architecture
+
+```
+Tauri v2 Application
+├── React Frontend (system WebView)
+│   ├── Dashboard — run history, quick actions, system health
+│   ├── Run Detail — live pipeline stepper, attempt tabs, timers
+│   ├── Environment — service topology (React Flow), boot timeline, log tailing
+│   ├── Verification — verdict cards, screenshot gallery
+│   ├── Agent — transcript stream, tool call cards, cost tracker, diff viewer
+│   ├── Artifacts — tree browser, content viewers (JSON, diff, markdown, logs, screenshots)
+│   ├── Config — manifest editor (Monaco), requirements editor, budget editor
+│   └── Settings — preferences, onboarding wizard
+├── Tauri Rust Core (thin layer)
+│   ├── SidecarManager — spawn/manage JVM backend process
+│   ├── System tray — status indicator, quick actions
+│   ├── Window management — detached log windows
+│   └── Tauri plugins — shell, dialog, notification, store, window-state
+└── Scala Backend Sidecar
+    └── `demiurge serve` — persistent HTTP + WebSocket server
+```
+
+### Sidecar Integration
+
+The desktop app communicates with the Scala backend via a sidecar process:
+
+1. On launch, Tauri spawns the JVM sidecar (`demiurge serve --port 19440 --ws-port 19441`)
+2. The frontend connects via HTTP REST + WebSocket for real-time events
+3. SSE/WebSocket streams provide live pipeline updates, agent transcripts, and log tailing
+4. The sidecar is packaged as a fat JAR via `desktop/scripts/package-sidecar.sh`
+
 ## Technology Stack
 
 | Component | Technology |
@@ -305,5 +341,11 @@ All tests are deterministic and fast — no external network calls, no real Dock
 | Testing (Scala) | MUnit 1.0.3 |
 | Worker runtime | Node.js (TypeScript, ES2022) |
 | Browser automation | Playwright 1.42.1 |
+| Agent SDK | @anthropic-ai/claude-code ^1.0.128 |
+| MCP | @modelcontextprotocol/sdk ^1.27.1, @playwright/mcp ^0.0.28 |
 | Testing (TS) | Jest 29.7 + ts-jest |
 | Functional | Cats 2.12.0, Shapeless 2.3.12 |
+| Desktop framework | Tauri v2 (Rust core) |
+| Desktop frontend | React 19, TypeScript, Tailwind CSS v4 |
+| Desktop state | Zustand 5, TanStack Query 5, TanStack Router 1 |
+| Desktop UI | Monaco Editor, React Flow, xterm.js, Framer Motion, Lucide |
