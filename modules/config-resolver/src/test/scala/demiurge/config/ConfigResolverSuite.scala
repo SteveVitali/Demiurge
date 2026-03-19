@@ -44,16 +44,21 @@ class ConfigResolverSuite extends FunSuite {
       warnings = Nil,
     )
 
-  test("resolve with no YAML files produces inferred config from inspection") {
+  test("resolve with no YAML files throws NoConfigError") {
     val repo = createTempRepo()
     val inspection = fakeInspection(repoRoot = repo)
 
-    val config = ConfigResolverImpl.resolve(repo, "Test task", None, inspection, None)
+    intercept[ConfigResolverImpl.NoConfigError] {
+      ConfigResolverImpl.resolve(repo, "Test task", None, inspection, None)
+    }
+  }
 
-    assertEquals(config.app.appType, "api")
-    assertEquals(config.app.rootUrl, "http://localhost:3000")
-    assert(config.services.nonEmpty, "Should have inferred services")
-    assertEquals(config.provenance.manifestSource, ConfigSource.Inferred)
+  test("resolveFromManifestOrCache returns None when no config exists") {
+    val repo = createTempRepo()
+    val inspection = fakeInspection(repoRoot = repo)
+
+    val result = ConfigResolverImpl.resolveFromManifestOrCache(repo, inspection)
+    assertEquals(result, None)
   }
 
   test("resolve with explicit demiurge.yaml uses manifest") {
@@ -115,31 +120,20 @@ class ConfigResolverSuite extends FunSuite {
     assertEquals(config.provenance.manifestSource, ConfigSource.Cached)
   }
 
-  test("resolve infers api type from express framework") {
+  test("resolve with manifest produces default verification config for missing sections") {
     val repo = createTempRepo()
-    val inspection = fakeInspection(repoRoot = repo).copy(
-      frameworks = List(ScoredInference("express", 0.8, "test")),
-    )
+    val manifest = """version: 1
+                     |app:
+                     |  type: api
+                     |  root_url: http://localhost:3000
+                     |services:
+                     |  app:
+                     |    kind: api
+                     |    startup_mode: script
+                     |    startup_command: npm start
+                     |""".stripMargin
+    Files.writeString(repo.resolve("demiurge.yaml"), manifest)
 
-    val config = ConfigResolverImpl.resolve(repo, "Test task", None, inspection, None)
-    assertEquals(config.app.appType, "api")
-  }
-
-  test("resolve infers fullstack type from react + express") {
-    val repo = createTempRepo()
-    val inspection = fakeInspection(repoRoot = repo).copy(
-      frameworks = List(
-        ScoredInference("react", 0.8, "test"),
-        ScoredInference("express", 0.8, "test"),
-      ),
-    )
-
-    val config = ConfigResolverImpl.resolve(repo, "Test task", None, inspection, None)
-    assertEquals(config.app.appType, "fullstack")
-  }
-
-  test("resolve produces default verification config when no YAML") {
-    val repo = createTempRepo()
     val inspection = fakeInspection(repoRoot = repo)
     val config = ConfigResolverImpl.resolve(repo, "Test task", None, inspection, None)
 
@@ -148,8 +142,20 @@ class ConfigResolverSuite extends FunSuite {
     assertEquals(config.verification.screenshotOnFailure, false)
   }
 
-  test("resolve produces default policies when no YAML") {
+  test("resolve with manifest produces default policies for missing sections") {
     val repo = createTempRepo()
+    val manifest = """version: 1
+                     |app:
+                     |  type: api
+                     |  root_url: http://localhost:3000
+                     |services:
+                     |  app:
+                     |    kind: api
+                     |    startup_mode: script
+                     |    startup_command: npm start
+                     |""".stripMargin
+    Files.writeString(repo.resolve("demiurge.yaml"), manifest)
+
     val inspection = fakeInspection(repoRoot = repo)
     val config = ConfigResolverImpl.resolve(repo, "Test task", None, inspection, None)
 
@@ -184,6 +190,24 @@ class ConfigResolverSuite extends FunSuite {
 
   test("cacheResolvedConfig writes to .demiurge/inferred/") {
     val repo = createTempRepo()
+    val manifest = """version: 1
+                     |app:
+                     |  type: api
+                     |  root_url: http://localhost:3000
+                     |services:
+                     |  app:
+                     |    kind: api
+                     |    startup_mode: script
+                     |    startup_command: npm start
+                     |    ports:
+                     |      - container: 3000
+                     |    readiness:
+                     |      probe_type: http
+                     |      target: http://localhost:3000/health
+                     |    required: true
+                     |""".stripMargin
+    Files.writeString(repo.resolve("demiurge.yaml"), manifest)
+
     val inspection = fakeInspection(repoRoot = repo)
     val config = ConfigResolverImpl.resolve(repo, "Test task", None, inspection, None)
 
@@ -198,6 +222,24 @@ class ConfigResolverSuite extends FunSuite {
 
   test("InferredConfigWriter round-trips through ManifestParser") {
     val repo = createTempRepo()
+    val manifest = """version: 1
+                     |app:
+                     |  type: api
+                     |  root_url: http://localhost:3000
+                     |services:
+                     |  app:
+                     |    kind: api
+                     |    startup_mode: script
+                     |    startup_command: npm start
+                     |    ports:
+                     |      - container: 3000
+                     |    readiness:
+                     |      probe_type: http
+                     |      target: http://localhost:3000/health
+                     |    required: true
+                     |""".stripMargin
+    Files.writeString(repo.resolve("demiurge.yaml"), manifest)
+
     val inspection = fakeInspection(repoRoot = repo)
     val config = ConfigResolverImpl.resolve(repo, "Test task", None, inspection, None)
 

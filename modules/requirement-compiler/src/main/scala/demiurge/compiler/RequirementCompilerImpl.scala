@@ -8,9 +8,10 @@ import demiurge.requirements.{RequirementsFile, RequirementEntry}
 import demiurge.selectors.{SelectorsFile, SelectorEntry}
 import demiurge.inference.InferenceService
 
-// Phase 4: Real RequirementCompiler implementation.
+// RequirementCompiler implementation.
 // Compiles parsed requirements.yaml + selectors.yaml into a RequirementGraph.
-// Phase A: Extended with compileWithInference for LLM-backed generation.
+// Requirements must come from explicit YAML files. Use `demiurge init --smart`
+// to generate requirements.yaml via Claude Code CLI.
 class RequirementCompilerImpl(
   requirementsFile: RequirementsFile,
   selectorsFile: SelectorsFile,
@@ -37,10 +38,9 @@ class RequirementCompilerImpl(
   }
 
   /**
-   * Phase A: Compile with optional LLM inference.
-   * If explicit requirements exist (from YAML), use them.
-   * If none exist but an inference service is available, generate via LLM.
-   * If neither, fall back to environment-readiness requirements from config.
+   * Compile requirements from YAML. No runtime LLM generation.
+   * If no explicit requirements exist, returns a warning graph.
+   * Use `demiurge init --smart` to generate requirements.yaml before running.
    */
   override def compileWithInference(
     runId: String,
@@ -49,53 +49,24 @@ class RequirementCompilerImpl(
     resolvedConfig: Option[ResolvedConfig] = None,
     inferenceService: Option[InferenceService] = None,
   ): RequirementGraph = {
-    // If we have explicit requirements from YAML, use them (merge with any LLM-generated)
     if (requirementsFile.requirements.nonEmpty) {
-      val explicitGraph = compile(runId, inspection, taskText)
-
-      // If inference is available, supplement with LLM-generated requirements
-      (resolvedConfig, inferenceService) match {
-        case (Some(config), Some(svc)) =>
-          val llmGraph = LlmRequirementGenerator.generate(runId, taskText, inspection, config, svc)
-          mergeGraphs(explicitGraph, llmGraph)
-        case _ => explicitGraph
-      }
+      compile(runId, inspection, taskText)
     } else {
-      // No explicit requirements — try LLM generation
-      (resolvedConfig, inferenceService) match {
-        case (Some(config), Some(svc)) =>
-          LlmRequirementGenerator.generate(runId, taskText, inspection, config, svc)
-        case (Some(config), None) =>
-          // No LLM — build fallback from resolved config readiness probes
-          LlmRequirementGenerator.buildFallbackGraph(runId, inspection, config, None)
-        case _ =>
-          // No config, no LLM — empty graph with warning
-          RequirementGraph(
-            graphId = s"graph-$runId",
-            runId = runId,
-            nodes = Nil,
-            edges = Nil,
-            generatedAt = Instant.now(),
-            inferenceRequestId = None,
-            warnings = List(GraphWarning(
-              code = "NO_REQUIREMENTS",
-              message = "No requirements.yaml found and no inference service available",
-              affectedNodeIds = Nil,
-            )),
-          )
-      }
+      // No explicit requirements — return warning graph
+      RequirementGraph(
+        graphId = s"graph-$runId",
+        runId = runId,
+        nodes = Nil,
+        edges = Nil,
+        generatedAt = Instant.now(),
+        inferenceRequestId = None,
+        warnings = List(GraphWarning(
+          code = "NO_REQUIREMENTS",
+          message = "No requirements.yaml found. Run 'demiurge init --smart' to generate one, or create it manually.",
+          affectedNodeIds = Nil,
+        )),
+      )
     }
-  }
-
-  /** Merge two graphs: explicit requirements take precedence by ID. */
-  private def mergeGraphs(explicit: RequirementGraph, llm: RequirementGraph): RequirementGraph = {
-    val explicitIds = explicit.nodes.map(_.requirementId).toSet
-    val supplementalNodes = llm.nodes.filterNot(n => explicitIds.contains(n.requirementId))
-    explicit.copy(
-      nodes = explicit.nodes ++ supplementalNodes,
-      warnings = explicit.warnings ++ llm.warnings,
-      inferenceRequestId = llm.inferenceRequestId.orElse(explicit.inferenceRequestId),
-    )
   }
 
   private def entryToNode(entry: RequirementEntry): RequirementNode = {

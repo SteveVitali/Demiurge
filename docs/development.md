@@ -21,8 +21,10 @@ Demiurge/
 │   ├── cli/                    # CLI commands, arg parsing
 │   ├── local-api/              # HTTP server, SSE streaming
 │   ├── manifest/               # demiurge.yaml parser
+│   ├── config-resolver/         # Layered config resolution
 │   ├── repo-inspector/         # Repository analysis
 │   ├── requirement-compiler/   # Requirements → RequirementGraph
+│   ├── agent-backend/          # Agent SDK integration
 │   ├── requirements/           # requirements.yaml parser
 │   ├── selectors/              # selectors.yaml parser
 │   ├── environment-planner/    # RuntimePlan generation
@@ -62,7 +64,7 @@ Demiurge/
 bazel build //...
 ```
 
-This builds all 20+ Scala modules. Bazel handles dependency resolution, Scala compilation, and Java runtime automatically.
+This builds all 46 targets across 22 Scala modules. Bazel handles dependency resolution, Scala compilation, and Java runtime automatically.
 
 ### Build a specific module
 
@@ -90,7 +92,7 @@ The worker compiles to `worker/dist/`.
 bazel test //...
 ```
 
-This runs 19+ test targets across all modules. Tests use MUnit 1.0.3.
+This runs 22 test targets across all modules. Tests use MUnit 1.0.3.
 
 ### Run tests for a specific module
 
@@ -138,7 +140,9 @@ core-model (no deps)
   ├── manifest (core-model, snakeyaml)
   ├── requirements (core-model, snakeyaml)
   ├── selectors (core-model, snakeyaml)
-  ├── repo-inspector (core-model)
+  ├── config-resolver (core-model, manifest, requirements)
+  ├── repo-inspector (core-model, manifest, circe, snakeyaml, cats)
+  ├── agent-backend (core-model, worker-protocol)
   ├── inference (core-model)
   ├── failure-analysis (core-model, inference)
   ├── environment-planner (core-model)
@@ -156,10 +160,10 @@ core-model (no deps)
   │                  repair-api, worker-protocol, artifact-store, inference,
   │                  failure-analysis)
   └── cli (core-model, persistence, orchestrator, local-api, manifest,
-           repo-inspector, requirement-compiler, requirements, selectors,
-           environment-planner, runtime-supervisor, verification-engine,
-           repair-api, repair-claude, artifact-store, worker-protocol,
-           inference, failure-analysis)
+           config-resolver, repo-inspector, requirement-compiler,
+           requirements, selectors, environment-planner, runtime-supervisor,
+           verification-engine, repair-api, repair-claude, agent-backend,
+           artifact-store, worker-protocol, inference, failure-analysis)
 ```
 
 ## Coding Conventions

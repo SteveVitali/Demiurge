@@ -66,17 +66,22 @@ object OrchestrationRunner {
     // Phase E: Build InferenceService if API key is available
     val inferenceServiceOpt = buildInferenceService()
 
-    // Spec §2.6: Prefer InferenceBackedRepairBackend when InferenceService is available
-    val repairBackend: Option[RepairBackend] = inferenceServiceOpt match {
-      case Some(svc) => Some(new InferenceBackedRepairBackend(svc, ClaudePromptBuilder))
-      case None => RunCommand.buildRepairBackend()
-    }
-
-    // Design §10: Build AgentBackend when DEMIURGE_AGENT_BACKEND=claude-agent-sdk.
-    // If the browser worker didn't provide a workerManager, the agent backend will
-    // create its own from DEMIURGE_WORKER_PATH (points to the Demiurge worker script).
+    // Design §10: Build AgentBackend (Claude Code) as the primary repair path.
+    // Falls back to legacy InferenceBackedRepairBackend only when no worker is available.
     val (agentBackendOpt, agentConfigOpt, agentWorkerManager) =
       buildAgentBackend(workerManager, global.repo, artifactRoot, worktreePath, runId)
+
+    // Legacy repair backend: only used as fallback when agent backend is unavailable
+    val repairBackend: Option[RepairBackend] = if (agentBackendOpt.isDefined) {
+      None // Agent backend is primary — no legacy fallback needed
+    } else {
+      inferenceServiceOpt match {
+        case Some(svc) =>
+          System.err.println("[orchestrator] Agent backend unavailable, falling back to legacy LLM repair")
+          Some(new InferenceBackedRepairBackend(svc, ClaudePromptBuilder))
+        case None => RunCommand.buildRepairBackend()
+      }
+    }
 
     // Use the agent's worker manager if the browser executor didn't create one
     val effectiveWorkerManager = workerManager.orElse(agentWorkerManager)
@@ -132,8 +137,9 @@ object OrchestrationRunner {
     } else None
   }
 
-  // Design §10: Build AgentBackend from environment configuration.
-  // If the browser executor didn't create a workerManager, falls back to DEMIURGE_WORKER_PATH.
+  // Design §10: Build AgentBackend (Claude Code) as the primary repair mechanism.
+  // Auto-enabled when ANTHROPIC_API_KEY is set and a worker is available.
+  // Set DEMIURGE_AGENT_BACKEND=none to explicitly disable.
   // Returns (agentBackend, agentConfig, optionalNewWorkerManager).
   private def buildAgentBackend(
     existingWorkerManager: Option[WorkerProcessManager],
@@ -142,10 +148,17 @@ object OrchestrationRunner {
     worktreePath: Path,
     runId: String,
   ): (Option[AgentBackend], AgentConfig, Option[WorkerProcessManager]) = {
-    val backendEnv = Option(System.getenv("DEMIURGE_AGENT_BACKEND")).getOrElse("")
     val config = AgentConfig.fromEnvironment()
 
-    if (backendEnv != "claude-agent-sdk") {
+    // Allow explicit opt-out via DEMIURGE_AGENT_BACKEND=none
+    val backendEnv = Option(System.getenv("DEMIURGE_AGENT_BACKEND")).getOrElse("")
+    if (backendEnv.equalsIgnoreCase("none") || backendEnv.equalsIgnoreCase("disabled")) {
+      return (None, config, None)
+    }
+
+    // Require ANTHROPIC_API_KEY (Claude Code CLI needs it)
+    val apiKey = System.getenv("ANTHROPIC_API_KEY")
+    if (apiKey == null || apiKey.isEmpty) {
       return (None, config, None)
     }
 
@@ -171,12 +184,12 @@ object OrchestrationRunner {
             System.err.println(s"[orchestrator] Warning: DEMIURGE_WORKER_PATH=$wp does not exist")
             return (None, config, None)
           case None =>
-            System.err.println("[orchestrator] Warning: DEMIURGE_AGENT_BACKEND=claude-agent-sdk but no worker available. Set DEMIURGE_WORKER_PATH.")
+            // No worker available — agent backend can't be used
             return (None, config, None)
         }
     }
 
-    System.err.println("[orchestrator] Agent backend: claude-agent-sdk")
+    System.err.println("[orchestrator] Agent backend: claude-agent-sdk (default)")
     (Some(new ClaudeAgentBackend(wm, repoRoot)), config, newWm)
   }
 

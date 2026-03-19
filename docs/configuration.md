@@ -2,13 +2,16 @@
 
 Demiurge is configured through YAML files in your repository root. The primary configuration file is `demiurge.yaml` (the manifest), with optional `requirements.yaml` and `selectors.yaml` files.
 
-Generate a starter manifest with `demiurge init-manifest`.
+Generate configuration files with `demiurge init` (deterministic scaffold) or `demiurge init --smart` (agentic generation via Claude Code CLI).
 
 ## Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `ANTHROPIC_API_KEY` | For repair/inference | Claude API key for LLM-powered failure analysis and repair |
+| `ANTHROPIC_API_KEY` | For repair/init | Claude API key — enables agent backend (Claude Code) for repair and auto-config generation |
+| `DEMIURGE_WORKER_PATH` | For agent backend | Path to the Demiurge TypeScript worker entry point (auto-detected if installed) |
+| `DEMIURGE_AGENT_BACKEND` | No | Set to `none` to disable agent backend and use legacy LLM patch repair |
+| `CLAUDE_CODE_EXECUTABLE` | No | Path to the `claude` CLI binary (auto-detected via `which claude`) |
 
 ## `demiurge.yaml` — Manifest
 
@@ -348,9 +351,20 @@ selectors:
 | `demiurge.yaml` | Repo root | Main manifest |
 | `requirements.yaml` | Repo root | Verification requirements |
 | `selectors.yaml` | Repo root | Browser selectors |
+| `.demiurge/inferred/demiurge.yaml` | Repo root | Cached inferred config (auto-created by ConfigResolver) |
 | `.demiurge/demiurge.db` | Repo root | SQLite database (auto-created) |
 | `.demiurge/artifacts/<runId>/` | Repo root | Run artifacts (auto-created) |
 | `.demiurge/run.lock` | Repo root | Active run lock file (auto-created) |
+
+## Config Resolution Order
+
+When Demiurge runs, `ConfigResolver` loads configuration using a layered approach:
+
+1. **Explicit YAML** — `demiurge.yaml` in the repo root (highest priority)
+2. **Cached Inference** — `.demiurge/inferred/demiurge.yaml` (previously generated config)
+3. **Auto-smart-init** — if neither is found and `ANTHROPIC_API_KEY` is set, `demiurge run` automatically triggers `init --smart` to generate configuration via the Claude Code agent. Generated files are copied back to the repo root for future runs. If `ANTHROPIC_API_KEY` is not set, Demiurge exits with an error directing the user to run `demiurge init --smart`.
+
+Runtime heuristic inference has been removed. All configuration must come from explicit YAML files. Use `demiurge init --smart` to generate these files for a new project, or let `demiurge run` auto-generate them.
 
 ## Example: Simple Node.js API
 

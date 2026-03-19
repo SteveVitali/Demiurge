@@ -140,7 +140,7 @@ export async function handleAgentExecute(
 
     // Stream messages from the agent
     for await (const message of conversation) {
-      // Track tool use from assistant messages that contain tool_use content blocks
+      // Track tool use and text from assistant messages
       if (message.type === 'assistant' && message.message?.content) {
         for (const block of message.message.content) {
           if (block.type === 'tool_use') {
@@ -158,8 +158,29 @@ export async function handleAgentExecute(
               timestamp: entry.timestamp,
               inputSummary: entry.inputSummary,
             });
+          } else if (block.type === 'text' && block.text) {
+            // Send text progress — first line only, truncated to 200 chars
+            const firstLine = block.text.split('\n')[0].slice(0, 200);
+            if (firstLine.trim()) {
+              server.sendNotification('agent/progress', {
+                runId: p.runId,
+                text: firstLine,
+                timestamp: new Date().toISOString(),
+              });
+            }
           }
         }
+      }
+
+      // Track tool results for progress logging
+      if (message.type === 'tool_result') {
+        const toolName = message.tool_name ?? '';
+        const isError = message.is_error ?? false;
+        server.sendNotification('agent/progress', {
+          runId: p.runId,
+          text: `${toolName} → ${isError ? 'error' : 'ok'}`,
+          timestamp: new Date().toISOString(),
+        });
       }
 
       // Capture result message (SDKResultMessage)

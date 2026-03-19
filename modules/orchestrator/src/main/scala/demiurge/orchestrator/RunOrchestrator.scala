@@ -242,11 +242,14 @@ object RunOrchestrator {
         currentCtx,
         RunStatus.PlanningEnvironment,
         sideEffect = { updatedCtx =>
-          val plan = planner.plan(
+          val rawPlan = planner.plan(
             currentRun.runId,
             inspectionResult.get,
             requirementResult.get,
           )
+          // Remap service CWDs from repoRoot to worktreePath so the server
+          // runs from the worktree where patches are applied (Bug fix: §8.2)
+          val plan = remapPlanCwds(rawPlan, currentCtx.repoRoot, currentCtx.worktreePath)
           // Persist runtime plan (Spec §7.2)
           RuntimePlanRepo.insert(plan)
           planResult = Some(plan)
@@ -260,7 +263,7 @@ object RunOrchestrator {
     // Spec §2.1: Retry boot up to max_env_boot_retries (default 2) on failure.
     if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
     if (shouldExecute(RunStatus.BootstrappingEnvironment, startPhase)) {
-      val maxEnvBootRetries = 2
+      val maxEnvBootRetries = 3
       var bootAttempt = 0
       var bootSucceeded = false
 
@@ -479,13 +482,18 @@ object RunOrchestrator {
         // Spec §4.5: Flake counts as pass for control flow but is flagged
         try { supervisor.teardown(planResult.get, currentCtx.repoRoot) } catch { case _: Exception => }
         val flakeNote = if (agg.flakeCount > 0) s" (${agg.flakeCount} flaky)" else ""
+        val nonPassCount = agg.failCount + agg.errorCount + agg.timeoutCount
+        val summaryText = if (nonPassCount == 0) {
+          if (attemptNumber == 1) s"All ${agg.total} verifiers passed$flakeNote"
+          else s"All ${agg.total} verifiers passed after ${attemptNumber - 1} repair(s)$flakeNote"
+        } else {
+          val repairNote = if (attemptNumber > 1) s" after ${attemptNumber - 1} repair(s)" else ""
+          s"${agg.passCount}/${agg.total} verifiers passed$repairNote$flakeNote ($nonPassCount non-required failed)"
+        }
         currentRun = RunTransitionManager.transitionToTerminal(
           currentCtx,
           RunStatus.Succeeded,
-          summary = Some(
-            if (attemptNumber == 1) s"All ${agg.total} verifiers passed$flakeNote"
-            else s"All ${agg.total} verifiers passed after ${attemptNumber - 1} repair(s)$flakeNote"
-          ),
+          summary = Some(summaryText),
           finalVerdict = Some(verdict),
         )
         currentCtx = currentCtx.copy(run = currentRun)
@@ -597,7 +605,14 @@ object RunOrchestrator {
             )
             AgentToolRpcHandlers.registerHandlers(toolCtx)
 
-            agentRepairResult = Some(agent.executeRepair(repairContext, agentConfig))
+            // Thread policy attemptTimeoutMs to agent config so the agent has enough
+            // time for long operations (e.g. Bazel rebuild after restart_service).
+            val effectiveAgentConfig = resolvedConfig match {
+              case Some(rc) if rc.policies.attemptTimeoutMs > agentConfig.timeoutMs =>
+                agentConfig.copy(timeoutMs = rc.policies.attemptTimeoutMs - 30000)
+              case _ => agentConfig
+            }
+            agentRepairResult = Some(agent.executeRepair(repairContext, effectiveAgentConfig))
           } else {
             // Legacy repair path
             val backend = repairBackend.get
@@ -826,6 +841,30 @@ object RunOrchestrator {
     SignalHandler.updateContext(currentCtx)
 
     currentRun
+  }
+
+  /** Remap service CWDs in a RuntimePlan from repoRoot to worktreePath.
+   *  This ensures services run from the isolated worktree where patches are applied,
+   *  not from the original repo which may have different file contents.
+   */
+  private def remapPlanCwds(plan: RuntimePlan, repoRoot: java.nio.file.Path, worktreePath: java.nio.file.Path): RuntimePlan = {
+    val repoStr = repoRoot.toAbsolutePath.normalize().toString
+    val worktreeStr = worktreePath.toAbsolutePath.normalize().toString
+    if (repoStr == worktreeStr) return plan
+
+    val remappedServices = plan.services.map { spec =>
+      val newCwd = if (spec.cwd == repoStr || spec.cwd.startsWith(repoStr + "/")) {
+        spec.cwd.replaceFirst(java.util.regex.Pattern.quote(repoStr), worktreeStr)
+      } else spec.cwd
+      spec.copy(cwd = newCwd)
+    }
+    val remappedFixtures = plan.fixtureSteps.map { step =>
+      val newCwd = if (step.cwd == repoStr || step.cwd.startsWith(repoStr + "/")) {
+        step.cwd.replaceFirst(java.util.regex.Pattern.quote(repoStr), worktreeStr)
+      } else step.cwd
+      step.copy(cwd = newCwd)
+    }
+    plan.copy(services = remappedServices, fixtureSteps = remappedFixtures)
   }
 
   /** Handle interruption: persist Interrupted status. */

@@ -24,7 +24,14 @@ object EnvironmentPlannerImpl extends EnvironmentPlanner {
       ManifestParser.parseFile(manifestPath) match {
         case ManifestParser.ParseSuccess(m) =>
           val validation = ManifestValidation.validate(m)
-          if (validation.isValid) Some(m) else None
+          if (validation.isValid) Some(m)
+          else {
+            System.err.println(s"[planner] demiurge.yaml validation failed: ${validation.errors.mkString("; ")}")
+            None
+          }
+        case ManifestParser.ParseFailure(errors) =>
+          System.err.println(s"[planner] demiurge.yaml parse failed: ${errors.mkString("; ")}")
+          None
         case _ => None
       }
     }

@@ -114,6 +114,7 @@ object CommandParsers {
   case class InitManifestCmd(
     output: String  = "demiurge.yaml",
     force: Boolean  = false,
+    smart: Boolean  = false,
   ) extends ParsedCommand
 
   case object HelpCmd extends ParsedCommand
@@ -382,6 +383,7 @@ object CommandParsers {
       remaining match {
         case "--output" :: v :: rest => cmd = cmd.copy(output = v); remaining = rest
         case "--force" :: rest       => cmd = cmd.copy(force = true); remaining = rest
+        case "--smart" :: rest       => cmd = cmd.copy(smart = true); remaining = rest
         case unknown :: _            => return Left(s"Unknown flag for init-manifest: $unknown")
       }
     }

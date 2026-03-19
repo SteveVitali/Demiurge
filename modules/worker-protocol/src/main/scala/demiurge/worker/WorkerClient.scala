@@ -46,6 +46,8 @@ class WorkerClient(
           }
           line = reader.readLine()
         }
+        // If we exit the loop while readerRunning is still true, the worker died unexpectedly
+        if (readerRunning) crashed = true
       } catch {
         case _: IOException if !readerRunning => // Expected on shutdown
         case e: Exception =>
@@ -118,6 +120,7 @@ class WorkerClient(
     // Wait for response with matching id — drain notifications
     val deadline = System.currentTimeMillis() + timeoutMs
     while (System.currentTimeMillis() < deadline) {
+      if (crashed) return Left("Worker process has crashed")
       val remaining = deadline - System.currentTimeMillis()
       if (remaining <= 0) return Left(s"Request timed out: $method (${timeoutMs}ms)")
 
