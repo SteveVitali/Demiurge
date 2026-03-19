@@ -19,6 +19,8 @@ class AgentBrowserExecutorImpl(
   agentConfig:   AgentConfig,
 ) extends VerificationEngine.AgentBrowserExecutor {
 
+  import AgentBrowserExecutorImpl._
+
   override def execute(verifier: AgentBrowserVerifier): BrowserVerifierResult = {
     val beforeScreenshotRefs = verifier.beforeScreenshots.zipWithIndex.map { case (path, i) =>
       ScreenshotRef(
@@ -113,64 +115,20 @@ class AgentBrowserExecutorImpl(
       )
     }
 
-    // Try to extract the verificationVerdict from the worker response
-    val verdictJson = c.downField("verificationVerdict")
-    val verdictOpt = for {
-      verdictStr       <- verdictJson.downField("verdict").as[String].toOption
-      verdictStatus    <- BrowserVerdictStatus.fromString(verdictStr)
-      confidence       <- verdictJson.downField("confidence").as[Double].toOption.orElse(Some(0.5))
-      featureSatisfied <- verdictJson.downField("featureSatisfied").as[Boolean].toOption.orElse(Some(false))
-      summary          <- verdictJson.downField("summary").as[String].toOption.orElse(Some(""))
-    } yield {
-      val observations = verdictJson.downField("observations").as[List[Json]].getOrElse(Nil).map { obs =>
-        BrowserObservation(
-          aspect        = obs.hcursor.downField("aspect").as[String].getOrElse(""),
-          status        = obs.hcursor.downField("status").as[String].getOrElse(""),
-          detail        = obs.hcursor.downField("detail").as[String].getOrElse(""),
-          screenshotRef = obs.hcursor.downField("screenshotRef").as[String].toOption,
-        )
-      }
-      val tasteIssues = verdictJson.downField("tasteIssues").as[List[Json]].getOrElse(Nil).map { ti =>
-        TasteIssue(
-          severity      = ti.hcursor.downField("severity").as[String].getOrElse("warning"),
-          issue         = ti.hcursor.downField("issue").as[String].getOrElse(""),
-          element       = ti.hcursor.downField("element").as[String].toOption,
-          screenshotRef = ti.hcursor.downField("screenshotRef").as[String].toOption,
-        )
-      }
-      BrowserVerificationVerdict(
-        verdict          = verdictStatus,
-        confidence       = confidence,
-        featureSatisfied = featureSatisfied,
-        observations     = observations,
-        tasteIssues      = tasteIssues,
-        screenshots      = Nil,
-        summary          = summary,
-      )
-    }
+    // Try to extract the verificationVerdict from the worker response JSON
+    val verdictOpt = parseVerdictJson(c.downField("verificationVerdict"))
+      .orElse(parseVerdictFromText(resultText))
 
     verdictOpt match {
       case Some(verdict) =>
         mapVerdictToResult(verdict, verifier)
       case None =>
-        // Fallback: try to parse from resultText (agent may have only put verdict in text)
-        parseVerdictFromText(resultText) match {
-          case Some(verdict) => mapVerdictToResult(verdict, verifier)
-          case None =>
-            // If we can't parse a verdict but the agent succeeded, treat as passed
-            if (success) {
-              BrowserVerifierResult(
-                VerifierOutcome.Passed,
-                List(Observation("browser-verification", s"Agent completed but verdict not parseable. Result: ${resultText.take(500)}", None, None, None, Instant.now())),
-                Nil,
-              )
-            } else {
-              BrowserVerifierResult(
-                VerifierOutcome.Failed(s"Could not parse verification verdict from agent output"),
-                Nil, Nil,
-              )
-            }
-        }
+        // Agent succeeded but verdict not parseable — treat as passed with observation
+        BrowserVerifierResult(
+          VerifierOutcome.Passed,
+          List(Observation("browser-verification", s"Agent completed but verdict not parseable. Result: ${resultText.take(500)}", None, None, None, Instant.now())),
+          Nil,
+        )
     }
   }
 
@@ -193,7 +151,7 @@ class AgentBrowserExecutorImpl(
 
       case BrowserVerdictStatus.TasteIssue =>
         if (verifier.tasteTriggersRepair) {
-          val triggeredIssues = filterByTasteSensitivity(verdict.tasteIssues, verifier.tasteSensitivity)
+          val triggeredIssues = AgentBrowserExecutorImpl.filterByTasteSensitivity(verdict.tasteIssues, verifier.tasteSensitivity)
           if (triggeredIssues.nonEmpty)
             VerifierOutcome.Failed(s"Taste issues: ${triggeredIssues.map(_.issue).mkString("; ")}")
           else
@@ -206,8 +164,12 @@ class AgentBrowserExecutorImpl(
     BrowserVerifierResult(outcome, observations, artifactRefs)
   }
 
+}
+
+object AgentBrowserExecutorImpl {
+
   /** Design §10.3: Filter taste issues by sensitivity level. */
-  private[agent] def filterByTasteSensitivity(
+  def filterByTasteSensitivity(
     issues: List[TasteIssue],
     sensitivity: TasteSensitivity,
   ): List[TasteIssue] = {
@@ -219,49 +181,98 @@ class AgentBrowserExecutorImpl(
     }
   }
 
+  /**
+   * Parse a BrowserVerificationVerdict from a circe HCursor pointing at a verdict JSON object.
+   * Shared between structured-field parsing and raw-text fallback.
+   */
+  private[agent] def parseVerdictJson(cursor: io.circe.ACursor): Option[BrowserVerificationVerdict] = {
+    for {
+      verdictStr    <- cursor.downField("verdict").as[String].toOption
+      verdictStatus <- BrowserVerdictStatus.fromString(verdictStr)
+    } yield {
+      val observations = cursor.downField("observations").as[List[Json]].getOrElse(Nil).map { obs =>
+        BrowserObservation(
+          aspect        = obs.hcursor.downField("aspect").as[String].getOrElse(""),
+          status        = obs.hcursor.downField("status").as[String].getOrElse(""),
+          detail        = obs.hcursor.downField("detail").as[String].getOrElse(""),
+          screenshotRef = obs.hcursor.downField("screenshotRef").as[String].toOption,
+        )
+      }
+      val tasteIssues = cursor.downField("tasteIssues").as[List[Json]].getOrElse(Nil).map { ti =>
+        TasteIssue(
+          severity      = ti.hcursor.downField("severity").as[String].getOrElse("warning"),
+          issue         = ti.hcursor.downField("issue").as[String].getOrElse(""),
+          element       = ti.hcursor.downField("element").as[String].toOption,
+          screenshotRef = ti.hcursor.downField("screenshotRef").as[String].toOption,
+        )
+      }
+      BrowserVerificationVerdict(
+        verdict          = verdictStatus,
+        confidence       = cursor.downField("confidence").as[Double].getOrElse(0.5),
+        featureSatisfied = cursor.downField("featureSatisfied").as[Boolean].getOrElse(false),
+        observations     = observations,
+        tasteIssues      = tasteIssues,
+        screenshots      = Nil,
+        summary          = cursor.downField("summary").as[String].getOrElse(""),
+      )
+    }
+  }
+
   /** Attempt to parse a BrowserVerificationVerdict from raw agent result text. */
-  private def parseVerdictFromText(text: String): Option[BrowserVerificationVerdict] = {
-    // Try to find JSON block in ```json ... ``` or raw { ... "verdict" ... }
+  private[agent] def parseVerdictFromText(text: String): Option[BrowserVerificationVerdict] = {
+    if (text == null || text.isEmpty) return None
+
+    // Try fenced JSON block first, then balanced-brace extraction as fallback
     val jsonStr = {
-      val fencedMatch = """```json\s*\n([\s\S]*?)\n\s*```""".r.findFirstMatchIn(text)
+      val fencedMatch = """(?s)```json\s*\n(.*?)\n\s*```""".r.findFirstMatchIn(text)
       fencedMatch.map(_.group(1)).getOrElse {
-        val rawMatch = """\{[\s\S]*"verdict"[\s\S]*\}""".r.findFirstIn(text)
-        rawMatch.getOrElse("")
+        extractBalancedJsonContaining(text, "\"verdict\"")
       }
     }
 
     if (jsonStr.isEmpty) return None
 
     io.circe.parser.parse(jsonStr).toOption.flatMap { json =>
-      val c = json.hcursor
-      for {
-        verdictStr       <- c.downField("verdict").as[String].toOption
-        verdictStatus    <- BrowserVerdictStatus.fromString(verdictStr)
-      } yield {
-        BrowserVerificationVerdict(
-          verdict          = verdictStatus,
-          confidence       = c.downField("confidence").as[Double].getOrElse(0.5),
-          featureSatisfied = c.downField("featureSatisfied").as[Boolean].getOrElse(false),
-          observations     = c.downField("observations").as[List[Json]].getOrElse(Nil).map { obs =>
-            BrowserObservation(
-              aspect        = obs.hcursor.downField("aspect").as[String].getOrElse(""),
-              status        = obs.hcursor.downField("status").as[String].getOrElse(""),
-              detail        = obs.hcursor.downField("detail").as[String].getOrElse(""),
-              screenshotRef = obs.hcursor.downField("screenshotRef").as[String].toOption,
-            )
-          },
-          tasteIssues      = c.downField("tasteIssues").as[List[Json]].getOrElse(Nil).map { ti =>
-            TasteIssue(
-              severity      = ti.hcursor.downField("severity").as[String].getOrElse("warning"),
-              issue         = ti.hcursor.downField("issue").as[String].getOrElse(""),
-              element       = ti.hcursor.downField("element").as[String].toOption,
-              screenshotRef = ti.hcursor.downField("screenshotRef").as[String].toOption,
-            )
-          },
-          screenshots      = Nil,
-          summary          = c.downField("summary").as[String].getOrElse(""),
-        )
-      }
+      parseVerdictJson(json.hcursor)
     }
+  }
+
+  /**
+   * Extract a balanced JSON object from text that contains the given keyword.
+   * Uses brace counting (respecting string literals) to handle nested objects.
+   */
+  private def extractBalancedJsonContaining(text: String, keyword: String): String = {
+    val keyIndex = text.indexOf(keyword)
+    if (keyIndex < 0) return ""
+
+    // Find the last '{' before the keyword
+    var startIndex = -1
+    var i = keyIndex
+    while (i >= 0 && startIndex < 0) {
+      if (text.charAt(i) == '{') startIndex = i
+      i -= 1
+    }
+    if (startIndex < 0) return ""
+
+    // Count balanced braces, respecting string literals
+    var depth = 0
+    var inString = false
+    var escape = false
+    i = startIndex
+    while (i < text.length) {
+      val ch = text.charAt(i)
+      if (escape) { escape = false }
+      else if (ch == '\\' && inString) { escape = true }
+      else if (ch == '"') { inString = !inString }
+      else if (!inString) {
+        if (ch == '{') depth += 1
+        else if (ch == '}') {
+          depth -= 1
+          if (depth == 0) return text.substring(startIndex, i + 1)
+        }
+      }
+      i += 1
+    }
+    ""
   }
 }

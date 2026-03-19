@@ -35,11 +35,6 @@ export class BrowserArtifactCollector {
     this.verifierId = options.verifierId;
   }
 
-  /** Get the base directory for this verifier's artifacts. */
-  private get baseDir(): string {
-    return path.join(this.artifactRoot, this.runId, 'browser-verification', this.verifierId);
-  }
-
   /** Write raw data to an artifact file using temp-file-then-rename. */
   private writeArtifactFile(relativePath: string, data: Buffer | string): { fullPath: string; sizeBytes: number; checksumSha256: string } {
     const fullPath = path.join(this.artifactRoot, relativePath);

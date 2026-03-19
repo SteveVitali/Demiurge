@@ -1,6 +1,7 @@
 package demiurge.agent
 
 import munit.FunSuite
+import io.circe.parser
 import demiurge.model.{Viewport, TasteSensitivity}
 
 class BrowserVerificationPromptBuilderSuite extends FunSuite {
@@ -191,47 +192,43 @@ class BrowserVerificationPromptBuilderSuite extends FunSuite {
   }
 
   test("taste sensitivity filtering — Strict keeps all issues") {
-    val impl = new AgentBrowserExecutorImpl(null, null, AgentConfig.Default)
     val issues = List(
       TasteIssue("error", "Bad contrast", None, None),
       TasteIssue("warning", "Small text", None, None),
       TasteIssue("info", "Minor spacing", None, None),
     )
-    val filtered = impl.filterByTasteSensitivity(issues, TasteSensitivity.Strict)
+    val filtered = AgentBrowserExecutorImpl.filterByTasteSensitivity(issues, TasteSensitivity.Strict)
     assertEquals(filtered.size, 3)
   }
 
   test("taste sensitivity filtering — Normal keeps error and warning") {
-    val impl = new AgentBrowserExecutorImpl(null, null, AgentConfig.Default)
     val issues = List(
       TasteIssue("error", "Bad contrast", None, None),
       TasteIssue("warning", "Small text", None, None),
       TasteIssue("info", "Minor spacing", None, None),
     )
-    val filtered = impl.filterByTasteSensitivity(issues, TasteSensitivity.Normal)
+    val filtered = AgentBrowserExecutorImpl.filterByTasteSensitivity(issues, TasteSensitivity.Normal)
     assertEquals(filtered.size, 2)
     assert(filtered.forall(i => i.severity == "error" || i.severity == "warning"))
   }
 
   test("taste sensitivity filtering — Lenient keeps only error") {
-    val impl = new AgentBrowserExecutorImpl(null, null, AgentConfig.Default)
     val issues = List(
       TasteIssue("error", "Bad contrast", None, None),
       TasteIssue("warning", "Small text", None, None),
       TasteIssue("info", "Minor spacing", None, None),
     )
-    val filtered = impl.filterByTasteSensitivity(issues, TasteSensitivity.Lenient)
+    val filtered = AgentBrowserExecutorImpl.filterByTasteSensitivity(issues, TasteSensitivity.Lenient)
     assertEquals(filtered.size, 1)
     assertEquals(filtered.head.severity, "error")
   }
 
   test("taste sensitivity filtering — Off returns empty") {
-    val impl = new AgentBrowserExecutorImpl(null, null, AgentConfig.Default)
     val issues = List(
       TasteIssue("error", "Bad contrast", None, None),
       TasteIssue("warning", "Small text", None, None),
     )
-    val filtered = impl.filterByTasteSensitivity(issues, TasteSensitivity.Off)
+    val filtered = AgentBrowserExecutorImpl.filterByTasteSensitivity(issues, TasteSensitivity.Off)
     assertEquals(filtered.size, 0)
   }
 
@@ -247,5 +244,91 @@ class BrowserVerificationPromptBuilderSuite extends FunSuite {
     assertEquals(BrowserVerdictStatus.fromString(""), None)
     assertEquals(BrowserVerdictStatus.fromString("UNKNOWN"), None)
     assertEquals(BrowserVerdictStatus.fromString("partial"), None)
+  }
+
+  // --- Verdict JSON parsing tests (AgentBrowserExecutorImpl companion object) ---
+
+  test("parseVerdictJson parses valid PASS verdict") {
+    val json = parser.parse("""
+      {
+        "verdict": "PASS",
+        "confidence": 0.95,
+        "featureSatisfied": true,
+        "observations": [{"aspect": "login", "status": "pass", "detail": "works"}],
+        "tasteIssues": [],
+        "summary": "All good"
+      }
+    """).getOrElse(io.circe.Json.Null)
+    val result = AgentBrowserExecutorImpl.parseVerdictJson(json.hcursor)
+    assert(result.isDefined)
+    assertEquals(result.get.verdict, BrowserVerdictStatus.Pass)
+    assertEquals(result.get.confidence, 0.95)
+    assert(result.get.featureSatisfied)
+    assertEquals(result.get.observations.size, 1)
+    assertEquals(result.get.observations.head.aspect, "login")
+    assertEquals(result.get.summary, "All good")
+  }
+
+  test("parseVerdictJson parses FAIL verdict with taste issues") {
+    val json = parser.parse("""
+      {
+        "verdict": "TASTE_ISSUE",
+        "confidence": 0.7,
+        "featureSatisfied": true,
+        "observations": [],
+        "tasteIssues": [{"severity": "warning", "issue": "Low contrast", "element": "h1"}],
+        "summary": "Works but ugly"
+      }
+    """).getOrElse(io.circe.Json.Null)
+    val result = AgentBrowserExecutorImpl.parseVerdictJson(json.hcursor)
+    assert(result.isDefined)
+    assertEquals(result.get.verdict, BrowserVerdictStatus.TasteIssue)
+    assertEquals(result.get.tasteIssues.size, 1)
+    assertEquals(result.get.tasteIssues.head.severity, "warning")
+    assertEquals(result.get.tasteIssues.head.element, Some("h1"))
+  }
+
+  test("parseVerdictJson returns None for missing verdict field") {
+    val json = parser.parse("""{"confidence": 0.5}""").getOrElse(io.circe.Json.Null)
+    val result = AgentBrowserExecutorImpl.parseVerdictJson(json.hcursor)
+    assert(result.isEmpty)
+  }
+
+  test("parseVerdictJson returns None for unknown verdict value") {
+    val json = parser.parse("""{"verdict": "UNKNOWN"}""").getOrElse(io.circe.Json.Null)
+    val result = AgentBrowserExecutorImpl.parseVerdictJson(json.hcursor)
+    assert(result.isEmpty)
+  }
+
+  test("parseVerdictJson provides defaults for missing optional fields") {
+    val json = parser.parse("""{"verdict": "PASS"}""").getOrElse(io.circe.Json.Null)
+    val result = AgentBrowserExecutorImpl.parseVerdictJson(json.hcursor)
+    assert(result.isDefined)
+    assertEquals(result.get.confidence, 0.5)
+    assert(!result.get.featureSatisfied)  // default false
+    assert(result.get.observations.isEmpty)
+    assert(result.get.tasteIssues.isEmpty)
+    assertEquals(result.get.summary, "")
+  }
+
+  test("parseVerdictFromText extracts verdict from fenced JSON block") {
+    val text = """Here is my verdict:
+      |```json
+      |{"verdict": "PASS", "confidence": 0.9, "summary": "OK"}
+      |```
+      |Done.""".stripMargin
+    val result = AgentBrowserExecutorImpl.parseVerdictFromText(text)
+    assert(result.isDefined)
+    assertEquals(result.get.verdict, BrowserVerdictStatus.Pass)
+    assertEquals(result.get.confidence, 0.9)
+  }
+
+  test("parseVerdictFromText returns None for empty text") {
+    assert(AgentBrowserExecutorImpl.parseVerdictFromText("").isEmpty)
+    assert(AgentBrowserExecutorImpl.parseVerdictFromText(null).isEmpty)
+  }
+
+  test("parseVerdictFromText returns None for text without verdict JSON") {
+    assert(AgentBrowserExecutorImpl.parseVerdictFromText("Just some regular text").isEmpty)
   }
 }

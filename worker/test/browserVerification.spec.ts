@@ -5,65 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { BrowserArtifactCollector } from '../src/artifacts/browserArtifactCollector';
-
-// Extract parseVerificationVerdict for testing — inline re-implementation
-// (the function is module-private in agentExecute.ts)
-interface VerificationVerdict {
-  verdict: 'PASS' | 'FAIL' | 'TASTE_ISSUE';
-  confidence: number;
-  featureSatisfied: boolean;
-  observations: Array<{
-    aspect: string;
-    status: string;
-    detail: string;
-    screenshotRef?: string;
-  }>;
-  tasteIssues: Array<{
-    severity: string;
-    issue: string;
-    element?: string;
-    screenshotRef?: string;
-  }>;
-  screenshots: Array<{
-    ref: string;
-    description: string;
-    phase: string;
-  }>;
-  summary: string;
-}
-
-function parseVerificationVerdict(text: string): VerificationVerdict | undefined {
-  if (!text) return undefined;
-
-  const fencedMatch = text.match(/```json\s*\n([\s\S]*?)\n\s*```/);
-  let jsonStr = fencedMatch ? fencedMatch[1] : '';
-
-  if (!jsonStr) {
-    const rawMatch = text.match(/\{[\s\S]*"verdict"[\s\S]*\}/);
-    jsonStr = rawMatch ? rawMatch[0] : '';
-  }
-
-  if (!jsonStr) return undefined;
-
-  try {
-    const parsed = JSON.parse(jsonStr);
-    if (parsed.verdict && ['PASS', 'FAIL', 'TASTE_ISSUE'].includes(parsed.verdict)) {
-      return {
-        verdict: parsed.verdict,
-        confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.5,
-        featureSatisfied: typeof parsed.featureSatisfied === 'boolean' ? parsed.featureSatisfied : false,
-        observations: Array.isArray(parsed.observations) ? parsed.observations : [],
-        tasteIssues: Array.isArray(parsed.tasteIssues) ? parsed.tasteIssues : [],
-        screenshots: Array.isArray(parsed.screenshots) ? parsed.screenshots : [],
-        summary: typeof parsed.summary === 'string' ? parsed.summary : '',
-      };
-    }
-  } catch {
-    // JSON parse failed
-  }
-
-  return undefined;
-}
+import { parseVerificationVerdict } from '../src/methods/agentExecute';
 
 describe('parseVerificationVerdict', () => {
   test('parses PASS verdict from fenced JSON block', () => {

@@ -322,17 +322,16 @@ export async function handleAgentExecute(
  * Parse a VerificationVerdict JSON block from the agent's output text.
  * Looks for ```json ... ``` fenced blocks or raw JSON containing "verdict".
  */
-function parseVerificationVerdict(text: string): VerificationVerdict | undefined {
+export function parseVerificationVerdict(text: string): VerificationVerdict | undefined {
   if (!text) return undefined;
 
   // Try fenced JSON block first
   const fencedMatch = text.match(/```json\s*\n([\s\S]*?)\n\s*```/);
   let jsonStr = fencedMatch ? fencedMatch[1] : '';
 
-  // Fallback: find raw JSON with "verdict" key
+  // Fallback: find raw JSON containing "verdict" key using balanced-brace extraction
   if (!jsonStr) {
-    const rawMatch = text.match(/\{[\s\S]*"verdict"[\s\S]*\}/);
-    jsonStr = rawMatch ? rawMatch[0] : '';
+    jsonStr = extractBalancedJsonContaining(text, '"verdict"');
   }
 
   if (!jsonStr) return undefined;
@@ -355,4 +354,38 @@ function parseVerificationVerdict(text: string): VerificationVerdict | undefined
   }
 
   return undefined;
+}
+
+/**
+ * Extract a balanced JSON object from text that contains the given keyword.
+ * Uses brace counting to handle nested objects correctly.
+ */
+function extractBalancedJsonContaining(text: string, keyword: string): string {
+  const keyIndex = text.indexOf(keyword);
+  if (keyIndex === -1) return '';
+
+  // Find the last '{' before the keyword
+  let startIndex = -1;
+  for (let i = keyIndex; i >= 0; i--) {
+    if (text[i] === '{') { startIndex = i; break; }
+  }
+  if (startIndex === -1) return '';
+
+  // Count balanced braces to find the matching '}'
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = startIndex; i < text.length; i++) {
+    const ch = text[i];
+    if (escape) { escape = false; continue; }
+    if (ch === '\\' && inString) { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return text.substring(startIndex, i + 1);
+    }
+  }
+  return '';
 }
