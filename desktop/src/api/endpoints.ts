@@ -1,4 +1,5 @@
 import { get, post, put } from './client';
+import type { UsageData } from '@/lib/usage';
 import type {
   TaskRun,
   Attempt,
@@ -183,13 +184,6 @@ export function getKnownRepos(): Promise<string[]> {
 
 // --- Spec 05: Usage ---
 
-export interface UsageResponse {
-  runs: { used: number; limit: number; periodEnd: string | null };
-  tokens: { used: number; limit: number; periodEnd: string | null };
-  account?: { email: string; planTier: string; entitlements: string[] };
-  offline?: boolean;
-}
-
-export function getUsage(): Promise<UsageResponse> {
-  return get<UsageResponse>('/usage');
+export function getUsage(): Promise<UsageData> {
+  return get<UsageData>('/usage');
 }

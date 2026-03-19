@@ -75,4 +75,30 @@ class UsageReporterSuite extends FunSuite {
     val failure: Either[UsageResult, UsageReport] = Left(UsageLimitExceeded(100, 100))
     assert(failure.isLeft)
   }
+
+  test("incrementRunCount with empty key returns Left immediately without network call") {
+    // Verifies the fast-path: no HTTP call is made when the license key is empty.
+    // Should be near-instant (no connect timeout).
+    val start = System.currentTimeMillis()
+    val result = UsageReporter.incrementRunCount("", "fp", increment = 5)
+    val elapsed = System.currentTimeMillis() - start
+    assert(result.isLeft, "Expected Left for empty license key")
+    assert(elapsed < 500, s"Empty key path should be instant, took ${elapsed}ms")
+  }
+
+  test("incrementRunCount return type is Either[UsageResult, UsageReport]") {
+    // Verify the return type allows exhaustive pattern matching
+    val result = UsageReporter.incrementRunCount("DEMI-TEST", "fp")
+    result match {
+      case Right(UsageReport(u, m))       => assert(u >= 0 && m >= 0)
+      case Left(_: UsageLimitExceeded)    => // valid
+      case Left(_: UsageReportError)      => // valid (expected path: network error)
+      case Left(_: UsageReport)           => fail("UsageReport should not appear on Left")
+    }
+  }
+
+  test("reportTokenUsage with special characters in runId does not throw") {
+    // Verifies the circe JSON builder handles special chars safely
+    UsageReporter.reportTokenUsage("DEMI-TEST", """run-"with"quotes-&-<special>""", 100, 50)
+  }
 }

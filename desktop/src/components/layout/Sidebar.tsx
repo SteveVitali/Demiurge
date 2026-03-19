@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/app.store';
 import { useAuthStore } from '@/stores/auth.store';
 import { useUsage } from '@/hooks/useUsage';
+import { usageBarColor, usageTextColor } from '@/lib/usage';
 import { PlanTierBadge } from '@/components/PlanTierBadge';
 import { queryKeys } from '@/lib/query-keys';
 import { getRuns } from '@/api/endpoints';
@@ -151,37 +152,27 @@ export function Sidebar() {
         )}
 
         {/* Spec 05 §7.1: Usage indicator */}
-        {!sidebarCollapsed && usage && usage.runs.limit > 0 && (
-          <div className="mb-1.5">
-            <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-              <BarChart3 className="h-3 w-3" />
-              <span>Runs: {usage.runs.used}/{usage.runs.limit}</span>
+        {usage && usage.runs.limit > 0 && (() => {
+          const runPct = Math.round((usage.runs.used / usage.runs.limit) * 100);
+          return sidebarCollapsed ? (
+            <div className="mb-1.5 flex justify-center" title={`Runs: ${usage.runs.used}/${usage.runs.limit}`}>
+              <BarChart3 className={cn('h-3 w-3', usageTextColor(runPct))} />
             </div>
-            <div className="mt-0.5 h-1 w-full overflow-hidden rounded-full bg-muted">
-              <div
-                className={cn(
-                  'h-full rounded-full transition-all duration-300',
-                  (() => {
-                    const pct = (usage.runs.used / usage.runs.limit) * 100;
-                    return pct < 60 ? 'bg-emerald-500' : pct < 80 ? 'bg-yellow-500' : 'bg-red-500';
-                  })(),
-                )}
-                style={{ width: `${Math.min((usage.runs.used / usage.runs.limit) * 100, 100)}%` }}
-              />
+          ) : (
+            <div className="mb-1.5">
+              <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                <BarChart3 className="h-3 w-3" />
+                <span>Runs: {usage.runs.used}/{usage.runs.limit}</span>
+              </div>
+              <div className="mt-0.5 h-1 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className={cn('h-full rounded-full transition-all duration-300', usageBarColor(runPct))}
+                  style={{ width: `${Math.min(runPct, 100)}%` }}
+                />
+              </div>
             </div>
-          </div>
-        )}
-        {sidebarCollapsed && usage && usage.runs.limit > 0 && (
-          <div className="mb-1.5 flex justify-center" title={`Runs: ${usage.runs.used}/${usage.runs.limit}`}>
-            <BarChart3 className={cn(
-              'h-3 w-3',
-              (() => {
-                const pct = (usage.runs.used / usage.runs.limit) * 100;
-                return pct < 60 ? 'text-emerald-400' : pct < 80 ? 'text-yellow-400' : 'text-red-400';
-              })(),
-            )} />
-          </div>
-        )}
+          );
+        })()}
 
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           {backendStatus === 'connected' ? (

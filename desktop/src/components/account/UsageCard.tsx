@@ -1,5 +1,6 @@
 import { useUsage } from '@/hooks/useUsage';
 import { cn } from '@/lib/utils';
+import { usageBarColor, usageTextColor, formatTokenCount } from '@/lib/usage';
 
 // Spec 05 §7.2: Usage display card for the account/settings page
 // Two progress bars: Runs and Tokens
@@ -92,29 +93,21 @@ function UsageBar({
   formatValue?: (n: number) => string;
 }) {
   const fmt = formatValue ?? String;
-  const barColor = pct < 60 ? 'bg-emerald-500' : pct < 80 ? 'bg-yellow-500' : 'bg-red-500';
-  const textColor = pct < 60 ? 'text-emerald-400' : pct < 80 ? 'text-yellow-400' : 'text-red-400';
 
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center justify-between text-xs">
         <span className="text-muted-foreground">{label}</span>
-        <span className={cn('font-medium', textColor)}>
+        <span className={cn('font-medium', usageTextColor(pct))}>
           {fmt(used)} / {fmt(limit)} ({pct}%)
         </span>
       </div>
       <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
         <div
-          className={cn('h-full rounded-full transition-all duration-300', barColor)}
+          className={cn('h-full rounded-full transition-all duration-300', usageBarColor(pct))}
           style={{ width: `${Math.min(pct, 100)}%` }}
         />
       </div>
     </div>
   );
-}
-
-function formatTokenCount(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}k`;
-  return String(n);
 }

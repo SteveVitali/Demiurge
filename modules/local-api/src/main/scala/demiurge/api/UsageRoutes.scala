@@ -4,7 +4,7 @@ import com.sun.net.httpserver.HttpHandler
 import io.circe.syntax._
 import io.circe.Json
 
-import demiurge.license.{CredentialStore, LicenseManager, LicenseStatus, UsageReporter}
+import demiurge.license.{CredentialStore, LicenseManager, LicenseStatus}
 
 // Spec 05 §7.5: Sidecar /usage endpoint
 // Proxies usage data from the cloud backend (or returns cached data from license validation).

@@ -25,9 +25,6 @@ object UsageReporter {
   private case class IncrementResponse(uses: Int, maxUses: Int)
   private implicit val incrementResponseDecoder: io.circe.Decoder[IncrementResponse] = deriveDecoder
 
-  private case class ErrorResponse(uses: Int, maxUses: Int)
-  private implicit val errorResponseDecoder: io.circe.Decoder[ErrorResponse] = deriveDecoder
-
   private case class OfflineUsage(unsyncedRuns: Int, lastSync: String)
   private implicit val offlineUsageCodec: io.circe.Codec[OfflineUsage] = io.circe.generic.semiauto.deriveCodec
 
@@ -70,8 +67,8 @@ object UsageReporter {
           }
 
         case 422 =>
-          // maxUses exceeded
-          jsonDecode[ErrorResponse](body) match {
+          // maxUses exceeded — response shape matches IncrementResponse
+          jsonDecode[IncrementResponse](body) match {
             case Right(r) => Left(UsageLimitExceeded(r.uses, r.maxUses))
             case Left(_)  => Left(UsageLimitExceeded(-1, -1))
           }
@@ -105,7 +102,12 @@ object UsageReporter {
       conn.setConnectTimeout(5000)
       conn.setReadTimeout(5000)
 
-      val payload = s"""{"run_id":"$runId","input_tokens":$inputTokens,"output_tokens":$outputTokens}"""
+      // Use circe to avoid JSON injection from untrusted runId values
+      val payload = io.circe.Json.obj(
+        "run_id" -> io.circe.Json.fromString(runId),
+        "input_tokens" -> io.circe.Json.fromLong(inputTokens),
+        "output_tokens" -> io.circe.Json.fromLong(outputTokens),
+      ).noSpaces
       conn.getOutputStream.write(payload.getBytes("UTF-8"))
       conn.getOutputStream.close()
 
