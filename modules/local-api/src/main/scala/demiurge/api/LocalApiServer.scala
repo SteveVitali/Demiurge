@@ -50,6 +50,21 @@ object LocalApiServer {
             Routes.getArtifactContentHandler(connProvider, artifactRootResolver).handle(exchange)
           } else if (path.matches("/runs/[^/]+/artifacts")) {
             Routes.getArtifactsHandler(connProvider).handle(exchange)
+          } else if (path.matches("/runs/[^/]+/inspection")) {
+            // Desktop Phase 2: Inspection report
+            InspectionRoutes.getInspectionHandler(connProvider).handle(exchange)
+          } else if (path.matches("/runs/[^/]+/requirement-graph")) {
+            // Desktop Phase 2: Requirement graph
+            InspectionRoutes.getRequirementGraphHandler(connProvider).handle(exchange)
+          } else if (path.matches("/runs/[^/]+/feature-plan")) {
+            // Desktop Phase 2: Feature plan
+            InspectionRoutes.getFeaturePlanHandler(connProvider).handle(exchange)
+          } else if (path.matches("/runs/[^/]+/attempts/\\d+/failure-packet")) {
+            // Desktop Phase 2: Failure packet
+            FailureRoutes.getFailurePacketHandler(connProvider).handle(exchange)
+          } else if (path.matches("/runs/[^/]+/attempts/\\d+/patches")) {
+            // Desktop Phase 2: Patches
+            FailureRoutes.getPatchesHandler(connProvider).handle(exchange)
           } else if (path.matches("/runs/[^/]+/resume") && method == "POST") {
             Routes.postResumeHandler(connProvider).handle(exchange)
           } else if (path.matches("/runs/[^/]+/cancel") && method == "POST") {

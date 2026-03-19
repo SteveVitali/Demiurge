@@ -7,6 +7,11 @@ import type {
   HealthResponse,
   PaginatedResponse,
   RunFilters,
+  RepoInspectionReport,
+  RequirementGraph,
+  FeaturePlan,
+  FailurePacket,
+  PatchRecord,
 } from './types';
 
 // --- Health ---
@@ -62,4 +67,34 @@ export function cancelRun(runId: string): Promise<{ runId: string; status: strin
 
 export function resumeRun(runId: string): Promise<{ runId: string; status: string }> {
   return post<{ runId: string; status: string }>(`/runs/${runId}/resume`);
+}
+
+// --- Inspection ---
+
+export function getInspection(runId: string): Promise<RepoInspectionReport> {
+  return get<RepoInspectionReport>(`/runs/${runId}/inspection`);
+}
+
+export function getRequirementGraph(runId: string): Promise<RequirementGraph> {
+  return get<RequirementGraph>(`/runs/${runId}/requirement-graph`);
+}
+
+export function getFeaturePlan(runId: string): Promise<FeaturePlan> {
+  return get<FeaturePlan>(`/runs/${runId}/feature-plan`);
+}
+
+// --- Failure Analysis ---
+
+export function getFailurePacket(runId: string, attemptNumber: number): Promise<FailurePacket> {
+  return get<FailurePacket>(`/runs/${runId}/attempts/${attemptNumber}/failure-packet`);
+}
+
+export function getPatches(runId: string, attemptNumber: number): Promise<PatchRecord[]> {
+  return get<PatchRecord[]>(`/runs/${runId}/attempts/${attemptNumber}/patches`);
+}
+
+// --- Artifact Content ---
+
+export function getArtifactContent(runId: string, artifactId: string): Promise<unknown> {
+  return get<unknown>(`/runs/${runId}/artifacts/${artifactId}/content`);
 }

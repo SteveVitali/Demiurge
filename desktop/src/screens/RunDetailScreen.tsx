@@ -16,6 +16,10 @@ import { AttemptTabs } from '@/components/run-detail/AttemptTabs';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { ErrorState } from '@/components/shared/ErrorState';
+import { VerificationPanel } from '@/components/verification/VerificationPanel';
+import { ArtifactBrowser } from '@/components/artifacts/ArtifactBrowser';
+import { InspectionPanel } from '@/components/inspection/InspectionPanel';
+import { EventsPanel } from '@/components/events/EventsPanel';
 
 const tabLabels = [
   'Verification',
@@ -24,7 +28,6 @@ const tabLabels = [
   'Artifacts',
   'Inspection',
   'Events',
-  'Failure',
 ];
 
 export function RunDetailScreen() {
@@ -125,13 +128,38 @@ export function RunDetailScreen() {
           ))}
         </div>
 
-        {/* Tab Content — All placeholders for Phase 2+ */}
-        <div className="flex flex-1 items-center justify-center p-12">
-          <div className="flex flex-col items-center gap-3 text-muted-foreground">
-            <Construction className="h-10 w-10" />
-            <p className="text-sm font-medium">{tabLabels[activeTab]} Panel</p>
-            <p className="text-xs">Coming in Phase {activeTab < 2 ? 2 : 3}</p>
-          </div>
+        {/* Tab Content */}
+        <div className="flex flex-1 flex-col overflow-hidden">
+          {activeTab === 0 && (
+            <VerificationPanel runId={run.runId} attemptNumber={selectedAttempt} />
+          )}
+          {activeTab === 1 && (
+            <div className="flex flex-1 items-center justify-center p-12">
+              <div className="flex flex-col items-center gap-3 text-muted-foreground">
+                <Construction className="h-10 w-10" />
+                <p className="text-sm font-medium">Agent Panel</p>
+                <p className="text-xs">Coming in Phase 3</p>
+              </div>
+            </div>
+          )}
+          {activeTab === 2 && (
+            <div className="flex flex-1 items-center justify-center p-12">
+              <div className="flex flex-col items-center gap-3 text-muted-foreground">
+                <Construction className="h-10 w-10" />
+                <p className="text-sm font-medium">Environment Panel</p>
+                <p className="text-xs">Coming in Phase 3</p>
+              </div>
+            </div>
+          )}
+          {activeTab === 3 && (
+            <ArtifactBrowser runId={run.runId} />
+          )}
+          {activeTab === 4 && (
+            <InspectionPanel runId={run.runId} />
+          )}
+          {activeTab === 5 && (
+            <EventsPanel runId={run.runId} />
+          )}
         </div>
       </div>
     </div>

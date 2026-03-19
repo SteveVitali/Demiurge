@@ -192,3 +192,120 @@ export interface ArtifactFilters {
 export interface HealthResponse {
   status: string;
 }
+
+// --- Service Kind ---
+
+export type ServiceKind = 'Frontend' | 'Api' | 'Database' | 'Cache' | 'Queue' | 'Worker';
+
+// --- Inspection DTOs ---
+
+export interface ScoredInference<T = string> {
+  value: T;
+  confidence: number;
+  source: string;
+}
+
+export interface CandidateService {
+  serviceId: string;
+  kind: ServiceKind;
+  confidence: number;
+  port: number | null;
+  startupCommand: string | null;
+  healthEndpoint: string | null;
+}
+
+export interface ChangedSurface {
+  filePath: string;
+  affectedRoutes: string[];
+  affectedComponents: string[];
+  affectedServices: string[];
+  infraSensitive: boolean;
+  confidence: number;
+}
+
+export interface RepoInspectionReport {
+  repoPath: string;
+  gitRef: string | null;
+  inspectedAt: string;
+  languages: ScoredInference[];
+  frameworks: ScoredInference[];
+  candidateServices: CandidateService[];
+  manifestsFound: string[];
+  changedSurfaceMap: ChangedSurface[] | null;
+}
+
+// --- Requirement Graph DTOs ---
+
+export interface RequirementNode {
+  requirementId: string;
+  description: string;
+  priority: Priority;
+  category: string;
+  verdictStatus: VerdictStatus | null;
+}
+
+export interface DependencyEdge {
+  from: string;
+  to: string;
+  type: 'Hard' | 'Soft' | 'Ordering';
+}
+
+export interface RequirementGraph {
+  nodes: RequirementNode[];
+  edges: DependencyEdge[];
+}
+
+// --- Feature Plan DTOs ---
+
+export interface PlannedFile {
+  path: string;
+  action: 'create' | 'modify' | 'delete';
+  description: string;
+}
+
+export interface FeaturePlan {
+  taskDescription: string;
+  approach: string;
+  plannedFiles: PlannedFile[];
+  estimatedComplexity: string;
+}
+
+// --- Failure Packet DTOs ---
+
+export interface SuspectedCause {
+  description: string;
+  confidence: number;
+  files: string[];
+  components: string[];
+}
+
+export interface RepairScope {
+  files: string[];
+  services: string[];
+  requiresEnvRebuild: boolean;
+}
+
+export interface FailurePacket {
+  runId: string;
+  attemptNumber: number;
+  primaryFailureClass: FailureClass;
+  secondaryFailureClasses: FailureClass[];
+  summary: string;
+  suspectedRootCauses: SuspectedCause[];
+  reproductionSteps: string[];
+  recommendedRepairScope: RepairScope;
+  hardBlockers: string[];
+  softBlockers: string[];
+}
+
+// --- Patch Record DTOs ---
+
+export interface PatchRecord {
+  patchId: string;
+  runId: string;
+  attemptNumber: number;
+  filePath: string;
+  diffContent: string;
+  linesAdded: number;
+  linesRemoved: number;
+}
