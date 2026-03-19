@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
-import { KeyRound, ExternalLink, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import { KeyRound, ExternalLink, Loader2, AlertCircle } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
+import { CLOUD_API_URL } from '@/lib/constants';
 import { cn } from '@/lib/utils';
 
 type AuthMode = 'choose' | 'license-key' | 'validating';
@@ -9,29 +10,27 @@ export function AuthScreen() {
   const [mode, setMode] = useState<AuthMode>('choose');
   const [licenseKey, setLicenseKey] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [isValidating, setIsValidating] = useState(false);
 
   const setCredentials = useAuthStore((s) => s.setCredentials);
 
   const handleBrowserSignIn = useCallback(async () => {
     try {
       const { open } = await import('@tauri-apps/plugin-shell');
-      await open('https://demiurge.dev/sign-in?redirect_uri=demiurge://auth-callback');
+      await open(`${CLOUD_API_URL}/sign-in?redirect_uri=demiurge://auth-callback`);
     } catch {
       // Fallback: open in a new browser tab (dev mode)
-      window.open('https://demiurge.dev/sign-in?redirect_uri=demiurge://auth-callback', '_blank');
+      window.open(`${CLOUD_API_URL}/sign-in?redirect_uri=demiurge://auth-callback`, '_blank');
     }
   }, []);
 
   const handleLicenseKeySubmit = useCallback(async () => {
     if (!licenseKey.trim()) return;
     setError(null);
-    setIsValidating(true);
     setMode('validating');
 
     try {
       // Validate against cloud backend
-      const resp = await fetch('https://demiurge.dev/api/license/validate', {
+      const resp = await fetch(`${CLOUD_API_URL}/api/license/validate`, {
         method: 'GET',
         headers: {
           'X-License-Key': licenseKey.trim(),
@@ -62,7 +61,6 @@ export function AuthScreen() {
       return;
     }
 
-    setIsValidating(false);
     setMode('license-key');
   }, [licenseKey, setCredentials]);
 
@@ -172,17 +170,8 @@ export function AuthScreen() {
         {/* Validating State */}
         {mode === 'validating' && (
           <div className="flex flex-col items-center gap-3">
-            {isValidating ? (
-              <>
-                <Loader2 className="h-8 w-8 animate-spin text-blue-400" />
-                <p className="text-sm text-muted-foreground">Validating license key...</p>
-              </>
-            ) : (
-              <>
-                <CheckCircle className="h-8 w-8 text-green-400" />
-                <p className="text-sm text-muted-foreground">Redirecting...</p>
-              </>
-            )}
+            <Loader2 className="h-8 w-8 animate-spin text-blue-400" />
+            <p className="text-sm text-muted-foreground">Validating license key...</p>
           </div>
         )}
       </div>

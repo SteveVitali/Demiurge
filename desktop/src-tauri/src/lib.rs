@@ -3,6 +3,7 @@ mod sidecar;
 mod tray;
 
 use std::sync::Arc;
+use tauri::{Emitter, Listener, Manager};
 use sidecar::SidecarManager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -33,7 +34,7 @@ pub fn run() {
 
             // Listen for deep link events (demiurge://auth-callback?...) and emit to frontend
             let deep_link_handle = handle.clone();
-            app.listen("deep-link://new-url", move |event| {
+            app.listen("deep-link://new-url", move |event: tauri::Event| {
                 if let Some(window) = deep_link_handle.get_webview_window("main") {
                     let _ = window.emit("deep-link-received", event.payload());
                 }

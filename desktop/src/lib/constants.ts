@@ -13,5 +13,7 @@ export const WS_RECONNECT_BASE_MS = 1000;
 export const WS_RECONNECT_MAX_MS = 30_000;
 export const WS_HEARTBEAT_INTERVAL_MS = 25_000;
 
+export const CLOUD_API_URL = 'https://demiurge.dev';
+
 export const RECENT_RUNS_LIMIT = 5;
 export const RUNS_PAGE_SIZE = 20;

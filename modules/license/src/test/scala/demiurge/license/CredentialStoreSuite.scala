@@ -1,22 +1,8 @@
 package demiurge.license
 
-import java.nio.file.{Files, Path}
 import munit.FunSuite
 
 class CredentialStoreSuite extends FunSuite {
-
-  private var tempDir: Path = _
-
-  override def beforeEach(context: BeforeEach): Unit = {
-    tempDir = Files.createTempDirectory("demiurge-cred-test")
-  }
-
-  override def afterEach(context: AfterEach): Unit = {
-    // Clean up temp files
-    if (tempDir != null) {
-      Files.walk(tempDir).sorted(java.util.Comparator.reverseOrder()).forEach(Files.deleteIfExists(_))
-    }
-  }
 
   test("Credentials round-trip through JSON encoding/decoding") {
     val creds = Credentials(

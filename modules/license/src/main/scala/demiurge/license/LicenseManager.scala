@@ -39,43 +39,16 @@ object LicenseManager {
     // Online validation
     CloudApiClient.validateLicense(creds.licenseKey, fingerprint) match {
       case valid: LicenseStatus.Valid =>
-        // Update cache
-        val newCached = CachedValidation(
-          valid = true, code = "VALID", planTier = valid.planTier,
-          uses = valid.uses, maxUses = valid.maxUses,
-          expiry = valid.expiry, entitlements = valid.entitlements,
-          cachedAt = Instant.now.toString
-        )
-        CredentialStore.saveCredentials(creds.copy(
-          planTier = Some(valid.planTier),
-          cachedValidation = Some(newCached)
-        ))
-        valid
+        cacheAndReturn(creds, valid)
 
       case LicenseStatus.MachineNotActivated =>
         // Auto-activate this machine
-        val hostname = try {
-          java.net.InetAddress.getLocalHost.getHostName
-        } catch {
-          case _: Exception => "unknown-host"
-        }
         val platform = System.getProperty("os.name", "unknown")
-        CloudApiClient.activateMachine(creds.licenseKey, fingerprint, hostname, platform) match {
+        CloudApiClient.activateMachine(creds.licenseKey, fingerprint, MachineFingerprint.hostname(), platform) match {
           case Right(_) =>
             // Retry validation after activation
             CloudApiClient.validateLicense(creds.licenseKey, fingerprint) match {
-              case valid: LicenseStatus.Valid =>
-                val newCached = CachedValidation(
-                  valid = true, code = "VALID", planTier = valid.planTier,
-                  uses = valid.uses, maxUses = valid.maxUses,
-                  expiry = valid.expiry, entitlements = valid.entitlements,
-                  cachedAt = Instant.now.toString
-                )
-                CredentialStore.saveCredentials(creds.copy(
-                  planTier = Some(valid.planTier),
-                  cachedValidation = Some(newCached)
-                ))
-                valid
+              case valid: LicenseStatus.Valid => cacheAndReturn(creds, valid)
               case other => other
             }
           case Left(err) => LicenseStatus.NetworkError(s"Machine activation failed: $err")
@@ -93,6 +66,20 @@ object LicenseManager {
 
       case other => other
     }
+  }
+
+  private def cacheAndReturn(creds: Credentials, valid: LicenseStatus.Valid): LicenseStatus.Valid = {
+    val newCached = CachedValidation(
+      valid = true, code = "VALID", planTier = valid.planTier,
+      uses = valid.uses, maxUses = valid.maxUses,
+      expiry = valid.expiry, entitlements = valid.entitlements,
+      cachedAt = Instant.now.toString
+    )
+    CredentialStore.saveCredentials(creds.copy(
+      planTier = Some(valid.planTier),
+      cachedValidation = Some(newCached)
+    ))
+    valid
   }
 
   private def isFresh(cachedAt: String, minutes: Int): Boolean = {

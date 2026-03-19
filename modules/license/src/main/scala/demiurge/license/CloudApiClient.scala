@@ -76,17 +76,11 @@ object CloudApiClient {
       conn.setConnectTimeout(10000)
       conn.setReadTimeout(10000)
 
-      val hostname = try {
-        java.net.InetAddress.getLocalHost.getHostName
-      } catch {
-        case _: Exception => "unknown-host"
-      }
-
       val payload = io.circe.Json.obj(
         "fingerprint" -> fingerprint.asJson,
         "name" -> machineName.asJson,
         "platform" -> platform.asJson,
-        "hostname" -> hostname.asJson
+        "hostname" -> MachineFingerprint.hostname().asJson
       ).noSpaces
 
       conn.getOutputStream.write(payload.getBytes("UTF-8"))

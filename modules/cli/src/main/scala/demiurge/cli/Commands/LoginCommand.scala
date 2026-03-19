@@ -2,7 +2,7 @@ package demiurge.cli.Commands
 
 import demiurge.cli.ExitCodes
 import demiurge.cli.CommandParsers.{GlobalOpts, LoginCmd}
-import demiurge.license.{CloudApiClient, CredentialStore, Credentials, LicenseStatus}
+import demiurge.license.{CloudApiClient, CredentialStore, Credentials, LicenseStatus, MachineFingerprint}
 
 object LoginCommand {
 
@@ -31,13 +31,8 @@ object LoginCommand {
 
       case LicenseStatus.MachineNotActivated =>
         // Auto-activate then retry
-        val hostname = try {
-          java.net.InetAddress.getLocalHost.getHostName
-        } catch {
-          case _: Exception => "unknown-host"
-        }
         val platform = System.getProperty("os.name", "unknown")
-        CloudApiClient.activateMachine(key, fingerprint, hostname, platform) match {
+        CloudApiClient.activateMachine(key, fingerprint, MachineFingerprint.hostname(), platform) match {
           case Right(_) =>
             CredentialStore.saveCredentials(Credentials(
               licenseKey = key, userEmail = None,

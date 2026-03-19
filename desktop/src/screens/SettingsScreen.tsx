@@ -8,6 +8,8 @@ import { getDoctor } from '@/api/endpoints';
 import { queryKeys } from '@/lib/query-keys';
 import type { RunMode } from '@/api/types';
 import { cn } from '@/lib/utils';
+import { CLOUD_API_URL } from '@/lib/constants';
+import { planTierTextColor } from '@/components/PlanTierBadge';
 
 const RUN_MODES: RunMode[] = ['Full', 'Build', 'PlanOnly', 'VerifyOnly', 'InspectOnly'];
 
@@ -75,9 +77,9 @@ function AccountSection() {
   const handleManageBilling = useCallback(async () => {
     try {
       const { open } = await import('@tauri-apps/plugin-shell');
-      await open('https://demiurge.dev/billing');
+      await open(`${CLOUD_API_URL}/billing`);
     } catch {
-      window.open('https://demiurge.dev/billing', '_blank');
+      window.open(`${CLOUD_API_URL}/billing`, '_blank');
     }
   }, []);
 
@@ -90,16 +92,7 @@ function AccountSection() {
             {planTier && (
               <p className="text-xs text-muted-foreground">
                 Plan:{' '}
-                <span
-                  className={cn(
-                    'font-semibold uppercase',
-                    planTier === 'trial' && 'text-yellow-400',
-                    planTier === 'pro' && 'text-blue-400',
-                    planTier === 'starter' && 'text-green-400',
-                    planTier === 'team' && 'text-purple-400',
-                    planTier === 'enterprise' && 'text-indigo-400',
-                  )}
-                >
+                <span className={cn('font-semibold uppercase', planTierTextColor(planTier))}>
                   {planTier}
                 </span>
               </p>
