@@ -302,7 +302,7 @@ requirements:
 | Field | Required | Description |
 |-------|----------|-------------|
 | `id` | Yes | Unique requirement identifier |
-| `type` | Yes | Verifier type: `http`, `tcp`, `exec`, `log`, `state`, `browser_flow` |
+| `type` | Yes | Verifier type: `http`, `tcp`, `exec`, `log`, `state`, `browser_flow`, `agent_browser` |
 | `description` | Yes | Human-readable description |
 | `expected` | Yes | Expected outcome (URL for http, host:port for tcp, command for exec, etc.) |
 | `timeout_ms` | No | Verification timeout |
@@ -317,6 +317,7 @@ requirements:
 - **`log`** — Log content check. Searches for a pattern in service logs.
 - **`state`** — State assertion (custom logic).
 - **`browser_flow`** — Playwright browser flow with actions and assertions (requires `browserFlowSpec` in the requirement graph).
+- **`agent_browser`** — Agentic browser UI verification via Claude Code agent with Playwright MCP tools. The agent autonomously navigates, screenshots, and evaluates the UI against the requirement description.
 
 ## `selectors.yaml`
 

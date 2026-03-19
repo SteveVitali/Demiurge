@@ -290,6 +290,114 @@ The following artifact types may appear in artifact listings:
 | `PromptPackage` | Assembled prompt package for LLM |
 | `AttemptReport` | Per-attempt summary report |
 
+## Desktop API Extensions
+
+The following endpoints were added to support the desktop application. They follow the same JSON envelope convention.
+
+### `GET /runs`
+
+Paginated list of all runs.
+
+**Query parameters:**
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `offset` | `0` | Pagination offset |
+| `limit` | `20` | Page size |
+| `sort` | `created_at` | Sort field |
+| `order` | `desc` | Sort order: `asc` or `desc` |
+| `status` | None | Filter by run status |
+
+### `GET /runs/active`
+
+Get the currently active run (if any). Returns `404` if no run is active.
+
+### `GET /runs/{runId}/environment`
+
+Get the environment snapshot for a run, including all service statuses.
+
+### `GET /runs/{runId}/services`
+
+List service snapshots for a run (service ID, status, PID, container ID, log line count, startup mode).
+
+### `POST /runs/{runId}/services/{serviceId}/restart`
+
+Trigger a best-effort restart of a specific service.
+
+### `GET /runs/{runId}/agent/transcript`
+
+Get the agent transcript for the current or most recent agent session. Returns an array of transcript message objects.
+
+### `GET /runs/{runId}/agent/cost`
+
+Get agent cost/usage data (input tokens, output tokens, cost USD, number of turns, duration).
+
+### `GET /runs/{runId}/inspection`
+
+Get the repository inspection report for a run.
+
+### `GET /runs/{runId}/requirement-graph`
+
+Get the requirement graph (nodes and edges) for a run.
+
+### `GET /runs/{runId}/feature-plan`
+
+Get the feature plan for a build-mode run. Returns `404` if no plan exists.
+
+### `GET /runs/{runId}/attempts/{attemptNumber}/failure-packet`
+
+Get the failure analysis packet for a specific attempt.
+
+### `GET /runs/{runId}/attempts/{attemptNumber}/patches`
+
+List repair patches applied during a specific attempt.
+
+### `GET /config?repo=<path>`
+
+Get configuration files (manifest + requirements YAML) for a repository path, with provenance metadata.
+
+### `PUT /config/manifest`
+
+Write/update `demiurge.yaml`. **Request body:** `{ "repoPath": "<path>", "yaml": "<content>" }`
+
+### `PUT /config/requirements`
+
+Write/update `requirements.yaml`. **Request body:** `{ "repoPath": "<path>", "yaml": "<content>" }`
+
+### `POST /config/validate`
+
+Validate manifest and/or requirements YAML. **Request body:** `{ "manifest?": "<yaml>", "requirements?": "<yaml>" }`. Returns `{ "valid": bool, "errors": [...], "warnings": [...] }`.
+
+### `POST /config/init-smart`
+
+Trigger agent-based smart init. Returns `202 Accepted` immediately; progress is streamed via WebSocket. **Request body:** `{ "repoPath": "<path>", "taskHint?": "<text>" }`
+
+### `GET /system/doctor`
+
+Run prerequisite checks (git, node, docker, API key, SQLite) and return results.
+
+### `GET /system/preferences`
+
+Get stored user preferences (theme, font size, log line limit, default repo path, etc.).
+
+### `PUT /system/preferences`
+
+Update user preferences. **Request body:** JSON object with preference key/value pairs.
+
+### `GET /system/repos`
+
+List known repository paths from the task_runs table (most recent 20).
+
+## WebSocket Server
+
+In `serve` mode (desktop sidecar), a WebSocket server runs alongside the HTTP API (default port `19441`). It provides:
+
+- **Real-time event streaming** — same `SystemEvent` objects as SSE, broadcast to all connected clients
+- **Agent transcript streaming** — live agent progress, tool calls, and cost updates during active sessions
+- **Service log streaming** — live log lines from managed services via `LogStreamManager`
+
+Clients subscribe by connecting to `ws://127.0.0.1:19441`. Messages are JSON-encoded.
+
 ## Event Types
 
 Events streamed via SSE have these fields:

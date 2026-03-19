@@ -16,10 +16,11 @@ Demiurge orchestrates environment setup, requirement verification, failure analy
 - **Smart resume** — interrupted runs resume from the last completed phase, skipping already-persisted work; attempt counters continue where they left off
 - **Signal handling** — SIGINT/SIGTERM are handled gracefully with state persistence
 - **CI/CD** — GitHub Actions workflow builds all targets and runs all tests on every push and PR
+- **Desktop GUI** — native Tauri v2 + React desktop application with full CLI parity, real-time pipeline observability, artifact browsing, and interactive configuration editing
 
 ## Architecture Overview
 
-Demiurge is a **Scala 2.13 + TypeScript** dual-stack project built with **Bazel**.
+Demiurge is a **Scala 2.13 + TypeScript + Rust** triple-stack project built with **Bazel** (backend) and **Tauri v2** (desktop).
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -49,10 +50,10 @@ Demiurge is a **Scala 2.13 + TypeScript** dual-stack project built with **Bazel*
 
 | Module | Language | Purpose |
 |--------|----------|---------|
-| `modules/core-model` | Scala | 21 enums, 79+ case classes, JSON codecs (circe) |
+| `modules/core-model` | Scala | 22 enums, 79+ case classes, JSON codecs (circe) |
 | `modules/persistence` | Scala | SQLite WAL, migrations, repos (TaskRun, Attempt, Verdict, Event, Artifact, etc.) |
 | `modules/orchestrator` | Scala | Run state machine, transition manager, signal handler, timeout enforcer, resume manager |
-| `modules/cli` | Scala | 11 CLI commands, arg parsing, output formatting (human/JSON) |
+| `modules/cli` | Scala | 13 CLI commands, arg parsing, output formatting (human/JSON) |
 | `modules/local-api` | Scala | HTTP server (127.0.0.1:19440), REST + SSE event streaming |
 | `modules/manifest` | Scala | `demiurge.yaml` parser (SnakeYAML) |
 | `modules/config-resolver` | Scala | Layered config resolution (explicit YAML → cached inference), `ResolvedConfig` DTOs |
@@ -71,7 +72,8 @@ Demiurge is a **Scala 2.13 + TypeScript** dual-stack project built with **Bazel*
 | `modules/artifact-store` | Scala | Artifact sink (temp-then-rename, SHA-256, gzip), evidence collector |
 | `modules/worker-protocol` | Scala | JSON-RPC 2.0 client, WorkerProcessManager, message types |
 | `modules/policy` | Scala | Policy enforcement (stub) |
-| `worker/` | TypeScript | Playwright browser worker — stdio JSON-RPC 2.0 bridge |
+| `worker/` | TypeScript | Playwright browser worker — stdio JSON-RPC 2.0 bridge, Claude Agent SDK integration |
+| `desktop/` | TypeScript + Rust | Tauri v2 desktop GUI — React frontend, Zustand state, sidecar management |
 
 ## Prerequisites
 
@@ -151,6 +153,7 @@ See [docs/configuration.md](docs/configuration.md) for the full manifest schema 
 - [API Reference](docs/api-reference.md) — local HTTP API endpoints, SSE event streaming
 - [Configuration](docs/configuration.md) — `demiurge.yaml` manifest, `requirements.yaml`, `selectors.yaml`
 - [Development Guide](docs/development.md) — building, testing, contributing, module structure
+- [Desktop App Design](docs/design-desktop-app.md) — desktop GUI architecture, screens, component library, packaging
 
 ## License
 
