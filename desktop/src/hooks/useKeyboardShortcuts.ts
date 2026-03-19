@@ -11,6 +11,18 @@ export function useKeyboardShortcuts() {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // Don't intercept shortcuts when typing in form fields
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT' ||
+        target.isContentEditable
+      ) {
+        // Only allow Cmd+K (command palette) through from inputs
+        if (!(e.key === 'k' && (e.metaKey || e.ctrlKey))) return;
+      }
+
       const meta = e.metaKey || e.ctrlKey;
 
       // Cmd+K → Command Palette

@@ -1,8 +1,10 @@
-import { useState, useCallback, Suspense, lazy } from 'react';
-import { FolderOpen, Sparkles, CheckCircle, Loader2, ArrowRight, ArrowLeft } from 'lucide-react';
+import { useState, useCallback, useEffect, useRef, Suspense, lazy } from 'react';
+import { Sparkles, CheckCircle, Loader2, ArrowRight, ArrowLeft } from 'lucide-react';
 import { useAppStore } from '@/stores/app.store';
 import { smartInit, getConfig } from '@/api/endpoints';
 import { cn } from '@/lib/utils';
+import { DialogOverlay } from '@/components/shared/DialogOverlay';
+import { RepoPathField } from '@/components/shared/RepoPathField';
 
 const MonacoEditor = lazy(() => import('@monaco-editor/react'));
 
@@ -15,31 +17,43 @@ export function SmartInitWizard() {
   const setActiveRepo = useAppStore((s) => s.setActiveRepo);
 
   const [step, setStep] = useState<WizardStep>('select-repo');
-  const [repoPath, setRepoPath] = useState(activeRepoPath ?? '');
+  const [repoPath, setRepoPath] = useState('');
   const [taskHint, setTaskHint] = useState('');
   const [progress, setProgress] = useState<string[]>([]);
   const [generatedManifest, setGeneratedManifest] = useState('');
   const [generatedRequirements, setGeneratedRequirements] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const handleClose = useCallback(() => {
-    setOpen(false);
-    setStep('select-repo');
-    setProgress([]);
-    setError(null);
-    setGeneratedManifest('');
-    setGeneratedRequirements('');
-  }, [setOpen]);
-
-  const handleFolderPick = useCallback(async () => {
-    try {
-      const { open: openDialog } = await import('@tauri-apps/plugin-dialog');
-      const selected = await openDialog({ directory: true, multiple: false });
-      if (selected) setRepoPath(selected as string);
-    } catch {
-      // Tauri not available
+  // Clear polling interval on unmount or close
+  const clearPoll = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
     }
   }, []);
+
+  // Reset state when dialog opens
+  useEffect(() => {
+    if (open) {
+      setStep('select-repo');
+      setRepoPath(activeRepoPath ?? '');
+      setTaskHint('');
+      setProgress([]);
+      setGeneratedManifest('');
+      setGeneratedRequirements('');
+      setError(null);
+    } else {
+      clearPoll();
+    }
+  }, [open, activeRepoPath, clearPoll]);
+
+  useEffect(() => clearPoll, [clearPoll]);
+
+  const handleClose = useCallback(() => {
+    clearPoll();
+    setOpen(false);
+  }, [setOpen, clearPoll]);
 
   const handleStartInit = useCallback(async () => {
     if (!repoPath.trim()) {
@@ -55,28 +69,28 @@ export function SmartInitWizard() {
       setProgress((p) => [...p, 'Agent analyzing repository...']);
 
       // Poll for config to appear (agent writes it asynchronously)
-      let attempts = 0;
-      const maxAttempts = 60; // 60 seconds
-      const pollInterval = setInterval(async () => {
-        attempts++;
+      let pollCount = 0;
+      const maxPollCount = 60; // 60 seconds
+      pollRef.current = setInterval(async () => {
+        pollCount++;
         try {
           const config = await getConfig(repoPath.trim());
           if (config.manifestExists) {
-            clearInterval(pollInterval);
+            clearPoll();
             setGeneratedManifest(config.manifestYaml ?? '');
             setGeneratedRequirements(config.requirementsYaml ?? '');
             setProgress((p) => [...p, 'Configuration generated successfully!']);
             setStep('review');
-          } else if (attempts >= maxAttempts) {
-            clearInterval(pollInterval);
+          } else if (pollCount >= maxPollCount) {
+            clearPoll();
             setProgress((p) => [...p, 'Timed out waiting for config generation.']);
             setStep('review');
-          } else if (attempts % 5 === 0) {
-            setProgress((p) => [...p, `Still running... (${attempts}s)`]);
+          } else if (pollCount % 5 === 0) {
+            setProgress((p) => [...p, `Still running... (${pollCount}s)`]);
           }
         } catch {
-          if (attempts >= maxAttempts) {
-            clearInterval(pollInterval);
+          if (pollCount >= maxPollCount) {
+            clearPoll();
             setError('Timed out waiting for configuration');
             setStep('select-repo');
           }
@@ -86,7 +100,7 @@ export function SmartInitWizard() {
       setError(err instanceof Error ? err.message : 'Smart init failed');
       setStep('select-repo');
     }
-  }, [repoPath, taskHint]);
+  }, [repoPath, taskHint, clearPoll]);
 
   const handleConfirm = useCallback(() => {
     setActiveRepo(repoPath.trim());
@@ -97,11 +111,7 @@ export function SmartInitWizard() {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={handleClose}>
-      <div
-        className="w-full max-w-2xl rounded-lg border border-border bg-background p-6 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <DialogOverlay onClose={handleClose} maxWidth="max-w-2xl">
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-yellow-400" />
@@ -134,24 +144,7 @@ export function SmartInitWizard() {
               Select a repository to auto-configure. The agent will analyze the project structure
               and generate <code className="text-foreground">demiurge.yaml</code> and <code className="text-foreground">requirements.yaml</code>.
             </p>
-            <div>
-              <label className="mb-1 block text-sm font-medium">Repository Path</label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={repoPath}
-                  onChange={(e) => setRepoPath(e.target.value)}
-                  placeholder="/path/to/your/project"
-                  className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm"
-                />
-                <button
-                  onClick={() => void handleFolderPick()}
-                  className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent"
-                >
-                  <FolderOpen className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
+            <RepoPathField value={repoPath} onChange={setRepoPath} label="Repository Path" />
             {error && (
               <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
                 {error}
@@ -283,7 +276,6 @@ export function SmartInitWizard() {
             <p className="text-sm font-medium text-green-400">Configuration saved successfully!</p>
           </div>
         )}
-      </div>
-    </div>
+    </DialogOverlay>
   );
 }

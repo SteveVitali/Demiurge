@@ -1,10 +1,6 @@
-import { useState, useCallback, useRef, useEffect, Suspense, lazy } from 'react';
-import { FileText, Eye } from 'lucide-react';
+import { useCallback } from 'react';
 import { validateConfig } from '@/api/endpoints';
-import type { ConfigValidationIssue } from '@/api/types';
-import { cn } from '@/lib/utils';
-
-const MonacoEditor = lazy(() => import('@monaco-editor/react'));
+import { YamlEditorPanel } from '@/components/shared/YamlEditorPanel';
 
 interface ManifestEditorProps {
   yaml: string;
@@ -13,103 +9,22 @@ interface ManifestEditorProps {
 }
 
 export function ManifestEditor({ yaml, onChange, readOnly }: ManifestEditorProps) {
-  const [viewMode, setViewMode] = useState<'yaml' | 'form'>('yaml');
-  const [errors, setErrors] = useState<ConfigValidationIssue[]>([]);
-  const [warnings, setWarnings] = useState<ConfigValidationIssue[]>([]);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handleChange = useCallback((value: string | undefined) => {
-    const newYaml = value ?? '';
-    onChange(newYaml);
-
-    // Debounced validation (500ms)
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      void validateConfig(newYaml).then((result) => {
-        setErrors(result.errors.filter((e) => e.field === 'manifest'));
-        setWarnings(result.warnings.filter((w) => w.field === 'manifest'));
-      }).catch(() => {});
-    }, 500);
-  }, [onChange]);
-
-  useEffect(() => {
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
+  const validate = useCallback(async (content: string) => {
+    const result = await validateConfig(content);
+    return {
+      errors: result.errors.filter((e) => e.field === 'manifest'),
+      warnings: result.warnings.filter((w) => w.field === 'manifest'),
     };
   }, []);
 
   return (
-    <div className="flex flex-col gap-3">
-      {/* View Mode Toggle */}
-      <div className="flex items-center gap-2">
-        <button
-          onClick={() => setViewMode('yaml')}
-          className={cn(
-            'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs',
-            viewMode === 'yaml' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          <FileText className="h-3.5 w-3.5" />
-          YAML View
-        </button>
-        <button
-          onClick={() => setViewMode('form')}
-          className={cn(
-            'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs',
-            viewMode === 'form' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          <Eye className="h-3.5 w-3.5" />
-          Form View
-        </button>
-      </div>
-
-      {/* Editor */}
-      {viewMode === 'yaml' ? (
-        <div className="overflow-hidden rounded-md border border-border">
-          <Suspense fallback={<div className="flex h-96 items-center justify-center text-sm text-muted-foreground">Loading editor...</div>}>
-            <MonacoEditor
-              height="400px"
-              language="yaml"
-              theme="vs-dark"
-              value={yaml}
-              onChange={handleChange}
-              options={{
-                readOnly,
-                minimap: { enabled: false },
-                fontSize: 13,
-                lineNumbers: 'on',
-                scrollBeyondLastLine: false,
-                wordWrap: 'on',
-                tabSize: 2,
-              }}
-            />
-          </Suspense>
-        </div>
-      ) : (
-        <ManifestFormView yaml={yaml} readOnly={readOnly} />
-      )}
-
-      {/* Validation Errors */}
-      {errors.length > 0 && (
-        <div className="flex flex-col gap-1">
-          {errors.map((e, i) => (
-            <div key={i} className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs text-red-400">
-              {e.line ? `Line ${e.line}: ` : ''}{e.message}
-            </div>
-          ))}
-        </div>
-      )}
-      {warnings.length > 0 && (
-        <div className="flex flex-col gap-1">
-          {warnings.map((w, i) => (
-            <div key={i} className="rounded-md border border-yellow-500/30 bg-yellow-500/10 px-3 py-1.5 text-xs text-yellow-400">
-              {w.line ? `Line ${w.line}: ` : ''}{w.message}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+    <YamlEditorPanel
+      yaml={yaml}
+      onChange={onChange}
+      readOnly={readOnly}
+      validate={validate}
+      formView={<ManifestFormView yaml={yaml} readOnly={readOnly} />}
+    />
   );
 }
 
