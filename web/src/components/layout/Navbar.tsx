@@ -38,6 +38,7 @@ export function Navbar() {
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-text-secondary hover:text-text-primary transition-colors"
+                aria-label="Demiurge on GitHub"
               >
                 <Github className="h-5 w-5" />
               </a>

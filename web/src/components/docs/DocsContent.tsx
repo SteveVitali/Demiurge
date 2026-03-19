@@ -4,6 +4,7 @@ import { type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
+import { slugify } from '@/lib/slugify';
 
 interface DocsContentProps {
   content: string;
@@ -19,13 +20,6 @@ function extractText(node: ReactNode): string {
     return extractText(element.props.children);
   }
   return '';
-}
-
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^\w\s-]/g, '')
-    .replace(/\s+/g, '-');
 }
 
 export function DocsContent({ content }: DocsContentProps) {

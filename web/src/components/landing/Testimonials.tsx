@@ -1,7 +1,7 @@
 'use client';
 
-import { motion } from 'framer-motion';
 import { Star } from 'lucide-react';
+import { FadeIn } from '@/components/ui/FadeIn';
 
 const TESTIMONIALS = [
   {
@@ -25,30 +25,22 @@ export function Testimonials() {
   return (
     <section className="py-24">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <motion.div
-          className="text-center mb-16"
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-        >
+        <FadeIn className="text-center mb-16">
           <h2 className="text-3xl sm:text-4xl font-bold text-text-primary">
             Trusted by developers
           </h2>
           <p className="mt-4 text-lg text-text-secondary">
             See what early adopters are saying about Demiurge.
           </p>
-        </motion.div>
+        </FadeIn>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           {TESTIMONIALS.map((testimonial, index) => (
-            <motion.div
+            <FadeIn
               key={index}
               className="rounded-xl border border-border bg-surface p-6"
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.4, delay: index * 0.1 }}
+              duration={0.4}
+              delay={index * 0.1}
             >
               <div className="flex gap-1 mb-4">
                 {Array.from({ length: 5 }).map((_, i) => (
@@ -66,7 +58,7 @@ export function Testimonials() {
                   {testimonial.role}
                 </div>
               </div>
-            </motion.div>
+            </FadeIn>
           ))}
         </div>
       </div>

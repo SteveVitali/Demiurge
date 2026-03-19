@@ -1,7 +1,7 @@
 'use client';
 
-import { motion } from 'framer-motion';
 import { Settings, Play, Rocket } from 'lucide-react';
+import { FadeIn } from '@/components/ui/FadeIn';
 
 const STEPS = [
   {
@@ -31,30 +31,22 @@ export function HowItWorks() {
   return (
     <section className="py-24 bg-surface/50">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <motion.div
-          className="text-center mb-16"
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-        >
+        <FadeIn className="text-center mb-16">
           <h2 className="text-3xl sm:text-4xl font-bold text-text-primary">
             How it works
           </h2>
           <p className="mt-4 text-lg text-text-secondary max-w-2xl mx-auto">
             Three steps from broken to shipped. Demiurge handles the rest.
           </p>
-        </motion.div>
+        </FadeIn>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 lg:gap-12">
           {STEPS.map((step, index) => (
-            <motion.div
+            <FadeIn
               key={step.title}
               className="relative"
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5, delay: index * 0.15 }}
+              duration={0.5}
+              delay={index * 0.15}
             >
               {/* Connector line (desktop only) */}
               {index < STEPS.length - 1 && (
@@ -78,7 +70,7 @@ export function HowItWorks() {
                   {step.code}
                 </code>
               </div>
-            </motion.div>
+            </FadeIn>
           ))}
         </div>
       </div>

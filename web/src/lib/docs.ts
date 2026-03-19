@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import matter from 'gray-matter';
+import { slugify } from './slugify';
 
 const DOCS_DIR = path.join(process.cwd(), '..', 'docs');
 
@@ -62,10 +63,7 @@ export function extractToc(markdown: string): TocEntry[] {
   while ((match = headingRegex.exec(markdown)) !== null) {
     const level = match[1].length;
     const text = match[2].trim();
-    const id = text
-      .toLowerCase()
-      .replace(/[^\w\s-]/g, '')
-      .replace(/\s+/g, '-');
+    const id = slugify(text);
     entries.push({ id, text, level });
   }
 

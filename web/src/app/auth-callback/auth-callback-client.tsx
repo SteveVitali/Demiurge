@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useUser } from '@clerk/nextjs';
 import { Copy, Check } from 'lucide-react';
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 
 /**
  * Client component for OAuth callback. After Clerk auth completes:
@@ -12,7 +13,7 @@ import { Copy, Check } from 'lucide-react';
  */
 export function AuthCallbackClient() {
   const { user, isLoaded } = useUser();
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyToClipboard();
 
   const licenseKey = isLoaded
     ? ((user?.publicMetadata as Record<string, string>)?.license_key ?? '')
@@ -31,9 +32,7 @@ export function AuthCallbackClient() {
   }, [isLoaded, user]);
 
   function handleCopy() {
-    navigator.clipboard.writeText(licenseKey);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    if (licenseKey) copy(licenseKey);
   }
 
   return (

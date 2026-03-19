@@ -1,6 +1,6 @@
 'use client';
 
-import { motion } from 'framer-motion';
+import { FadeIn } from '@/components/ui/FadeIn';
 import {
   ShieldCheck,
   Bot,
@@ -67,30 +67,22 @@ export function FeaturesGrid() {
   return (
     <section className="py-24">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <motion.div
-          className="text-center mb-16"
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-        >
+        <FadeIn className="text-center mb-16">
           <h2 className="text-3xl sm:text-4xl font-bold text-text-primary">
             Everything you need to ship with confidence
           </h2>
           <p className="mt-4 text-lg text-text-secondary max-w-2xl mx-auto">
             A complete automation platform that boots, verifies, and repairs your applications.
           </p>
-        </motion.div>
+        </FadeIn>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {FEATURES.map((feature, index) => (
-            <motion.div
+            <FadeIn
               key={feature.title}
               className="rounded-xl border border-border bg-surface p-6 hover:border-border-light transition-colors"
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.4, delay: index * 0.05 }}
+              duration={0.4}
+              delay={index * 0.05}
             >
               <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary/10 text-primary mb-4">
                 <feature.icon className="h-5 w-5" />
@@ -101,7 +93,7 @@ export function FeaturesGrid() {
               <p className="text-sm text-text-secondary leading-relaxed">
                 {feature.description}
               </p>
-            </motion.div>
+            </FadeIn>
           ))}
         </div>
       </div>

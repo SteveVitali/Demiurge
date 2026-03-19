@@ -1,21 +1,14 @@
 'use client';
 
-import { useState } from 'react';
 import { Copy, Check, Key } from 'lucide-react';
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 
 interface LicenseKeyCardProps {
   licenseKey: string | null;
 }
 
 export function LicenseKeyCard({ licenseKey }: LicenseKeyCardProps) {
-  const [copied, setCopied] = useState(false);
-
-  function handleCopy() {
-    if (!licenseKey) return;
-    navigator.clipboard.writeText(licenseKey);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
+  const { copied, copy } = useCopyToClipboard();
 
   return (
     <div className="rounded-xl border border-border bg-surface p-6">
@@ -29,7 +22,7 @@ export function LicenseKeyCard({ licenseKey }: LicenseKeyCardProps) {
             {licenseKey}
           </code>
           <button
-            onClick={handleCopy}
+            onClick={() => licenseKey && copy(licenseKey)}
             className="shrink-0 rounded-lg border border-border p-2.5 text-text-muted hover:text-text-primary hover:border-border-light transition-colors cursor-pointer"
             aria-label="Copy license key"
           >

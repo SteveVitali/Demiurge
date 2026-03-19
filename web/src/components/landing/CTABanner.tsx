@@ -1,20 +1,15 @@
 'use client';
 
 import Link from 'next/link';
-import { motion } from 'framer-motion';
 import { ArrowRight, Github } from 'lucide-react';
+import { FadeIn } from '@/components/ui/FadeIn';
+import { GITHUB_URL } from '@/components/layout/nav-config';
 
 export function CTABanner() {
   return (
     <section className="py-24">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <motion.div
-          className="relative rounded-2xl border border-border bg-surface overflow-hidden"
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-        >
+        <FadeIn className="relative rounded-2xl border border-border bg-surface overflow-hidden">
           {/* Background gradient */}
           <div className="absolute inset-0 -z-10">
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] bg-primary/8 rounded-full blur-[100px]" />
@@ -36,7 +31,7 @@ export function CTABanner() {
                 <ArrowRight className="h-4 w-4" />
               </Link>
               <a
-                href="https://github.com/SteveVitali/Demiurge"
+                href={GITHUB_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 rounded-lg border border-border px-6 py-3 text-base font-medium text-text-secondary hover:text-text-primary hover:border-border-light transition-colors"
@@ -46,7 +41,7 @@ export function CTABanner() {
               </a>
             </div>
           </div>
-        </motion.div>
+        </FadeIn>
       </div>
     </section>
   );

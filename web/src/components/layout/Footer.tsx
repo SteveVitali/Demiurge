@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { Hexagon, Github } from 'lucide-react';
+import { GITHUB_URL } from './nav-config';
 
 const PRODUCT_LINKS = [
   { href: '/download', label: 'Download' },
@@ -15,9 +16,9 @@ const COMPANY_LINKS = [
 ];
 
 const COMMUNITY_LINKS = [
-  { href: 'https://github.com/SteveVitali/Demiurge', label: 'GitHub', external: true },
-  { href: 'https://github.com/SteveVitali/Demiurge/releases', label: 'Changelog', external: true },
-  { href: 'https://github.com/SteveVitali/Demiurge/issues', label: 'Issues', external: true },
+  { href: GITHUB_URL, label: 'GitHub', external: true },
+  { href: `${GITHUB_URL}/releases`, label: 'Changelog', external: true },
+  { href: `${GITHUB_URL}/issues`, label: 'Issues', external: true },
 ];
 
 export function Footer() {
@@ -36,10 +37,11 @@ export function Footer() {
             </p>
             <div className="flex items-center gap-4 mt-4">
               <a
-                href="https://github.com/SteveVitali/Demiurge"
+                href={GITHUB_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-text-muted hover:text-text-primary transition-colors"
+                aria-label="Demiurge on GitHub"
               >
                 <Github className="h-5 w-5" />
               </a>
