@@ -10,19 +10,10 @@ import {
   Position,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import type { ServiceSnapshot, ServiceKind } from '@/api/types';
+import type { ServiceSnapshot } from '@/api/types';
 import { ServiceKindIcon } from '@/components/shared/ServiceKindIcon';
 import { StatusBadge } from '@/components/shared/StatusBadge';
-
-function inferServiceKind(svc: ServiceSnapshot): ServiceKind {
-  const id = svc.serviceId.toLowerCase();
-  if (id.includes('mongo') || id.includes('postgres') || id.includes('mysql') || id.includes('sqlite')) return 'Database';
-  if (id.includes('redis') || id.includes('cache') || id.includes('memcache')) return 'Cache';
-  if (id.includes('queue') || id.includes('rabbit') || id.includes('kafka')) return 'Queue';
-  if (id.includes('client') || id.includes('frontend') || id.includes('web') || id.includes('ui')) return 'Frontend';
-  if (id.includes('worker') || id.includes('cron') || id.includes('job')) return 'Worker';
-  return 'Api';
-}
+import { inferServiceKind, isInfraServiceKind } from '@/lib/service-utils';
 
 // Desktop Phase 3 — §9.5: ReactFlow-based service topology graph.
 // Nodes = services with health indicators, edges = dependency relationships.
@@ -79,24 +70,18 @@ export function ServiceTopology({ services, selectedServiceId, onSelectService }
   }, [services, selectedServiceId, onSelectService]);
 
   const edges: Edge[] = useMemo(() => {
-    // Infer simple edges: databases/caches are depended upon by API services
-    const dbServices = services.filter(s =>
-      s.startupMode?.toLowerCase().includes('docker') ||
-      s.serviceId.toLowerCase().includes('mongo') ||
-      s.serviceId.toLowerCase().includes('postgres') ||
-      s.serviceId.toLowerCase().includes('redis') ||
-      s.serviceId.toLowerCase().includes('mysql')
-    );
-    const apiServices = services.filter(s => !dbServices.includes(s));
+    // Infer dependency edges: databases/caches are depended upon by API/frontend services
+    const infraServices = services.filter(s => isInfraServiceKind(inferServiceKind(s)));
+    const appServices = services.filter(s => !isInfraServiceKind(inferServiceKind(s)));
 
     const result: Edge[] = [];
-    for (const api of apiServices) {
-      for (const db of dbServices) {
+    for (const app of appServices) {
+      for (const infra of infraServices) {
         result.push({
-          id: `${db.serviceId}->${api.serviceId}`,
-          source: db.serviceId,
-          target: api.serviceId,
-          animated: api.status === 'RunningHealthy',
+          id: `${infra.serviceId}->${app.serviceId}`,
+          source: infra.serviceId,
+          target: app.serviceId,
+          animated: app.status === 'RunningHealthy',
           style: { stroke: 'hsl(var(--muted-foreground))' },
         });
       }

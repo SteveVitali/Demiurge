@@ -25,8 +25,14 @@ pub async fn get_backend_status(sidecar: State<'_, Arc<SidecarManager>>) -> Resu
 #[tauri::command]
 pub async fn open_folder_dialog(app: AppHandle) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
-    let picked = app.dialog().file().blocking_pick_folder();
-    Ok(picked.map(|p| p.to_string()))
+    use tokio::sync::oneshot;
+
+    let (tx, rx) = oneshot::channel();
+    app.dialog().file().pick_folder(move |folder| {
+        let _ = tx.send(folder.map(|p| p.to_string()));
+    });
+    rx.await.map_err(|_| "Dialog cancelled".to_string())?
+        .map_or(Ok(None), |path| Ok(Some(path)))
 }
 
 // Desktop Phase 5 — §12.5: Create a detached log window for a specific service.

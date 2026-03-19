@@ -64,11 +64,13 @@ export function useKeyboardShortcuts() {
       }
 
       // Cmd+R → Resume interrupted run (§12.7)
+      // Resumable statuses match backend Routes.scala resumableStatuses
       if (meta && e.key === 'r') {
         e.preventDefault();
         const activeRunId = useAppStore.getState().activeRunId;
         const status = useRunStore.getState().currentStatus;
-        if (activeRunId && (status === 'Interrupted' || status === 'ReadyToVerify')) {
+        const resumable = ['Interrupted', 'ReadyToVerify', 'AnalyzingFailure', 'PlanningRepair'];
+        if (activeRunId && status && resumable.includes(status)) {
           void resumeRun(activeRunId);
         }
         return;

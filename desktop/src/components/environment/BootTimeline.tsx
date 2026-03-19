@@ -1,27 +1,28 @@
-import type { ServiceSnapshot } from '@/api/types';
+import type { ServiceSnapshot, ServiceKind } from '@/api/types';
 import { StatusBadge } from '@/components/shared/StatusBadge';
+import { inferServiceKind } from '@/lib/service-utils';
 
 // Desktop Phase 3 — §9.5: Horizontal timeline of service boot sequence.
+// Shows services in dependency order: infrastructure first, then API, then frontend.
 
 interface BootTimelineProps {
   services: ServiceSnapshot[];
 }
 
-const STATUS_ORDER: Record<string, number> = {
-  RunningHealthy: 3,
-  RunningUnhealthy: 2,
-  Starting: 1,
-  Pending: 0,
-  Degraded: 2,
-  Stopped: -1,
-  Failed: -1,
+const KIND_BOOT_ORDER: Record<ServiceKind, number> = {
+  Database: 0,
+  Cache: 1,
+  Queue: 2,
+  Worker: 3,
+  Api: 4,
+  Frontend: 5,
 };
 
 export function BootTimeline({ services }: BootTimelineProps) {
   if (services.length === 0) return null;
 
   const sorted = [...services].sort((a, b) => {
-    return (STATUS_ORDER[b.status] ?? 0) - (STATUS_ORDER[a.status] ?? 0);
+    return (KIND_BOOT_ORDER[inferServiceKind(a)] ?? 4) - (KIND_BOOT_ORDER[inferServiceKind(b)] ?? 4);
   });
 
   return (
