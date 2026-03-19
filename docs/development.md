@@ -64,7 +64,7 @@ Demiurge/
 bazel build //...
 ```
 
-This builds all 20+ Scala modules. Bazel handles dependency resolution, Scala compilation, and Java runtime automatically.
+This builds all 46 targets across 22 Scala modules. Bazel handles dependency resolution, Scala compilation, and Java runtime automatically.
 
 ### Build a specific module
 
@@ -92,7 +92,7 @@ The worker compiles to `worker/dist/`.
 bazel test //...
 ```
 
-This runs 19+ test targets across all modules. Tests use MUnit 1.0.3.
+This runs 22 test targets across all modules. Tests use MUnit 1.0.3.
 
 ### Run tests for a specific module
 

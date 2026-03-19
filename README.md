@@ -9,7 +9,8 @@ Demiurge orchestrates environment setup, requirement verification, failure analy
 - **Verifier-first architecture** — requirements are compiled into executable verifiers (HTTP, TCP, exec, log, state, browser flow) that produce structured verdicts
 - **Automated environment management** — boots services via scripts or Docker Compose, runs readiness probes, seeds fixtures
 - **Browser automation** — Playwright-based browser worker (TypeScript) for UI flow verification, screenshot capture, DOM/accessibility snapshots
-- **LLM-powered repair** — when verification fails, Demiurge analyzes the failure and proposes code patches via Claude API
+- **Agentic repair via Claude Code** — when verification fails, Demiurge delegates to the Claude Code agent (multi-turn, with file editing and shell access) to fix the issue; legacy single-shot LLM patch repair available as fallback
+- **Auto-configuration** — when no `demiurge.yaml` exists, `demiurge run` automatically invokes the Claude Code agent to generate configuration files tailored to your project
 - **Isolated execution** — each run operates in a dedicated git worktree with its own SQLite database, artifacts, and lock file
 - **Structured observability** — JSON event stream, SSE-capable local API, structured logging, full artifact capture
 - **Smart resume** — interrupted runs resume from the last completed phase, skipping already-persisted work; attempt counters continue where they left off
@@ -35,7 +36,7 @@ Demiurge is a **Scala 2.13 + TypeScript** dual-stack project built with **Bazel*
 │         Runtime Supervisor      │  Worker Protocol  │
 │   (boot, teardown, fixtures)    │  (JSON-RPC 2.0)   │
 ├─────────────────────────────────┼───────────────────┤
-│  Repair API · Claude Backend    │  Browser Worker   │
+│  Agent Backend · Repair API     │  Browser Worker   │
 │  Failure Analysis · Inference   │  (TypeScript/     │
 │  Artifact Store · Evidence      │   Playwright)     │
 ├─────────────────────────────────┴───────────────────┤
@@ -138,8 +139,10 @@ See [docs/configuration.md](docs/configuration.md) for the full manifest schema 
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `ANTHROPIC_API_KEY` | For repair | Claude API key for LLM-powered failure analysis and repair |
-| `DEMIURGE_WORKER_PATH` | For `--smart` init | Path to the Demiurge TypeScript worker (auto-detected if installed) |
+| `ANTHROPIC_API_KEY` | For repair/init | Claude API key — enables agent backend (Claude Code) for repair and auto-config generation |
+| `DEMIURGE_WORKER_PATH` | For agent backend | Path to the Demiurge TypeScript worker entry point (auto-detected if installed) |
+| `DEMIURGE_AGENT_BACKEND` | No | Set to `none` to disable agent backend and use legacy LLM patch repair |
+| `CLAUDE_CODE_EXECUTABLE` | No | Path to the `claude` CLI binary (auto-detected via `which claude`) |
 
 ## Documentation
 

@@ -134,7 +134,8 @@ Entry point: `demiurge.cli.Main` → `CliApp.run(args)`.
 
 | Command | Description |
 |---------|-------------|
-| `run` | Execute a full verification run |
+| `run` | Execute a full verification run (auto-generates config if missing) |
+| `build` | Build mode — generate code from a task description (sugar for `run --mode build`) |
 | `plan` | Plan without executing |
 | `resume` | Resume an interrupted run |
 | `status` | Show run status or list recent runs |
@@ -197,18 +198,29 @@ Layered configuration resolution:
 
 ### Agent Backend (`modules/agent-backend`)
 
-Bridge between the Scala orchestrator and the TypeScript worker for agentic operations:
+Bridge between the Scala orchestrator and the TypeScript worker for agentic operations. **This is the default repair mechanism** when `ANTHROPIC_API_KEY` is set:
 
 - **AgentBackend** trait — defines the interface for agent-powered code generation and repair
+- **ClaudeAgentBackend** — concrete implementation that delegates to the Claude Code SDK via the TypeScript worker
 - **AgentExecutor** — sends `agent/execute` JSON-RPC requests to the worker, which runs Claude Agent SDK `query()` with MCP tools for verification, service health checks, and log access
+- **AgentToolRpcHandlers** — handles callback notifications from the worker (verify_requirements, restart_service, get_service_logs, check_service_health, get_requirement_details) and agent progress events
+- **AgentSystemPromptBuilder** — builds system/user prompts with failure context for the agent
 
 ### Repair Pipeline
+
+**Primary path (Agent Backend — default when `ANTHROPIC_API_KEY` is set):**
+
+The Claude Code agent receives failure context and has multi-turn access to the codebase with file editing, shell commands, and Demiurge MCP tools (verify, restart, logs). It iterates autonomously until the fix is applied.
+
+**Legacy fallback (when no worker is available):**
 
 1. **FailureAnalyzer** (`modules/failure-analysis`) — LLM-backed analysis with rule-based fallback (confidence 0.3)
 2. **RepairBackend** trait (`modules/repair-api`) — sync interface receiving `FailurePacket`, returning `PatchProposal`
 3. **ClaudeRepairBackend** (`modules/repair-claude`) — Claude API client, prompt builder, JSON response parser
 4. **PatchApplier** (`modules/repair-api`) — applies file edits, new files, deletions to worktree; stages via `git add`
 5. **RepairExecutor** (`modules/repair-api`) — orchestrates packet → backend → apply
+
+Set `DEMIURGE_AGENT_BACKEND=none` to force the legacy path.
 
 ### Inference Service (`modules/inference`)
 
@@ -243,12 +255,9 @@ All LLM calls go through `InferenceService`:
    d. EnvironmentPlanner: inspection + graph → RuntimePlan
    d. RuntimeSupervisor: boots services, runs readiness probes, seeds fixtures
    e. VerificationEngine: generates verifiers → executes → aggregates verdicts
-   f. If failed + repair backend available:
-      - FailureAnalyzer produces FailurePacket
-      - RepairBackend proposes PatchProposal
-      - PatchApplier writes changes to worktree
-      - RuntimeSupervisor restarts environment
-      - VerificationEngine re-runs verification
+   f. If failed + agent/repair backend available:
+      - Agent backend (default): Claude Code agent edits files, restarts services, re-verifies autonomously
+      - Legacy fallback: FailureAnalyzer → RepairBackend → PatchApplier → restart → re-verify
 5. Final status persisted (Succeeded/Exhausted)
 6. Final report artifact written
 7. Worker shutdown → API server stop → lock released

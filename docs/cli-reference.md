@@ -57,10 +57,13 @@ demiurge run --task <description> [flags]
 2. Creates isolated git worktree
 3. Acquires file lock
 4. Persists `TaskRun` to SQLite
-5. Starts local API server on `127.0.0.1:19440`
-6. Runs orchestration pipeline (inspect → compile → plan → boot → verify → repair if needed)
-7. Writes final report artifact
-8. Cleans up (worker shutdown, lock release)
+5. **Auto-config:** If no `demiurge.yaml` exists and `ANTHROPIC_API_KEY` is set, automatically runs smart init to generate configuration
+6. Starts local API server on `127.0.0.1:19440`
+7. Runs orchestration pipeline (inspect → compile → plan → boot → verify → repair if needed)
+8. Writes final report artifact
+9. Cleans up (worker shutdown, lock release)
+
+**Repair backend:** When `ANTHROPIC_API_KEY` is set and a worker is available, the Claude Code agent (multi-turn, agentic) is used for repair by default. Set `DEMIURGE_AGENT_BACKEND=none` to fall back to legacy single-shot LLM patch repair.
 
 ### `plan`
 
@@ -220,7 +223,9 @@ demiurge init [flags]
 
 **Without `--smart`:** Performs deterministic repo inspection (no LLM) to detect app type (frontend, api, fullstack), services, ports, database dependencies, and Docker Compose presence. Generates scaffold YAML files with TODO markers for manual refinement.
 
-**With `--smart`:** Launches an agentic session via the TypeScript worker and Claude Code CLI. The agent inspects the repository, understands its structure, and generates complete `demiurge.yaml` and `requirements.yaml` files tailored to the project. Requires `DEMIURGE_WORKER_PATH` environment variable or the Demiurge worker to be installed.
+**With `--smart`:** Launches an agentic session via the TypeScript worker and Claude Code CLI. The agent inspects the repository, understands its structure, and generates complete `demiurge.yaml` and `requirements.yaml` files tailored to the project. Requires `ANTHROPIC_API_KEY` and a worker (via `DEMIURGE_WORKER_PATH` or auto-detected).
+
+**Auto-triggered:** When `demiurge run` is invoked and no `demiurge.yaml` exists, `--smart` init runs automatically if `ANTHROPIC_API_KEY` is set. Generated files are also copied back to the original repo for future runs.
 
 If existing config is found (explicit or cached), the deterministic path loads and displays it instead of regenerating. Use `--force` to regenerate.
 
