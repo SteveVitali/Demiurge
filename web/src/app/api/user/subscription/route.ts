@@ -50,10 +50,10 @@ export async function GET() {
     let usesThisPeriod = 0;
     const maxUses = getPlanMaxUses(planTier);
 
-    if (keygenLicenseId) {
+    if (keygenLicenseId && publicMeta.license_key) {
       try {
         const validation = await keygen.validateLicenseKey(
-          publicMeta.license_key!,
+          publicMeta.license_key,
         );
         usesThisPeriod = validation.metadata.uses ?? 0;
       } catch {

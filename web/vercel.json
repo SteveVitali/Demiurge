@@ -8,7 +8,7 @@
       "headers": [
         {
           "key": "Access-Control-Allow-Origin",
-          "value": "https://demiurge.dev"
+          "value": "*"
         },
         {
           "key": "Access-Control-Allow-Methods",

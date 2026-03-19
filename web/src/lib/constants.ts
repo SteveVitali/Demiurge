@@ -39,16 +39,6 @@ export function getPlanConfigMap(): Record<PlanTier, PlanConfig> {
   ) as Record<PlanTier, PlanConfig>;
 }
 
-/** @deprecated Use getPlanConfig() or getPlanConfigMap() instead. */
-export const PLAN_CONFIG = new Proxy({} as Record<PlanTier, PlanConfig>, {
-  get(_, prop: string) {
-    if (PLAN_TIERS.includes(prop as PlanTier)) {
-      return getPlanConfig(prop as PlanTier);
-    }
-    return undefined;
-  },
-});
-
 /** Stripe price ID → Keygen policy ID */
 export function getPriceToPolicyMap(): Record<string, string> {
   return {

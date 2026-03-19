@@ -17,7 +17,7 @@ export function AuthCallbackClient() {
     const licenseKey = (user.publicMetadata as Record<string, string>)?.license_key;
     const scheme = process.env.NEXT_PUBLIC_DESKTOP_DEEP_LINK_SCHEME ?? 'demiurge';
 
-    const deepLinkUrl = `${scheme}://auth-callback?user_id=${user.id}&license_key=${licenseKey ?? ''}`;
+    const deepLinkUrl = `${scheme}://auth-callback?user_id=${encodeURIComponent(user.id)}&license_key=${encodeURIComponent(licenseKey ?? '')}`;
     window.location.href = deepLinkUrl;
   }, [isLoaded, user]);
 

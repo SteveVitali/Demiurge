@@ -21,7 +21,6 @@ vi.mock('@/lib/env', () => ({
 
 import {
   PLAN_TIERS,
-  PLAN_CONFIG,
   getPlanConfig,
   getPlanConfigMap,
   getPriceToPolicyMap,
@@ -41,46 +40,45 @@ describe('PLAN_TIERS', () => {
   });
 });
 
-describe('PLAN_CONFIG', () => {
-  it('maps trial to correct limits', () => {
-    expect(PLAN_CONFIG.trial.maxRuns).toBe(5);
-    expect(PLAN_CONFIG.trial.maxMachines).toBe(1);
-    expect(PLAN_CONFIG.trial.maxTokens).toBe(50_000);
-    expect(PLAN_CONFIG.trial.keygenPolicyId).toBe('policy-trial');
-  });
-
-  it('maps starter to correct limits', () => {
-    expect(PLAN_CONFIG.starter.maxRuns).toBe(50);
-    expect(PLAN_CONFIG.starter.maxMachines).toBe(2);
-    expect(PLAN_CONFIG.starter.maxTokens).toBe(500_000);
-  });
-
-  it('maps pro to correct limits', () => {
-    expect(PLAN_CONFIG.pro.maxRuns).toBe(200);
-    expect(PLAN_CONFIG.pro.maxMachines).toBe(3);
-    expect(PLAN_CONFIG.pro.maxTokens).toBe(2_000_000);
-  });
-
-  it('maps team to correct limits', () => {
-    expect(PLAN_CONFIG.team.maxRuns).toBe(150);
-    expect(PLAN_CONFIG.team.maxMachines).toBe(5);
-    expect(PLAN_CONFIG.team.maxTokens).toBe(1_500_000);
-  });
-
-  it('maps enterprise to unlimited (-1)', () => {
-    expect(PLAN_CONFIG.enterprise.maxRuns).toBe(-1);
-    expect(PLAN_CONFIG.enterprise.maxMachines).toBe(-1);
-    expect(PLAN_CONFIG.enterprise.maxTokens).toBe(-1);
-  });
-});
-
 describe('getPlanConfig', () => {
-  it('returns full config for a tier', () => {
+  it('returns trial config with correct limits and policy', () => {
+    const config = getPlanConfig('trial');
+    expect(config.keygenPolicyId).toBe('policy-trial');
+    expect(config.maxRuns).toBe(5);
+    expect(config.maxMachines).toBe(1);
+    expect(config.maxTokens).toBe(50_000);
+  });
+
+  it('returns starter config', () => {
     const config = getPlanConfig('starter');
     expect(config.keygenPolicyId).toBe('policy-starter');
     expect(config.maxRuns).toBe(50);
     expect(config.maxMachines).toBe(2);
     expect(config.maxTokens).toBe(500_000);
+  });
+
+  it('returns pro config', () => {
+    const config = getPlanConfig('pro');
+    expect(config.keygenPolicyId).toBe('policy-pro');
+    expect(config.maxRuns).toBe(200);
+    expect(config.maxMachines).toBe(3);
+    expect(config.maxTokens).toBe(2_000_000);
+  });
+
+  it('returns team config', () => {
+    const config = getPlanConfig('team');
+    expect(config.keygenPolicyId).toBe('policy-team');
+    expect(config.maxRuns).toBe(150);
+    expect(config.maxMachines).toBe(5);
+    expect(config.maxTokens).toBe(1_500_000);
+  });
+
+  it('returns enterprise with unlimited (-1) and empty policy', () => {
+    const config = getPlanConfig('enterprise');
+    expect(config.keygenPolicyId).toBe('');
+    expect(config.maxRuns).toBe(-1);
+    expect(config.maxMachines).toBe(-1);
+    expect(config.maxTokens).toBe(-1);
   });
 });
 

@@ -42,4 +42,4 @@ export const env = {
   // App
   NEXT_PUBLIC_APP_URL: optional('NEXT_PUBLIC_APP_URL', 'https://demiurge.dev'),
   DESKTOP_DEEP_LINK_SCHEME: optional('DESKTOP_DEEP_LINK_SCHEME', 'demiurge'),
-} as const;
+};

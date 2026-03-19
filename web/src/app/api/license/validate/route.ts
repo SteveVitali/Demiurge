@@ -51,8 +51,8 @@ export async function GET(req: NextRequest) {
     );
 
     if (validation.valid) {
-      // Use Clerk metadata for plan tier (authoritative), fall back to 'trial'
-      const planTier = clerkPlanTier ?? 'trial';
+      // Use Clerk metadata for plan tier (authoritative when available)
+      const planTier = clerkPlanTier ?? null;
 
       // Gather entitlements from Keygen response
       const entitlements = validation.entitlements?.map(

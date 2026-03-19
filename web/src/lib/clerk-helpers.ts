@@ -8,7 +8,6 @@ export interface ClerkPublicMetadata {
   plan_tier?: string;
   license_key?: string;
   keygen_license_id?: string;
-  stripe_customer_id?: string;
 }
 
 export interface ClerkPrivateMetadata {

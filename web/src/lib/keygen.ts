@@ -11,7 +11,7 @@ function getKeygenBase(): string {
   return `https://api.keygen.sh/v1/accounts/${env.KEYGEN_ACCOUNT_ID}`;
 }
 
-const headers = (): Record<string, string> => ({
+const getHeaders = (): Record<string, string> => ({
   'Authorization': `Bearer ${env.KEYGEN_PRODUCT_TOKEN}`,
   'Content-Type': 'application/vnd.api+json',
   'Accept': 'application/vnd.api+json',
@@ -95,7 +95,7 @@ async function keygenFetch<T>(
   const res = await fetch(url, {
     ...options,
     headers: {
-      ...headers(),
+      ...getHeaders(),
       ...(options.headers as Record<string, string> ?? {}),
     },
   });
