@@ -49,7 +49,12 @@ object CliApp {
                 System.err.println("Error: License suspended. Contact support or resubscribe at https://demiurge.dev/billing")
                 return ExitCodes.InputError
               case LicenseStatus.OverLimit(uses, maxUses) =>
-                System.err.println(s"Error: Usage limit reached ($uses/$maxUses runs). Upgrade at https://demiurge.dev/pricing")
+                // Spec 05 §6.2: Detailed limit reached error with upgrade prompts
+                System.err.println(s"Error: Run limit reached ($uses/$maxUses runs used this period).\n")
+                System.err.println("To continue:")
+                System.err.println("  \u2022 Upgrade your plan: https://demiurge.dev/pricing")
+                System.err.println("  \u2022 Wait for your period to reset\n")
+                System.err.println("Run 'demiurge status' to check your current usage.")
                 return ExitCodes.InputError
               case LicenseStatus.TooManyMachines =>
                 System.err.println("Error: Machine limit reached. Deactivate a machine or upgrade your plan.")
