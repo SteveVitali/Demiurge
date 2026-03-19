@@ -64,7 +64,14 @@ object CliApp {
           case _ => // No gate needed
         }
 
-        val dbDir = global.repo.resolve(".demiurge")
+        // serve daemon uses ~/.demiurge/ as default data dir (not CWD, which may be
+        // Bazel runfiles or another non-writable location when launched as a sidecar)
+        val dbDir = cmd match {
+          case _: ServeCmd =>
+            java.nio.file.Paths.get(System.getProperty("user.home")).resolve(".demiurge")
+          case _ =>
+            global.repo.resolve(".demiurge")
+        }
         Files.createDirectories(dbDir)
         val dbPath = dbDir.resolve("demiurge.db")
         val conn = Database.open(dbPath)

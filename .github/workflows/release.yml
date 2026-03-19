@@ -1,0 +1,223 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+  TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+jobs:
+  # --- Step 1: Build the Scala sidecar JAR ---
+  build-sidecar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bazel
+        uses: bazel-contrib/setup-bazel@0.14.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}
+          repository-cache: true
+
+      - name: Build sidecar JAR
+        run: bazel build //modules/cli:demiurge_deploy.jar
+
+      - name: Upload sidecar JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: sidecar-jar
+          path: bazel-bin/modules/cli/demiurge_deploy.jar
+
+  # --- Step 2: Build Tauri desktop app (per platform) ---
+  build-desktop:
+    needs: build-sidecar
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            args: --target aarch64-apple-darwin
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+            args: --target x86_64-apple-darwin
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            args: ""
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            args: ""
+
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download sidecar JAR
+        uses: actions/download-artifact@v4
+        with:
+          name: sidecar-jar
+          path: /tmp/sidecar
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: desktop
+
+      # --- Package sidecar for the target triple ---
+      - name: Package sidecar
+        shell: bash
+        run: |
+          mkdir -p desktop/src-tauri/binaries
+          cp /tmp/sidecar/demiurge_deploy.jar desktop/src-tauri/binaries/demiurge-sidecar.jar
+
+          if [[ "${{ matrix.target }}" == *"windows"* ]]; then
+            cat > "desktop/src-tauri/binaries/demiurge-sidecar-${{ matrix.target }}.exe" << 'BATCH'
+          @echo off
+          setlocal
+          set SCRIPT_DIR=%~dp0
+          java -Xmx512m -jar "%SCRIPT_DIR%demiurge-sidecar.jar" %*
+          BATCH
+          else
+            cat > "desktop/src-tauri/binaries/demiurge-sidecar-${{ matrix.target }}" << 'SHELL'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          exec java -Xmx512m -jar "$SCRIPT_DIR/demiurge-sidecar.jar" "$@"
+          SHELL
+            chmod +x "desktop/src-tauri/binaries/demiurge-sidecar-${{ matrix.target }}"
+          fi
+
+      # --- macOS Code Signing ---
+      - name: Import Apple certificate
+        if: startsWith(matrix.platform, 'macos')
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
+          security create-keychain -p actions build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p actions build.keychain
+          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions build.keychain
+          rm certificate.p12
+
+      # --- Build Tauri app ---
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS notarization
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_KEY_ISSUER: ${{ secrets.APPLE_API_KEY_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          # Windows signing (if using pfx)
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        with:
+          projectPath: desktop
+          tauriScript: npx tauri
+          args: ${{ matrix.args }}
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Demiurge ${{ github.ref_name }}'
+          releaseBody: 'See the release notes in the [changelog](https://github.com/SteveVitali/Demiurge/blob/main/CHANGELOG.md).'
+          releaseDraft: true
+          prerelease: false
+          includeUpdaterJson: true
+
+  # --- Step 3: Build standalone CLI packages ---
+  build-cli:
+    needs: build-sidecar
+    strategy:
+      matrix:
+        include:
+          - platform: macos-latest
+            os_name: macos-arm64
+          - platform: ubuntu-latest
+            os_name: linux-x64
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download sidecar JAR
+        uses: actions/download-artifact@v4
+        with:
+          name: sidecar-jar
+          path: /tmp/sidecar
+
+      - name: Package CLI tarball
+        run: |
+          VERSION="${{ github.ref_name }}"
+          mkdir -p "demiurge-${VERSION}-${{ matrix.os_name }}"
+          cp /tmp/sidecar/demiurge_deploy.jar "demiurge-${VERSION}-${{ matrix.os_name }}/demiurge.jar"
+
+          cat > "demiurge-${VERSION}-${{ matrix.os_name }}/demiurge" << 'SHELL'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          exec java -Xmx512m -jar "$SCRIPT_DIR/demiurge.jar" "$@"
+          SHELL
+          chmod +x "demiurge-${VERSION}-${{ matrix.os_name }}/demiurge"
+
+          tar czf "demiurge-cli-${VERSION}-${{ matrix.os_name }}.tar.gz" "demiurge-${VERSION}-${{ matrix.os_name }}"
+
+      - name: Upload CLI tarball to release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: demiurge-cli-*.tar.gz
+
+  # --- Step 4: Finalize release (undraft) ---
+  finalize-release:
+    needs: [build-desktop, build-cli]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          tag_name: ${{ github.ref_name }}
+
+  # --- Step 5: Update Homebrew formula ---
+  update-homebrew:
+    needs: finalize-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update Homebrew formula
+        uses: mislav/bump-homebrew-formula-action@v3
+        with:
+          formula-name: demiurge
+          homebrew-tap: SteveVitali/homebrew-demiurge
+          download-url: https://github.com/SteveVitali/Demiurge/releases/download/${{ github.ref_name }}/demiurge-cli-${{ github.ref_name }}-macos-arm64.tar.gz
+        env:
+          COMMITTER_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
