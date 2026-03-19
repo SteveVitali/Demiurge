@@ -7,7 +7,7 @@ use tauri_plugin_shell::ShellExt;
 const HEALTH_URL: &str = "http://127.0.0.1:19440/health";
 const MAX_RESTART_ATTEMPTS: u32 = 3;
 const HEALTH_POLL_INTERVAL_MS: u64 = 500;
-const HEALTH_TIMEOUT_MS: u64 = 30000;
+const HEALTH_TIMEOUT_MS: u64 = 120000;
 const CRASH_RESTART_DELAY_MS: u64 = 2000;
 
 #[derive(Debug, Clone, Serialize)]
@@ -22,6 +22,7 @@ pub struct SidecarManager {
     status: Mutex<SidecarStatus>,
     restart_count: Mutex<u32>,
     app_handle: Mutex<Option<AppHandle>>,
+    dev_process_spawned: Mutex<bool>,
 }
 
 impl SidecarManager {
@@ -30,6 +31,7 @@ impl SidecarManager {
             status: Mutex::new(SidecarStatus::Stopped),
             restart_count: Mutex::new(0),
             app_handle: Mutex::new(None),
+            dev_process_spawned: Mutex::new(false),
         }
     }
 
@@ -43,6 +45,15 @@ impl SidecarManager {
     }
 
     pub async fn start(&self) -> Result<(), String> {
+        // Guard: if already Starting or Running, don't spawn again
+        {
+            let status = self.status.lock().unwrap();
+            match *status {
+                SidecarStatus::Starting => return Ok(()),
+                SidecarStatus::Running => return Ok(()),
+                _ => {}
+            }
+        }
         {
             let mut status = self.status.lock().unwrap();
             *status = SidecarStatus::Starting;
@@ -57,14 +68,24 @@ impl SidecarManager {
             return Ok(());
         }
 
-        // Try to spawn the sidecar binary via Tauri shell plugin (§12.2)
-        let spawned = self.try_spawn_sidecar().await;
-        if !spawned {
-            // Dev mode fallback: try to find and run the Bazel-built deploy JAR
-            let dev_spawned = self.try_spawn_dev_backend().await;
-            if !dev_spawned {
-                log::info!("Sidecar binary not available, waiting for external backend...");
+        // Only attempt to spawn if we haven't already launched a dev process
+        let already_spawned = *self.dev_process_spawned.lock().unwrap();
+        if !already_spawned {
+            // Try to spawn the sidecar binary via Tauri shell plugin (§12.2)
+            let spawned = self.try_spawn_sidecar().await;
+            if !spawned {
+                // Dev mode fallback: try deploy JAR, then bazel run
+                let dev_spawned = self.try_spawn_dev_backend().await;
+                if dev_spawned {
+                    *self.dev_process_spawned.lock().unwrap() = true;
+                } else {
+                    log::info!("Sidecar binary not available, waiting for external backend...");
+                }
+            } else {
+                *self.dev_process_spawned.lock().unwrap() = true;
             }
+        } else {
+            log::info!("Dev backend already spawned, just polling health...");
         }
 
         // Wait for backend to become ready
@@ -79,7 +100,7 @@ impl SidecarManager {
             false => {
                 let mut status = self.status.lock().unwrap();
                 *status = SidecarStatus::Error(
-                    "Backend not reachable. Start it with `demiurge serve` or `demiurge run`.".into(),
+                    "Backend not reachable. Start it with `demiurge serve` or `bazel run //modules/cli:demiurge -- serve`.".into(),
                 );
                 Err("Backend not reachable".into())
             }
@@ -134,50 +155,75 @@ impl SidecarManager {
         }
     }
 
-    /// Dev-mode fallback: find the Bazel-built deploy JAR by walking up from the
-    /// current executable directory, then spawn it via `java -jar`.
+    /// Dev-mode fallback: first try the Bazel-built deploy JAR, then fall back
+    /// to `bazel run //modules/cli:demiurge -- serve`.
     async fn try_spawn_dev_backend(&self) -> bool {
-        // Try to locate the repo root by walking up from CWD or the executable path
-        let search_start = std::env::current_dir().unwrap_or_default();
-        let jar_path = search_start.ancestors()
-            .find_map(|ancestor| {
-                let candidate = ancestor.join("bazel-bin/modules/cli/demiurge_deploy.jar");
-                if candidate.exists() { Some(candidate) } else { None }
-            });
+        let repo_root = self.find_repo_root();
 
-        let jar = match jar_path {
-            Some(p) => p,
-            None => {
-                log::info!("Dev deploy JAR not found in ancestor directories");
-                return false;
+        // Attempt 1: pre-built deploy JAR
+        if let Some(ref root) = repo_root {
+            let jar = root.join("bazel-bin/modules/cli/demiurge_deploy.jar");
+            if jar.exists() {
+                log::info!("Found dev deploy JAR at {:?}, spawning via java -jar", jar);
+                if self.spawn_child_logged(
+                    std::process::Command::new("java")
+                        .args([
+                            "-Xmx512m",
+                            "-jar",
+                            jar.to_str().unwrap_or_default(),
+                            "serve",
+                            "--port", "19440",
+                            "--ws-port", "19441",
+                        ])
+                        .stdout(std::process::Stdio::piped())
+                        .stderr(std::process::Stdio::piped()),
+                    "sidecar-jar",
+                ) {
+                    return true;
+                }
             }
-        };
+        }
 
-        log::info!("Found dev deploy JAR at {:?}, spawning via java -jar", jar);
+        // Attempt 2: bazel run
+        if let Some(ref root) = repo_root {
+            log::info!("Trying bazel run //modules/cli:demiurge -- serve from {:?}", root);
+            if self.spawn_child_logged(
+                std::process::Command::new("bazel")
+                    .args(["run", "//modules/cli:demiurge", "--", "serve", "--port", "19440", "--ws-port", "19441"])
+                    .current_dir(root)
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped()),
+                "sidecar-bazel",
+            ) {
+                return true;
+            }
+        }
 
-        match std::process::Command::new("java")
-            .args([
-                "-Xmx512m",
-                "-jar",
-                jar.to_str().unwrap_or_default(),
-                "serve",
-                "--port", "19440",
-                "--ws-port", "19441",
-            ])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-        {
+        log::info!("No dev backend spawn method succeeded");
+        false
+    }
+
+    /// Walk up from CWD to find the repo root (directory containing MODULE.bazel).
+    fn find_repo_root(&self) -> Option<std::path::PathBuf> {
+        let start = std::env::current_dir().unwrap_or_default();
+        start.ancestors()
+            .find(|p| p.join("MODULE.bazel").exists())
+            .map(|p| p.to_path_buf())
+    }
+
+    /// Spawn a child process and pipe its stdout/stderr to log in background threads.
+    /// Returns true if the process was spawned successfully.
+    fn spawn_child_logged(&self, cmd: &mut std::process::Command, tag: &str) -> bool {
+        match cmd.spawn() {
             Ok(mut child) => {
-                // Read stderr in background for logging
+                let tag_err = tag.to_string();
+                let tag_out = tag.to_string();
                 if let Some(stderr) = child.stderr.take() {
                     std::thread::spawn(move || {
                         use std::io::{BufRead, BufReader};
                         let reader = BufReader::new(stderr);
-                        for line in reader.lines() {
-                            if let Ok(line) = line {
-                                log::info!("[sidecar-dev] {}", line);
-                            }
+                        for line in reader.lines().map_while(Result::ok) {
+                            log::info!("[{}] {}", tag_err, line);
                         }
                     });
                 }
@@ -185,17 +231,15 @@ impl SidecarManager {
                     std::thread::spawn(move || {
                         use std::io::{BufRead, BufReader};
                         let reader = BufReader::new(stdout);
-                        for line in reader.lines() {
-                            if let Ok(line) = line {
-                                log::info!("[sidecar-dev] {}", line);
-                            }
+                        for line in reader.lines().map_while(Result::ok) {
+                            log::info!("[{}] {}", tag_out, line);
                         }
                     });
                 }
                 true
             }
             Err(e) => {
-                log::warn!("Failed to spawn dev backend via java: {}", e);
+                log::warn!("Failed to spawn {}: {}", tag, e);
                 false
             }
         }

@@ -44,8 +44,7 @@
         "schemes": ["demiurge"]
       }
     },
-    "shell": { "open": true },
-    "notification": { "all": true }
+    "shell": { "open": true }
   },
   "bundle": {
     "active": true,
