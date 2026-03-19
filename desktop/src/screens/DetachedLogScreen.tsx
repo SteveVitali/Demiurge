@@ -28,22 +28,18 @@ export function DetachedLogScreen() {
 
   const handleStatus = useCallback((_status: WsStatus) => {}, []);
 
-  // Connect an independent WebSocket and subscribe to the specific service logs
+  // Connect an independent WebSocket and subscribe to the specific service logs.
+  // subscribeLogs registers the subscription in logSubscriptions; DemiurgeWebSocket
+  // calls resubscribe() on every (re)connect, so the order doesn't matter.
   useEffect(() => {
     if (!runId || !serviceId) return;
 
     const ws = new DemiurgeWebSocket(handleMessage, handleStatus);
     wsRef.current = ws;
+    ws.subscribeLogs(runId, serviceId);
     ws.connect();
 
-    // Subscribe once connected — DemiurgeWebSocket handles resubscribe on reconnect
-    // We need a small delay to let the WS connect first
-    const subTimer = setTimeout(() => {
-      ws.subscribeLogs(runId, serviceId);
-    }, 500);
-
     return () => {
-      clearTimeout(subTimer);
       ws.disconnect();
       wsRef.current = null;
     };

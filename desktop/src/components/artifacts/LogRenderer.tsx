@@ -2,21 +2,24 @@ import { useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
 
 // Desktop Phase 5: Enhanced log renderer with xterm.js for ANSI color support.
-// Falls back to plain <pre> if xterm.js fails to load.
+// Falls back to plain <pre> if xterm.js fails to load or content has no ANSI codes.
 
 interface LogRendererProps {
   content: string;
   className?: string;
 }
 
+const ANSI_REGEX = /\x1b\[/;
+
 export function LogRenderer({ content, className }: LogRendererProps) {
   const termRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<import('@xterm/xterm').Terminal | null>(null);
-  const initRef = useRef(false);
 
+  const hasAnsi = ANSI_REGEX.test(content);
+
+  // Initialize xterm.js once, then write content on each change
   useEffect(() => {
-    if (initRef.current) return;
-    initRef.current = true;
+    if (!hasAnsi) return;
 
     let mounted = true;
 
@@ -29,6 +32,12 @@ export function LogRenderer({ content, className }: LogRendererProps) {
         await import('@xterm/xterm/css/xterm.css');
 
         if (!mounted || !termRef.current) return;
+
+        // Dispose previous instance if content changed
+        if (xtermRef.current) {
+          xtermRef.current.dispose();
+          xtermRef.current = null;
+        }
 
         const fitAddon = new FitAddon();
         const term = new Terminal({
@@ -50,7 +59,6 @@ export function LogRenderer({ content, className }: LogRendererProps) {
         term.open(termRef.current);
         try { fitAddon.fit(); } catch { /* ignore */ }
 
-        // Write all content
         const lines = content.split('\n');
         for (const line of lines) {
           term.writeln(line);
@@ -58,7 +66,7 @@ export function LogRenderer({ content, className }: LogRendererProps) {
 
         xtermRef.current = term;
       } catch {
-        // xterm.js failed to load — fallback is already rendered
+        // xterm.js failed to load — plain text fallback will show
       }
     }
 
@@ -69,23 +77,13 @@ export function LogRenderer({ content, className }: LogRendererProps) {
       xtermRef.current?.dispose();
       xtermRef.current = null;
     };
-  }, [content]);
-
-  // Fallback: detect if content has ANSI codes
-  const hasAnsi = /\x1b\[/.test(content);
+  }, [content, hasAnsi]);
 
   return (
     <div className={cn('relative', className)}>
-      {/* xterm.js container (hidden if no ANSI codes — use plain pre instead) */}
-      <div
-        ref={termRef}
-        className={cn(
-          'min-h-[200px]',
-          !hasAnsi && 'hidden',
-        )}
-      />
-      {/* Plain text fallback for non-ANSI content */}
-      {!hasAnsi && (
+      {hasAnsi ? (
+        <div ref={termRef} className="min-h-[200px]" />
+      ) : (
         <pre className="overflow-auto whitespace-pre-wrap p-4 text-xs font-mono text-foreground bg-zinc-950 rounded">
           {content}
         </pre>

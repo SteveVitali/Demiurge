@@ -2,8 +2,9 @@ import { useEffect, useRef } from 'react';
 import { emit, listen } from '@tauri-apps/api/event';
 import { useRunStore } from '@/stores/run.store';
 import { useAppStore } from '@/stores/app.store';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
+import { getRuns } from '@/api/endpoints';
 import type { RunStatus, TaskRun } from '@/api/types';
 
 // Desktop Phase 5 — §12.4: Sync run state to the system tray via Tauri events.
@@ -32,9 +33,21 @@ export function useTraySync() {
   const currentStatus = useRunStore((s) => s.currentStatus);
   const activeRunId = useAppStore((s) => s.activeRunId);
   const setNewRunDialogOpen = useAppStore((s) => s.setNewRunDialogOpen);
-  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const prevStatusRef = useRef<string | null>(null);
+
+  // Poll recent runs (low frequency) so tray submenu stays up to date
+  const { data: runsData } = useQuery({
+    queryKey: ['runs', 'tray-sync'],
+    queryFn: () => getRuns({ limit: 5 }),
+    refetchInterval: 15_000,
+    staleTime: 10_000,
+  });
+
+  // Resolve the active run's taskText for the tray tooltip
+  const activeRun: TaskRun | undefined = runsData?.items?.find(
+    (r) => r.runId === activeRunId,
+  );
 
   // Sync run state to tray
   useEffect(() => {
@@ -44,25 +57,24 @@ export function useTraySync() {
 
     emit('tray:run-state-changed', {
       status: mapped,
-      task: null,
+      task: activeRun?.taskText ?? null,
       elapsed: null,
       run_id: activeRunId,
     }).catch(() => {});
-  }, [currentStatus, activeRunId]);
+  }, [currentStatus, activeRunId, activeRun?.taskText]);
 
-  // Sync recent runs to tray when query cache updates
+  // Sync recent runs to tray when query data changes
   useEffect(() => {
-    const runs = queryClient.getQueryData<{ items: TaskRun[] }>(['runs']);
-    if (!runs?.items) return;
+    if (!runsData?.items) return;
 
-    const recentRuns = runs.items.slice(0, 5).map((r) => ({
+    const recentRuns = runsData.items.slice(0, 5).map((r) => ({
       run_id: r.runId,
       task: r.taskText,
       verdict: r.finalVerdict ?? r.status,
     }));
 
     emit('tray:recent-runs-updated', { runs: recentRuns }).catch(() => {});
-  }, [queryClient]);
+  }, [runsData]);
 
   // Listen for tray menu events
   useEffect(() => {

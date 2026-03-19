@@ -10,6 +10,15 @@ import { getHealth } from '@/api/endpoints';
 
 type WizardStep = 'welcome' | 'backend' | 'apikey' | 'repo' | 'done';
 
+const WIZARD_STEPS: WizardStep[] = ['welcome', 'backend', 'apikey', 'repo', 'done'];
+
+const BTN_PRIMARY =
+  'rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors';
+const BTN_SECONDARY =
+  'rounded-md border border-border px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors';
+const INPUT_CLASS =
+  'w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-blue-500';
+
 interface BackendCheckState {
   status: 'idle' | 'checking' | 'connected' | 'failed';
 }
@@ -82,17 +91,19 @@ export function WelcomeWizard() {
 
         {/* Step indicators */}
         <div className="mb-6 flex gap-1">
-          {(['welcome', 'backend', 'apikey', 'repo', 'done'] as WizardStep[]).map((s) => (
-            <div
-              key={s}
-              className={`h-1 flex-1 rounded-full transition-colors ${
-                s === step ? 'bg-blue-500' : 
-                (['welcome', 'backend', 'apikey', 'repo', 'done'].indexOf(s) < 
-                 ['welcome', 'backend', 'apikey', 'repo', 'done'].indexOf(step))
-                  ? 'bg-blue-500/40' : 'bg-muted'
-              }`}
-            />
-          ))}
+          {WIZARD_STEPS.map((s) => {
+            const currentIdx = WIZARD_STEPS.indexOf(step);
+            const thisIdx = WIZARD_STEPS.indexOf(s);
+            return (
+              <div
+                key={s}
+                className={`h-1 flex-1 rounded-full transition-colors ${
+                  s === step ? 'bg-blue-500' :
+                  thisIdx < currentIdx ? 'bg-blue-500/40' : 'bg-muted'
+                }`}
+              />
+            );
+          })}
         </div>
 
         {/* Step content */}
@@ -172,7 +183,7 @@ export function WelcomeWizard() {
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 placeholder="sk-ant-..."
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className={INPUT_CLASS}
               />
               <p className="text-xs text-muted-foreground">
                 You can also set this later in Settings → API Keys.
@@ -190,7 +201,7 @@ export function WelcomeWizard() {
                 value={repoPath}
                 onChange={(e) => setRepoPath(e.target.value)}
                 placeholder="/path/to/your/repo"
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className={INPUT_CLASS}
               />
               <p className="text-xs text-muted-foreground">
                 You can skip this and select a repo when starting a run.
@@ -220,11 +231,10 @@ export function WelcomeWizard() {
             {step !== 'welcome' && step !== 'done' && (
               <button
                 onClick={() => {
-                  const steps: WizardStep[] = ['welcome', 'backend', 'apikey', 'repo', 'done'];
-                  const idx = steps.indexOf(step);
-                  if (idx > 0) setStep(steps[idx - 1] as WizardStep);
+                  const idx = WIZARD_STEPS.indexOf(step);
+                  if (idx > 0) setStep(WIZARD_STEPS[idx - 1] as WizardStep);
                 }}
-                className="rounded-md border border-border px-4 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                className={BTN_SECONDARY}
               >
                 Back
               </button>
@@ -234,7 +244,7 @@ export function WelcomeWizard() {
             {step === 'welcome' && (
               <button
                 onClick={() => setStep('backend')}
-                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors"
+                className={BTN_PRIMARY}
               >
                 Get Started
               </button>
@@ -242,7 +252,7 @@ export function WelcomeWizard() {
             {step === 'backend' && (
               <button
                 onClick={() => setStep('apikey')}
-                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors"
+                className={BTN_PRIMARY}
               >
                 Next
               </button>
@@ -250,7 +260,7 @@ export function WelcomeWizard() {
             {step === 'apikey' && (
               <button
                 onClick={apiKey.trim().startsWith('sk-') ? handleSaveApiKey : () => setStep('repo')}
-                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors"
+                className={BTN_PRIMARY}
               >
                 {apiKey.trim().startsWith('sk-') ? 'Save & Continue' : 'Skip'}
               </button>
@@ -258,7 +268,7 @@ export function WelcomeWizard() {
             {step === 'repo' && (
               <button
                 onClick={handleSaveRepo}
-                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors"
+                className={BTN_PRIMARY}
               >
                 {repoPath.trim() ? 'Save & Finish' : 'Skip & Finish'}
               </button>
@@ -266,7 +276,7 @@ export function WelcomeWizard() {
             {step === 'done' && (
               <button
                 onClick={handleFinish}
-                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 transition-colors"
+                className={BTN_PRIMARY}
               >
                 Start Using Demiurge
               </button>

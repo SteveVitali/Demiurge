@@ -63,7 +63,9 @@ object ServeCommand {
           TaskRunRepo.insert(run)(apiConn)
           Some(runId)
         } catch {
-          case _: Exception => None
+          case e: Exception =>
+            System.err.println(s"Failed to create run: ${e.getMessage}")
+            None
         }
       }
     })

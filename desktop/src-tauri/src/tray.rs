@@ -3,7 +3,7 @@ use std::sync::Mutex;
 use tauri::{
     AppHandle, Emitter, Listener, Manager,
     menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
-    tray::{TrayIcon, TrayIconBuilder},
+    tray::TrayIconBuilder,
 };
 
 // Desktop Phase 5 — §12.4: Dynamic system tray with state-aware icon color,
@@ -117,11 +117,7 @@ fn build_tray_menu(
     // Active run info (if running)
     if run_state.status == "running" {
         let task_label = run_state.task.as_deref().unwrap_or("Unknown task");
-        let truncated = if task_label.len() > 40 {
-            format!("{}...", &task_label[..37])
-        } else {
-            task_label.to_string()
-        };
+        let truncated = truncate_str(task_label, 40);
         let elapsed_str = run_state.elapsed.as_deref().unwrap_or("0s");
         let active_item = MenuItem::with_id(
             app,
@@ -213,45 +209,38 @@ fn update_tray(
     }
 }
 
+fn show_and_focus(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
 fn handle_menu_event(app: &AppHandle, id: &str) {
     match id {
         "show" => {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+            show_and_focus(app);
         }
         "active_run" => {
-            // Navigate to the active run
             let tray_state = app.state::<TrayState>();
             let run_state = tray_state.run_state.lock().unwrap();
             if let Some(run_id) = &run_state.run_id {
                 let _ = app.emit("tray:navigate-to-run", run_id.clone());
             }
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+            show_and_focus(app);
         }
         "new_run" => {
             let _ = app.emit("tray:open-new-run", ());
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+            show_and_focus(app);
         }
         "settings" => {
             let _ = app.emit("tray:open-settings", ());
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+            show_and_focus(app);
         }
         "quit" => {
             app.exit(0);
         }
         id if id.starts_with("recent_") => {
-            // Navigate to a recent run
             if let Ok(idx) = id.strip_prefix("recent_").unwrap_or("").parse::<usize>() {
                 let tray_state = app.state::<TrayState>();
                 let recent = tray_state.recent_runs.lock().unwrap();
@@ -259,19 +248,17 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
                     let _ = app.emit("tray:navigate-to-run", run.run_id.clone());
                 }
             }
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+            show_and_focus(app);
         }
         _ => {}
     }
 }
 
 fn truncate_str(s: &str, max: usize) -> String {
-    if s.len() > max {
-        format!("{}...", &s[..max.saturating_sub(3)])
-    } else {
-        s.to_string()
+    if s.chars().count() <= max {
+        return s.to_string();
     }
+    let end = max.saturating_sub(3);
+    let truncated: String = s.chars().take(end).collect();
+    format!("{}...", truncated)
 }

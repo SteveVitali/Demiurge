@@ -133,7 +133,7 @@ export function ScreenshotGallery({ runId, artifactId, compareArtifactId, classN
             className="absolute inset-0 overflow-hidden"
             style={{ width: `${sliderPos}%` }}
           >
-            <img src={compareSrc} alt="Before" className="w-full" style={{ minWidth: sliderRef.current?.offsetWidth }} />
+            <img src={compareSrc} alt="Before" className="w-full" style={{ minWidth: '100%' }} />
           </div>
           {/* Slider line */}
           <div
