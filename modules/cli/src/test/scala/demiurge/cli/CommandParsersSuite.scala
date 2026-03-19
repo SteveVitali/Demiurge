@@ -258,6 +258,89 @@ class CommandParsersSuite extends FunSuite {
     assert(result.swap.toOption.get.contains("Invalid integer"))
   }
 
+  // --- Login command ---
+
+  test("parses login command with no flags") {
+    val result = CommandParsers.parse(Array("login"))
+    assert(result.isRight)
+    val cmd = result.toOption.get.command.asInstanceOf[LoginCmd]
+    assertEquals(cmd.licenseKey, None)
+  }
+
+  test("parses login command with --license-key") {
+    val result = CommandParsers.parse(Array("login", "--license-key", "DEMI-TEST-1234-5678"))
+    assert(result.isRight)
+    val cmd = result.toOption.get.command.asInstanceOf[LoginCmd]
+    assertEquals(cmd.licenseKey, Some("DEMI-TEST-1234-5678"))
+  }
+
+  test("rejects login with unknown flag") {
+    val result = CommandParsers.parse(Array("login", "--unknown"))
+    assert(result.isLeft)
+    assert(result.swap.toOption.get.contains("Unknown flag"))
+  }
+
+  // --- Logout command ---
+
+  test("parses logout command") {
+    val result = CommandParsers.parse(Array("logout"))
+    assert(result.isRight)
+    assertEquals(result.toOption.get.command, LogoutCmd)
+  }
+
+  // --- Config command ---
+
+  test("parses config set command") {
+    val result = CommandParsers.parse(Array("config", "set", "anthropic-api-key", "sk-ant-test"))
+    assert(result.isRight)
+    val cmd = result.toOption.get.command.asInstanceOf[ConfigCmd]
+    assertEquals(cmd.action, "set")
+    assertEquals(cmd.key, Some("anthropic-api-key"))
+    assertEquals(cmd.value, Some("sk-ant-test"))
+  }
+
+  test("parses config get command") {
+    val result = CommandParsers.parse(Array("config", "get", "cloud-api-url"))
+    assert(result.isRight)
+    val cmd = result.toOption.get.command.asInstanceOf[ConfigCmd]
+    assertEquals(cmd.action, "get")
+    assertEquals(cmd.key, Some("cloud-api-url"))
+  }
+
+  test("parses config list command") {
+    val result = CommandParsers.parse(Array("config", "list"))
+    assert(result.isRight)
+    val cmd = result.toOption.get.command.asInstanceOf[ConfigCmd]
+    assertEquals(cmd.action, "list")
+  }
+
+  test("rejects config with no action") {
+    val result = CommandParsers.parse(Array("config"))
+    assert(result.isLeft)
+    assert(result.swap.toOption.get.contains("config requires an action"))
+  }
+
+  test("rejects config set with no key") {
+    val result = CommandParsers.parse(Array("config", "set"))
+    assert(result.isLeft)
+  }
+
+  test("rejects config set with no value") {
+    val result = CommandParsers.parse(Array("config", "set", "anthropic-api-key"))
+    assert(result.isLeft)
+  }
+
+  test("rejects config get with no key") {
+    val result = CommandParsers.parse(Array("config", "get"))
+    assert(result.isLeft)
+  }
+
+  test("rejects config with unknown action") {
+    val result = CommandParsers.parse(Array("config", "delete"))
+    assert(result.isLeft)
+    assert(result.swap.toOption.get.contains("Unknown config action"))
+  }
+
   // --- No command specified ---
   test("no command returns error") {
     val result = CommandParsers.parse(Array.empty[String])

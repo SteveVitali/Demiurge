@@ -17,6 +17,7 @@ import demiurge.api.LocalApiServer
 import demiurge.compiler.RequirementCompilerImpl
 import demiurge.requirements.{RequirementsParser, RequirementsFile}
 import demiurge.selectors.{SelectorsParser, SelectorsFile}
+import demiurge.license.CredentialStore
 import demiurge.repair.RepairBackend
 import demiurge.verification.{VerificationEngine, BrowserFlowVerifier, BrowserVerifierResult, VerifierOutcome}
 import demiurge.worker.{WorkerProcessManager, WorkerMessages}
@@ -45,8 +46,9 @@ object RunCommand {
 
     // Create isolated git worktree (Spec §4.2, Design §12.3)
     // Agent mode is default when ANTHROPIC_API_KEY is set (unless explicitly disabled)
+    // BYOK: env var takes priority, then ~/.demiurge/config.json
     val agentDisabled = Option(System.getenv("DEMIURGE_AGENT_BACKEND")).exists(v => v.equalsIgnoreCase("none") || v.equalsIgnoreCase("disabled"))
-    val agentMode = !agentDisabled && Option(System.getenv("ANTHROPIC_API_KEY")).exists(_.nonEmpty)
+    val agentMode = !agentDisabled && CredentialStore.resolveApiKey("ANTHROPIC_API_KEY", "anthropic").isDefined
     val worktreePath = try {
       WorktreeManager.create(global.repo, runId, cmd.gitRef.orElse(Some("HEAD")), agentMode = agentMode)
     } catch {
@@ -236,9 +238,9 @@ object RunCommand {
     new RequirementCompilerImpl(reqs, sels)
   }
 
-  /** Build repair backend if ANTHROPIC_API_KEY is set. */
+  /** Build repair backend if ANTHROPIC_API_KEY is set (env var or BYOK config). */
   private[cli] def buildRepairBackend(): Option[RepairBackend] = {
-    val apiKey = System.getenv("ANTHROPIC_API_KEY")
+    val apiKey = CredentialStore.resolveApiKey("ANTHROPIC_API_KEY", "anthropic").orNull
     if (apiKey != null && apiKey.nonEmpty) {
       try {
         Some(new demiurge.repair.claude.ClaudeRepairBackend())

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/app.store';
+import { useAuthStore } from '@/stores/auth.store';
 import { queryKeys } from '@/lib/query-keys';
 import { getRuns } from '@/api/endpoints';
 import { RECENT_RUNS_LIMIT } from '@/lib/constants';
@@ -36,6 +37,8 @@ export function Sidebar() {
   const setSidebarCollapsed = useAppStore((s) => s.setSidebarCollapsed);
   const backendStatus = useAppStore((s) => s.backendStatus);
   const activeRunId = useAppStore((s) => s.activeRunId);
+  const planTier = useAuthStore((s) => s.planTier);
+  const userEmail = useAuthStore((s) => s.userEmail);
 
   const { data: recentRuns } = useQuery({
     queryKey: queryKeys.runs.list({ limit: RECENT_RUNS_LIMIT, sort: 'created_at', order: 'desc' }),
@@ -132,8 +135,28 @@ export function Sidebar() {
         )}
       </nav>
 
-      {/* Footer — Backend Status */}
+      {/* Footer — Plan Badge + Backend Status */}
       <div className="border-t border-border px-3 py-2">
+        {!sidebarCollapsed && planTier && (
+          <div className="mb-1.5 flex items-center gap-2">
+            <span
+              className={cn(
+                'rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase',
+                planTier === 'trial' && 'bg-yellow-500/20 text-yellow-400',
+                planTier === 'starter' && 'bg-green-500/20 text-green-400',
+                planTier === 'pro' && 'bg-blue-500/20 text-blue-400',
+                planTier === 'team' && 'bg-purple-500/20 text-purple-400',
+                planTier === 'enterprise' && 'bg-indigo-500/20 text-indigo-400',
+                !['trial', 'starter', 'pro', 'team', 'enterprise'].includes(planTier) && 'bg-green-500/20 text-green-400',
+              )}
+            >
+              {planTier}
+            </span>
+            {userEmail && (
+              <span className="truncate text-[10px] text-muted-foreground">{userEmail}</span>
+            )}
+          </div>
+        )}
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           {backendStatus === 'connected' ? (
             <Wifi className="h-3 w-3 text-emerald-400" />

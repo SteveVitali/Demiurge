@@ -4,14 +4,36 @@ import {
   createRootRoute,
 } from '@tanstack/react-router';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { AuthLayout } from '@/components/layout/AuthLayout';
 import { DashboardScreen } from '@/screens/DashboardScreen';
 import { RunDetailScreen } from '@/screens/RunDetailScreen';
 import { ConfigScreen } from '@/screens/ConfigScreen';
 import { SettingsScreen } from '@/screens/SettingsScreen';
 import { DetachedLogScreen } from '@/screens/DetachedLogScreen';
+import { AuthScreen } from '@/screens/AuthScreen';
+import { AuthCallbackScreen } from '@/screens/AuthCallbackScreen';
 
 const rootRoute = createRootRoute({
   component: AppLayout,
+});
+
+// Auth routes use a minimal layout (no sidebar, no auth guard)
+const authLayoutRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  id: 'auth-layout',
+  component: AuthLayout,
+});
+
+const authRoute = createRoute({
+  getParentRoute: () => authLayoutRoute,
+  path: '/auth',
+  component: AuthScreen,
+});
+
+const authCallbackRoute = createRoute({
+  getParentRoute: () => authLayoutRoute,
+  path: '/auth-callback',
+  component: AuthCallbackScreen,
 });
 
 const dashboardRoute = createRoute({
@@ -48,6 +70,7 @@ const detachedLogRoute = createRoute({
 });
 
 const routeTree = rootRoute.addChildren([
+  authLayoutRoute.addChildren([authRoute, authCallbackRoute]),
   dashboardRoute,
   runDetailRoute,
   configRoute,

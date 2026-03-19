@@ -21,6 +21,7 @@ import demiurge.inference.{InferenceServiceImpl, InferenceBudgetState, InMemoryI
 import demiurge.repair.{InferenceBackedRepairBackend, RepairBackend}
 import demiurge.repair.claude.ClaudePromptBuilder
 import demiurge.agent.{AgentBackend, AgentConfig, ClaudeAgentBackend}
+import demiurge.license.CredentialStore
 import demiurge.worker.WorkerProcessManager
 
 // Shared orchestration runner used by both RunCommand and ResumeCommand.
@@ -130,8 +131,9 @@ object OrchestrationRunner {
   }
 
   // Spec §2.5: Build InferenceService with real AnthropicInferenceBackend.
+  // BYOK: env var ANTHROPIC_API_KEY takes priority, then ~/.demiurge/config.json
   private def buildInferenceService(): Option[demiurge.inference.InferenceService] = {
-    val apiKey = System.getenv("ANTHROPIC_API_KEY")
+    val apiKey = CredentialStore.resolveApiKey("ANTHROPIC_API_KEY", "anthropic").orNull
     if (apiKey != null && apiKey.nonEmpty) {
       try {
         val backend = new AnthropicInferenceBackend(apiKey)
@@ -164,7 +166,8 @@ object OrchestrationRunner {
     }
 
     // Require ANTHROPIC_API_KEY (Claude Code CLI needs it)
-    val apiKey = System.getenv("ANTHROPIC_API_KEY")
+    // BYOK: env var takes priority, then ~/.demiurge/config.json
+    val apiKey = CredentialStore.resolveApiKey("ANTHROPIC_API_KEY", "anthropic").orNull
     if (apiKey == null || apiKey.isEmpty) {
       return (None, config, None)
     }
