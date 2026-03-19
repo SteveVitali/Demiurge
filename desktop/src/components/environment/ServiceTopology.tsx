@@ -10,9 +10,19 @@ import {
   Position,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import type { ServiceSnapshot } from '@/api/types';
+import type { ServiceSnapshot, ServiceKind } from '@/api/types';
 import { ServiceKindIcon } from '@/components/shared/ServiceKindIcon';
 import { StatusBadge } from '@/components/shared/StatusBadge';
+
+function inferServiceKind(svc: ServiceSnapshot): ServiceKind {
+  const id = svc.serviceId.toLowerCase();
+  if (id.includes('mongo') || id.includes('postgres') || id.includes('mysql') || id.includes('sqlite')) return 'Database';
+  if (id.includes('redis') || id.includes('cache') || id.includes('memcache')) return 'Cache';
+  if (id.includes('queue') || id.includes('rabbit') || id.includes('kafka')) return 'Queue';
+  if (id.includes('client') || id.includes('frontend') || id.includes('web') || id.includes('ui')) return 'Frontend';
+  if (id.includes('worker') || id.includes('cron') || id.includes('job')) return 'Worker';
+  return 'Api';
+}
 
 // Desktop Phase 3 — §9.5: ReactFlow-based service topology graph.
 // Nodes = services with health indicators, edges = dependency relationships.
@@ -38,7 +48,7 @@ function ServiceNode({ data }: NodeProps) {
     >
       <Handle type="target" position={Position.Left} className="!bg-muted-foreground" />
       <div className="flex items-center gap-2">
-        <ServiceKindIcon kind={(svc.startupMode as 'Api') ?? 'Api'} className="h-4 w-4" />
+        <ServiceKindIcon kind={inferServiceKind(svc)} className="h-4 w-4" />
         <span className="text-sm font-medium truncate">{svc.serviceId}</span>
       </div>
       <div className="mt-1.5 flex items-center gap-2">
