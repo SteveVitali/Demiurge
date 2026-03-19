@@ -106,13 +106,18 @@ impl SidecarManager {
 
     /// Try all available spawn methods in order of speed.
     async fn try_spawn_backend(&self) -> bool {
-        // 1. Bundled sidecar binary (production)
-        if self.try_spawn_sidecar().await {
-            eprintln!("[demiurge-desktop] Spawned bundled sidecar binary.");
-            return true;
-        }
-
         let repo_root = self.find_repo_root();
+
+        // In dev mode (repo root found), skip the bundled sidecar placeholder
+        // and go straight to the real backend spawn methods.
+        if repo_root.is_none() {
+            if self.try_spawn_sidecar().await {
+                eprintln!("[demiurge-desktop] Spawned bundled sidecar binary.");
+                return true;
+            }
+        } else {
+            eprintln!("[demiurge-desktop] Dev mode detected (repo root found), skipping sidecar placeholder.");
+        }
 
         // 2. Bazel wrapper script (instant, uses already-built output)
         if let Some(ref root) = repo_root {
