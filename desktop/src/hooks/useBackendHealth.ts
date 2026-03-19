@@ -8,6 +8,7 @@ export function useBackendHealth() {
   const setBackendStatus = useAppStore((s) => s.setBackendStatus);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startingRef = useRef(false);
+  const hasConnectedRef = useRef(false);
 
   useEffect(() => {
     const ensureBackendStarted = async () => {
@@ -27,8 +28,10 @@ export function useBackendHealth() {
       try {
         await getHealth();
         setBackendStatus('connected');
+        hasConnectedRef.current = true;
       } catch {
-        setBackendStatus('disconnected');
+        // Show 'connecting' until we've connected at least once, then 'disconnected'
+        setBackendStatus(hasConnectedRef.current ? 'disconnected' : 'connecting');
         void ensureBackendStarted();
       }
     };
