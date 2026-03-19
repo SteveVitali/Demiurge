@@ -605,7 +605,14 @@ object RunOrchestrator {
             )
             AgentToolRpcHandlers.registerHandlers(toolCtx)
 
-            agentRepairResult = Some(agent.executeRepair(repairContext, agentConfig))
+            // Thread policy attemptTimeoutMs to agent config so the agent has enough
+            // time for long operations (e.g. Bazel rebuild after restart_service).
+            val effectiveAgentConfig = resolvedConfig match {
+              case Some(rc) if rc.policies.attemptTimeoutMs > agentConfig.timeoutMs =>
+                agentConfig.copy(timeoutMs = rc.policies.attemptTimeoutMs - 30000)
+              case _ => agentConfig
+            }
+            agentRepairResult = Some(agent.executeRepair(repairContext, effectiveAgentConfig))
           } else {
             // Legacy repair path
             val backend = repairBackend.get
