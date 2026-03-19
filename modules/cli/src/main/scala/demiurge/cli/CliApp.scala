@@ -52,6 +52,7 @@ object CliApp {
     case c: CleanCmd          => CleanCommand.execute(c, global, conn)
     case DoctorCmd()          => DoctorCommand.execute(global, conn)
     case c: InitManifestCmd   => InitManifestCommand.execute(c, global, conn)
+    case c: ServeCmd          => ServeCommand.execute(c, global, conn)
     case HelpCmd              => printHelp(); ExitCodes.Success
   }
 
@@ -81,6 +82,7 @@ object CliApp {
         |  clean               Clean up old runs and artifacts
         |  doctor              Check system prerequisites
         |  init                Generate demiurge.yaml from repo analysis
+        |  serve               Start persistent backend server (desktop sidecar)
         |
         |Run 'demiurge <command> --help' for command-specific help.
       """.stripMargin)

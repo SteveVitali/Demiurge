@@ -2,14 +2,19 @@ import { Outlet } from '@tanstack/react-router';
 import { Sidebar } from './Sidebar';
 import { useBackendHealth } from '@/hooks/useBackendHealth';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
+import { useNotifications } from '@/hooks/useNotifications';
+import { useTraySync } from '@/hooks/useTraySync';
 import { NewRunDialog } from '@/components/dialogs/NewRunDialog';
 import { BuildDialog } from '@/components/dialogs/BuildDialog';
 import { SmartInitWizard } from '@/components/dialogs/SmartInitWizard';
 import { CommandPalette } from '@/components/dialogs/CommandPalette';
+import { WelcomeWizard } from '@/components/onboarding/WelcomeWizard';
 
 export function AppLayout() {
   useBackendHealth();
   useKeyboardShortcuts();
+  useNotifications();
+  useTraySync();
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -23,6 +28,9 @@ export function AppLayout() {
       <BuildDialog />
       <SmartInitWizard />
       <CommandPalette />
+
+      {/* Phase 5: First-run onboarding */}
+      <WelcomeWizard />
     </div>
   );
 }
