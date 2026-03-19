@@ -24,7 +24,7 @@ object AgentExecutor {
     config: AgentConfig,
     repoRoot: Path,
   ): AgentResult = {
-    val systemPrompt = AgentSystemPromptBuilder.buildSystemPrompt(context)
+    val systemPrompt = AgentSystemPromptBuilder.buildSystemPrompt(context, config.enableBrowserTools)
     val userPrompt = AgentSystemPromptBuilder.buildUserPrompt(context)
 
     // Design §5.2: Build JSON-RPC params for agent/execute
@@ -41,6 +41,8 @@ object AgentExecutor {
         "maxBudgetUsd"   -> config.maxBudgetUsd.asJson,
         "timeoutMs"      -> config.timeoutMs.asJson,
         "enableMcpTools" -> config.enableMcpTools.asJson,
+        "enableBrowserTools" -> config.enableBrowserTools.asJson,
+        "headedBrowser"  -> config.headedBrowser.asJson,
         "sessionId"      -> config.sessionId.asJson,
         "resume"         -> config.resume.asJson,
         "pathToClaudeCodeExecutable" -> config.pathToClaudeCodeExecutable.asJson,

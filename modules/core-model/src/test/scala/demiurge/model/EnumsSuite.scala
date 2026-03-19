@@ -72,12 +72,13 @@ class EnumsSuite extends FunSuite {
     assertEquals(VerdictStatus.values.size, 6)
   }
 
-  // Spec §3.1: VerifierType — 9 values
+  // Spec §3.1: VerifierType — 10 values (including AgentBrowser)
   test("VerifierType serialization round-trip") {
     roundTrip[VerifierType](VerifierType.EnvironmentReadiness, "\"EnvironmentReadiness\"")
     roundTrip[VerifierType](VerifierType.BrowserFlow, "\"BrowserFlow\"")
     roundTrip[VerifierType](VerifierType.TargetedRegression, "\"TargetedRegression\"")
-    assertEquals(VerifierType.values.size, 9)
+    roundTrip[VerifierType](VerifierType.AgentBrowser, "\"AgentBrowser\"")
+    assertEquals(VerifierType.values.size, 10)
   }
 
   // Spec §3.1: FailureClass — 18 values

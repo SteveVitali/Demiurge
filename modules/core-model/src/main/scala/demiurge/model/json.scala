@@ -268,6 +268,29 @@ object JsonCodecs {
   implicit val regressionVerifierSpecEncoder: Encoder[RegressionVerifierSpec] = deriveEncoder
   implicit val regressionVerifierSpecDecoder: Decoder[RegressionVerifierSpec] = deriveDecoder
 
+  // Viewport
+  implicit val viewportEncoder: Encoder[Viewport] = deriveEncoder
+  implicit val viewportDecoder: Decoder[Viewport] = deriveDecoder
+
+  // TasteSensitivity (sealed trait — manual codec)
+  implicit val tasteSensitivityEncoder: Encoder[TasteSensitivity] = Encoder.encodeString.contramap {
+    case TasteSensitivity.Strict  => "strict"
+    case TasteSensitivity.Normal  => "normal"
+    case TasteSensitivity.Lenient => "lenient"
+    case TasteSensitivity.Off     => "off"
+  }
+  implicit val tasteSensitivityDecoder: Decoder[TasteSensitivity] = Decoder.decodeString.emap {
+    case "strict"  => Right(TasteSensitivity.Strict)
+    case "normal"  => Right(TasteSensitivity.Normal)
+    case "lenient" => Right(TasteSensitivity.Lenient)
+    case "off"     => Right(TasteSensitivity.Off)
+    case other     => Left(s"Unknown TasteSensitivity: $other")
+  }
+
+  // AgentBrowserVerifierSpec
+  implicit val agentBrowserVerifierSpecEncoder: Encoder[AgentBrowserVerifierSpec] = deriveEncoder
+  implicit val agentBrowserVerifierSpecDecoder: Decoder[AgentBrowserVerifierSpec] = deriveDecoder
+
   // VerifierSpec
   implicit val verifierSpecEncoder: Encoder[VerifierSpec] = deriveEncoder
   implicit val verifierSpecDecoder: Decoder[VerifierSpec] = deriveDecoder

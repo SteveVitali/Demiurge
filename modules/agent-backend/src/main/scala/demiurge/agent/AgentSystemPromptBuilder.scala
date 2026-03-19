@@ -13,7 +13,7 @@ object AgentSystemPromptBuilder {
    * Build the system prompt for the agent.
    * This is the primary instruction set that guides the agent's behavior.
    */
-  def buildSystemPrompt(context: RepairContext): String = {
+  def buildSystemPrompt(context: RepairContext, enableBrowserTools: Boolean = false): String = {
     val sb = new StringBuilder
 
     sb.append("You are a code repair agent working inside a git worktree managed by Demiurge,\n")
@@ -60,7 +60,7 @@ object AgentSystemPromptBuilder {
     }
 
     // Available tools
-    appendToolDescriptions(sb)
+    appendToolDescriptions(sb, enableBrowserTools)
 
     // Instructions
     appendInstructions(sb, context.generationMode)
@@ -148,7 +148,7 @@ object AgentSystemPromptBuilder {
     sb.append("\n")
   }
 
-  private def appendToolDescriptions(sb: StringBuilder): Unit = {
+  private def appendToolDescriptions(sb: StringBuilder, enableBrowserTools: Boolean = false): Unit = {
     sb.append("## Available Tools\n")
     sb.append("In addition to standard file and shell tools, you have access to Demiurge-specific\n")
     sb.append("MCP tools:\n\n")
@@ -158,6 +158,22 @@ object AgentSystemPromptBuilder {
     sb.append("- **restart_service(serviceId)**: Restart a service after code changes.\n")
     sb.append("- **get_requirement_details(requirementId)**: Get full details of a requirement.\n")
     sb.append("- **check_service_health()**: Check health status of all running services.\n\n")
+
+    // Design: Agentic Browser Verification §11 — browser tools for repair agent
+    if (enableBrowserTools) {
+      sb.append("You also have access to **Playwright browser tools** (via the playwright MCP server)\n")
+      sb.append("for testing and debugging frontend/UI issues:\n\n")
+      sb.append("- **browser_navigate(url)**: Navigate the browser to a URL.\n")
+      sb.append("- **browser_screenshot()**: Take a screenshot of the current page.\n")
+      sb.append("- **browser_snapshot()**: Get the accessibility tree of the current page.\n")
+      sb.append("- **browser_click(element, ref)**: Click an element by accessibility ref.\n")
+      sb.append("- **browser_type(element, ref, text)**: Type text into a form field.\n")
+      sb.append("- **browser_wait(time)**: Wait for a specified time in ms.\n")
+      sb.append("- **browser_resize(width, height)**: Resize the browser viewport.\n")
+      sb.append("- **browser_handle_dialog(accept)**: Accept or dismiss a dialog.\n\n")
+      sb.append("Use these browser tools to verify frontend changes visually. After making\n")
+      sb.append("code changes that affect the UI, navigate to the page and check the result.\n\n")
+    }
   }
 
   private def appendInstructions(sb: StringBuilder, mode: GenerationMode): Unit = {

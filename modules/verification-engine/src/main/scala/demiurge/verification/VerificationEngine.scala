@@ -26,6 +26,11 @@ object VerificationEngine {
     def capturePageSnapshot(url: String): Either[String, String] = Left("capturePageSnapshot not implemented")
   }
 
+  // Design: Agentic Browser UI Verification §7.1 — executor for agent-based browser verification
+  trait AgentBrowserExecutor {
+    def execute(verifier: AgentBrowserVerifier): BrowserVerifierResult
+  }
+
   def runVerification(
     runId: String,
     attemptNumber: Int,
@@ -34,6 +39,7 @@ object VerificationEngine {
     inferenceService: Option[InferenceService] = None,
     resolvedConfig: Option[ResolvedConfig] = None,
     authContext: Option[AuthContext] = None,
+    agentBrowserExecutor: Option[AgentBrowserExecutor] = None,
   ): VerificationResult = {
     val plan = VerificationPlanner.buildPlan(graph)
     val verifierMap = buildVerifierMap(graph)
@@ -73,6 +79,7 @@ object VerificationEngine {
                     executeOneVerifier(
                       spec, verifier, runId, attemptNumber, graph, reqVerdicts.toMap,
                       browserExecutor, inferenceService, resolvedConfig, authContext,
+                      agentBrowserExecutor,
                     )
                   }
                 })
@@ -120,6 +127,7 @@ object VerificationEngine {
               executeOneVerifier(
                 spec, verifier, runId, attemptNumber, graph, reqVerdicts.toMap,
                 browserExecutor, inferenceService, resolvedConfig, authContext,
+                agentBrowserExecutor,
               )
             }
             reqVerdicts(verdict.requirementId) = verdict.status
@@ -155,6 +163,7 @@ object VerificationEngine {
     inferenceService: Option[InferenceService],
     resolvedConfig:   Option[ResolvedConfig],
     authContext:      Option[AuthContext],
+    agentBrowserExecutor: Option[AgentBrowserExecutor] = None,
   ): RequirementVerdict = {
     // Spec §12.4: Blocked detection
     if (VerificationPlanner.isBlocked(spec, graph, currentVerdicts)) {
@@ -178,7 +187,7 @@ object VerificationEngine {
     }
 
     val startTime = System.currentTimeMillis()
-    val firstResult = executeSingleVerifier(verifier, browserExecutor, inferenceService, resolvedConfig, authContext, runId)
+    val firstResult = executeSingleVerifier(verifier, browserExecutor, inferenceService, resolvedConfig, authContext, runId, agentBrowserExecutor)
 
     var finalOutcome = firstResult.outcome
     var finalObs = firstResult.observations
@@ -193,7 +202,7 @@ object VerificationEngine {
         attempts += 1
         retryCount += 1
         if (spec.retryDelayMs > 0) Thread.sleep(spec.retryDelayMs.toLong)
-        val retryResult = executeSingleVerifier(verifier, browserExecutor, inferenceService, resolvedConfig, authContext, runId)
+        val retryResult = executeSingleVerifier(verifier, browserExecutor, inferenceService, resolvedConfig, authContext, runId, agentBrowserExecutor)
         finalOutcome = retryResult.outcome
         finalObs = retryResult.observations
         finalArtifacts = retryResult.artifactRefs
@@ -240,8 +249,17 @@ object VerificationEngine {
     resolvedConfig:   Option[ResolvedConfig],
     authContext:      Option[AuthContext],
     runId:            String,
+    agentBrowserExecutor: Option[AgentBrowserExecutor] = None,
   ): SingleResult = {
     verifier match {
+      case abv: AgentBrowserVerifier =>
+        agentBrowserExecutor match {
+          case Some(executor) =>
+            val result = executor.execute(abv)
+            SingleResult(result.outcome, result.observations, result.artifactRefs)
+          case None =>
+            SingleResult(VerifierOutcome.Error("No agent browser executor available"), Nil, Nil)
+        }
       case bv: BrowserFlowVerifier =>
         browserExecutor match {
           case Some(executor) =>
@@ -275,7 +293,8 @@ object VerificationEngine {
         (VerdictStatus.Pass, None, None)
       case VerifierOutcome.Failed(msg) =>
         val fc = verifier match {
-          case _: BrowserFlowVerifier => Some(FailureClass.FrontendRenderError)
+          case _: BrowserFlowVerifier  => Some(FailureClass.FrontendRenderError)
+          case _: AgentBrowserVerifier => Some(FailureClass.FrontendRenderError)
           case _ => Some(FailureClass.UnknownFailure)
         }
         (VerdictStatus.Fail, fc, Some(msg))
@@ -283,7 +302,8 @@ object VerificationEngine {
         (VerdictStatus.Fail, Some(FailureClass.UnknownFailure), Some(msg))
       case VerifierOutcome.TimedOut =>
         val fc = verifier match {
-          case _: BrowserFlowVerifier => Some(FailureClass.BrowserTimingFlake)
+          case _: BrowserFlowVerifier  => Some(FailureClass.BrowserTimingFlake)
+          case _: AgentBrowserVerifier => Some(FailureClass.BrowserTimingFlake)
           case _ => None
         }
         (VerdictStatus.Timeout, fc, Some("Verifier timed out"))
