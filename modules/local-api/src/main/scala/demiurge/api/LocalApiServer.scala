@@ -24,9 +24,9 @@ object LocalApiServer {
 
     val httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0)
 
-    // Spec §14.4: Required endpoints
-    httpServer.createContext("/health", Routes.healthHandler())
-    httpServer.createContext("/runs", new com.sun.net.httpserver.HttpHandler {
+    // Spec §14.4: Required endpoints (all wrapped with CORS middleware)
+    httpServer.createContext("/health", CorsMiddleware.wrap(Routes.healthHandler()))
+    httpServer.createContext("/runs", CorsMiddleware.wrap(new com.sun.net.httpserver.HttpHandler {
       override def handle(exchange: com.sun.net.httpserver.HttpExchange): Unit = {
         val path = exchange.getRequestURI.getPath
         val method = exchange.getRequestMethod
@@ -34,6 +34,12 @@ object LocalApiServer {
         try {
           if (path == "/runs" && method == "POST") {
             Routes.postRunHandler(connProvider).handle(exchange)
+          } else if (path == "/runs" && method == "GET") {
+            // Desktop Phase 1: paginated run list
+            Routes.listRunsHandler(connProvider).handle(exchange)
+          } else if (path == "/runs/active" && method == "GET") {
+            // Desktop Phase 1: active run lookup
+            Routes.getActiveRunHandler(connProvider).handle(exchange)
           } else if (path.matches("/runs/[^/]+/plan")) {
             Routes.getRunPlanHandler(connProvider).handle(exchange)
           } else if (path.matches("/runs/[^/]+/attempts/\\d+/verdicts")) {
@@ -72,7 +78,7 @@ object LocalApiServer {
             } catch { case _: Exception => }
         }
       }
-    })
+    }))
 
     httpServer.setExecutor(java.util.concurrent.Executors.newFixedThreadPool(4))
     httpServer.start()
