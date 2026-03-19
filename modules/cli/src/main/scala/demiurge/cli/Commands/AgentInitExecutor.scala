@@ -192,6 +192,47 @@ object AgentInitExecutor {
        |    severity: <required|important|nice_to_have>
        |```
        |
+       |## Common Architecture Patterns
+       |
+       |### Pattern A: Frontend proxy (VERY COMMON for React/Vue/Svelte apps)
+       |Many modern fullstack apps have a separate frontend dev server (Vite, webpack-dev-server,
+       |Next.js dev, etc.) that proxies API requests to a backend server. Look for:
+       |- A `frontend/`, `client/`, `web/`, or `ui/` directory with its own package.json
+       |- A vite.config.ts/js with `server.proxy` configuration
+       |- A webpack config with `devServer.proxy`
+       |- next.config.js with `rewrites` or API routes
+       |
+       |When you find this pattern, configure TWO services:
+       |1. **backend** (kind: api) — the API server on its own port
+       |2. **frontend** (kind: frontend) — the dev server on its own port (usually 3000 or 5173)
+       |   - startup_command should include `npm install &&` before `npm run dev` to ensure deps
+       |     are available in the working directory
+       |   - Set readiness timeout_ms to at least 60000 (npm install + dev server startup)
+       |   - The frontend `depends_on` the backend
+       |   - Set `required: false` since the backend API is what matters for verification
+       |
+       |### Pattern B: Monolith-served UI
+       |Some apps serve the frontend from the backend (e.g. Express serving static files, or a
+       |Java/Scala server with embedded frontend build). In this case, configure ONE service.
+       |
+       |### Pattern C: Build-tool projects (Bazel, Gradle, Maven, sbt)
+       |For projects using build tools, use the build tool's run command:
+       |- Bazel: `bazel run //path/to:target`
+       |- Gradle: `./gradlew bootRun` or `./gradlew run`
+       |- Maven: `mvn spring-boot:run` or `mvn exec:java`
+       |- sbt: `sbt run`
+       |Set readiness timeout_ms to at least 180000 (build + startup can take minutes).
+       |Set initial_delay_ms to at least 15000.
+       |
+       |## Severity Guidelines for requirements.yaml
+       |
+       |- `required`: Health endpoints, core public APIs that don't need authentication
+       |- `important`: Authenticated API endpoints (will return 401/403 without credentials)
+       |- `nice_to_have`: Optional features, documentation endpoints, worker health checks
+       |
+       |Auth-protected endpoints should NEVER be severity: required — they will always fail
+       |without credentials and block the overall verification verdict.
+       |
        |## Instructions
        |
        |1. Explore the repository thoroughly using file read and shell tools
@@ -202,6 +243,7 @@ object AgentInitExecutor {
        |6. Use absolute paths for cwd
        |7. Be specific — use exact startup commands, ports, and paths you find in the code
        |8. If you find a .env or .env.example, reference it with env_file
+       |9. Check if endpoints require authentication before setting severity: required
        |
        |Write BOTH files. Do not ask for confirmation.""".stripMargin
   }

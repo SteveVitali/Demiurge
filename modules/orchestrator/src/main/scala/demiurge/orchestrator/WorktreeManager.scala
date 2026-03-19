@@ -61,26 +61,24 @@ object WorktreeManager {
       Files.copy(envFile, wtPath.resolve(".env"), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
     }
 
-    val repoNodeModules = repoRoot.resolve("node_modules")
-    val wtNodeModules = wtPath.resolve("node_modules")
-    if (Files.isDirectory(repoNodeModules) && !Files.exists(wtNodeModules)) {
-      if (agentMode) {
-        // Design §12.3: Copy node_modules for agent mode to prevent repo root mutation.
-        // Uses `cp -al` for hard-link copy (fast, COW-friendly) with fallback to full copy.
-        val hardLinkResult = Process(
-          Seq("cp", "-al", repoNodeModules.toAbsolutePath.toString, wtNodeModules.toAbsolutePath.toString),
-          repoRoot.toFile,
-        ).!
-        if (hardLinkResult != 0) {
-          // Fallback: full recursive copy
-          Process(
-            Seq("cp", "-r", repoNodeModules.toAbsolutePath.toString, wtNodeModules.toAbsolutePath.toString),
-            repoRoot.toFile,
-          ).!
+    // Symlink or copy node_modules directories.
+    // Handles both root-level and subdirectory node_modules (e.g. frontend/node_modules)
+    // to support the common frontend proxy pattern.
+    symlinkOrCopyNodeModules(repoRoot, wtPath, "node_modules", agentMode)
+
+    // Also handle subdirectory node_modules for common frontend/client dirs
+    val frontendDirs = List("frontend", "client", "web", "ui", "app")
+    for (dir <- frontendDirs) {
+      val subdir = repoRoot.resolve(dir)
+      if (Files.isDirectory(subdir)) {
+        symlinkOrCopyNodeModules(repoRoot, wtPath, s"$dir/node_modules", agentMode)
+        // Also copy .env files from subdirectories
+        val subEnv = subdir.resolve(".env")
+        val wtSubEnv = wtPath.resolve(dir).resolve(".env")
+        if (Files.exists(subEnv) && !Files.exists(wtSubEnv)) {
+          try { Files.copy(subEnv, wtSubEnv, java.nio.file.StandardCopyOption.REPLACE_EXISTING) }
+          catch { case _: Exception => }
         }
-      } else {
-        // Legacy mode: symlink node_modules for speed
-        Files.createSymbolicLink(wtNodeModules, repoNodeModules)
       }
     }
 
@@ -98,6 +96,41 @@ object WorktreeManager {
       result != 0
     } catch {
       case _: Exception => true
+    }
+  }
+
+  /**
+   * Symlink or copy a node_modules directory from repo to worktree.
+   * In agent mode, uses hard-link copy (cp -al) to prevent repo mutation.
+   * In normal mode, uses symlinks for speed.
+   */
+  private def symlinkOrCopyNodeModules(
+    repoRoot: Path,
+    wtPath: Path,
+    relativePath: String,
+    agentMode: Boolean,
+  ): Unit = {
+    val repoNm = repoRoot.resolve(relativePath)
+    val wtNm   = wtPath.resolve(relativePath)
+    if (Files.isDirectory(repoNm) && !Files.exists(wtNm)) {
+      // Ensure parent directory exists in worktree (for subdirs like frontend/node_modules)
+      Files.createDirectories(wtNm.getParent)
+      if (agentMode) {
+        // Design §12.3: Copy node_modules for agent mode to prevent repo root mutation.
+        // Uses `cp -al` for hard-link copy (fast, COW-friendly) with fallback to full copy.
+        val hardLinkResult = Process(
+          Seq("cp", "-al", repoNm.toAbsolutePath.toString, wtNm.toAbsolutePath.toString),
+          repoRoot.toFile,
+        ).!
+        if (hardLinkResult != 0) {
+          Process(
+            Seq("cp", "-r", repoNm.toAbsolutePath.toString, wtNm.toAbsolutePath.toString),
+            repoRoot.toFile,
+          ).!
+        }
+      } else {
+        Files.createSymbolicLink(wtNm, repoNm)
+      }
     }
   }
 
