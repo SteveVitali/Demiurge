@@ -1,3 +1,0 @@
-#!/bin/sh
-echo "Sidecar placeholder — run demiurge serve manually"
-exit 1
