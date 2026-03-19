@@ -216,24 +216,18 @@ object AgentInitExecutor {
        |Java/Scala server with embedded frontend build). In this case, configure ONE service.
        |
        |### Pattern C: Build-tool projects (Bazel, Gradle, Maven, sbt)
-       |For projects using build tools, check for PRE-BUILT artifacts first:
-       |
-       |**Bazel projects (IMPORTANT):**
-       |1. Check if `<repo_root>/bazel-bin/` symlink exists (it does after any `bazel build`)
-       |2. Look in BUILD.bazel files for `_deploy.jar` targets (java_binary creates these)
-       |3. If a pre-built JAR exists at `<repo_root>/bazel-bin/<path>/<target>_deploy.jar`,
-       |   use `java -jar <repo_root>/bazel-bin/<path>/<target>_deploy.jar` as startup_command
-       |4. NEVER use `bazel run` as startup_command — it triggers a full rebuild from the
-       |   working directory, which is extremely slow in isolated worktrees (10+ minutes)
-       |5. The `bazel-bin/` symlink is stable and auto-updates when the user rebuilds
-       |
-       |**Other build tools (fallback to run commands):**
+       |For projects using build tools, use the build tool's run command directly:
+       |- Bazel: `bazel run //path/to:target`
        |- Gradle: `./gradlew bootRun` or `./gradlew run`
        |- Maven: `mvn spring-boot:run` or `mvn exec:java`
        |- sbt: `sbt run`
        |
-       |Set readiness timeout_ms to at least 180000 (build + startup can take minutes).
+       |This ensures that code changes made during repair are picked up on restart.
+       |Build-tool projects may take 10+ minutes for the initial build in a clean workspace.
+       |Set readiness timeout_ms to at least 600000 (10 min) for Bazel/compiled projects.
        |Set initial_delay_ms to at least 15000.
+       |Set run_timeout_ms and attempt_timeout_ms high enough to accommodate build time
+       |(e.g. run_timeout_ms: 1800000, attempt_timeout_ms: 1200000).
        |
        |## Severity Guidelines for requirements.yaml
        |
