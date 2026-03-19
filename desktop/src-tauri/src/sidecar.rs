@@ -303,7 +303,14 @@ impl SidecarManager {
         self.start().await
     }
 
-    async fn check_health_once(&self) -> bool {
+    pub fn mark_running(&self) {
+        let mut status = self.status.lock().unwrap();
+        *status = SidecarStatus::Running;
+        let mut count = self.restart_count.lock().unwrap();
+        *count = 0;
+    }
+
+    pub async fn check_health_once(&self) -> bool {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(2))
             .build()

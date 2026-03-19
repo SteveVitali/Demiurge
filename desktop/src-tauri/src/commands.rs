@@ -4,7 +4,20 @@ use crate::sidecar::{SidecarManager, SidecarStatus};
 
 #[tauri::command]
 pub async fn start_backend(sidecar: State<'_, Arc<SidecarManager>>) -> Result<(), String> {
-    sidecar.start().await
+    let mgr = sidecar.inner().clone();
+    tauri::async_runtime::spawn(async move {
+        let _ = mgr.start().await;
+    });
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn check_backend_health(sidecar: State<'_, Arc<SidecarManager>>) -> Result<bool, String> {
+    let healthy = sidecar.check_health_once().await;
+    if healthy {
+        sidecar.mark_running();
+    }
+    Ok(healthy)
 }
 
 #[tauri::command]

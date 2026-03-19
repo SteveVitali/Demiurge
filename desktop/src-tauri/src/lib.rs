@@ -24,6 +24,7 @@ pub fn run() {
         .manage(sidecar_manager)
         .invoke_handler(tauri::generate_handler![
             commands::start_backend,
+            commands::check_backend_health,
             commands::stop_backend,
             commands::restart_backend,
             commands::get_backend_status,
