@@ -1,18 +1,30 @@
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronDown, ChevronUp, Inbox } from 'lucide-react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { useState } from 'react';
 import { queryKeys } from '@/lib/query-keys';
 import { getRuns } from '@/api/endpoints';
 import { useAppStore } from '@/stores/app.store';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { ElapsedTimer } from '@/components/shared/ElapsedTimer';
+import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+import { ErrorState } from '@/components/shared/ErrorState';
+import { EmptyState } from '@/components/shared/EmptyState';
 import { RUNS_PAGE_SIZE, RUNS_STALE_TIME_MS } from '@/lib/constants';
 import { formatRelativeTime } from '@/lib/utils';
 import type { RunFilters } from '@/api/types';
 
 type SortField = 'created_at' | 'status' | 'task_text' | 'run_mode';
 type SortOrder = 'asc' | 'desc';
+
+function SortIcon({ field, activeField, order }: { field: SortField; activeField: SortField; order: SortOrder }) {
+  if (activeField !== field) return null;
+  return order === 'asc' ? (
+    <ChevronUp className="h-3 w-3" />
+  ) : (
+    <ChevronDown className="h-3 w-3" />
+  );
+}
 
 export function RunHistoryTable() {
   const navigate = useNavigate();
@@ -45,23 +57,11 @@ export function RunHistoryTable() {
     setOffset(0);
   };
 
-  const SortIcon = ({ field }: { field: SortField }) => {
-    if (sortField !== field) return null;
-    return sortOrder === 'asc' ? (
-      <ChevronUp className="h-3 w-3" />
-    ) : (
-      <ChevronDown className="h-3 w-3" />
-    );
-  };
-
   if (backendStatus !== 'connected') {
     return (
       <div className="rounded-lg border border-border bg-card p-4">
         <h3 className="mb-3 text-sm font-medium text-muted-foreground">Recent Runs</h3>
-        <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
-          <Inbox className="h-8 w-8" />
-          <p className="text-sm">Connect to backend to view runs</p>
-        </div>
+        <EmptyState message="Connect to backend to view runs" />
       </div>
     );
   }
@@ -72,24 +72,11 @@ export function RunHistoryTable() {
         <h3 className="text-sm font-medium text-muted-foreground">Recent Runs</h3>
       </div>
 
-      {isLoading && (
-        <div className="flex items-center justify-center py-12">
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
-        </div>
-      )}
+      {isLoading && <LoadingSpinner className="py-12" />}
 
-      {isError && (
-        <div className="flex flex-col items-center gap-2 py-8 text-red-400">
-          <p className="text-sm">Failed to load runs</p>
-        </div>
-      )}
+      {isError && <ErrorState message="Failed to load runs" className="py-8" />}
 
-      {data && data.items.length === 0 && (
-        <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
-          <Inbox className="h-8 w-8" />
-          <p className="text-sm">No runs yet</p>
-        </div>
-      )}
+      {data && data.items.length === 0 && <EmptyState message="No runs yet" />}
 
       {data && data.items.length > 0 && (
         <>
@@ -102,7 +89,7 @@ export function RunHistoryTable() {
                     onClick={() => toggleSort('status')}
                   >
                     <span className="inline-flex items-center gap-1">
-                      Status <SortIcon field="status" />
+                      Status <SortIcon field="status" activeField={sortField} order={sortOrder} />
                     </span>
                   </th>
                   <th
@@ -110,7 +97,7 @@ export function RunHistoryTable() {
                     onClick={() => toggleSort('task_text')}
                   >
                     <span className="inline-flex items-center gap-1">
-                      Task <SortIcon field="task_text" />
+                      Task <SortIcon field="task_text" activeField={sortField} order={sortOrder} />
                     </span>
                   </th>
                   <th
@@ -118,7 +105,7 @@ export function RunHistoryTable() {
                     onClick={() => toggleSort('run_mode')}
                   >
                     <span className="inline-flex items-center gap-1">
-                      Mode <SortIcon field="run_mode" />
+                      Mode <SortIcon field="run_mode" activeField={sortField} order={sortOrder} />
                     </span>
                   </th>
                   <th className="px-4 py-2">Duration</th>
@@ -127,7 +114,7 @@ export function RunHistoryTable() {
                     onClick={() => toggleSort('created_at')}
                   >
                     <span className="inline-flex items-center gap-1">
-                      Created <SortIcon field="created_at" />
+                      Created <SortIcon field="created_at" activeField={sortField} order={sortOrder} />
                     </span>
                   </th>
                   <th className="px-4 py-2">Verdict</th>

@@ -95,7 +95,7 @@ export interface Attempt {
   attemptId: string;
   runId: string;
   attemptNumber: number;
-  status: string;
+  status: AttemptStatus;
   startedAt: string;
   endedAt: string | null;
   repairBackend: string | null;

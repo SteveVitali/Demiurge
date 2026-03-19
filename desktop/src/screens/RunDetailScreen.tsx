@@ -1,21 +1,21 @@
 import { useParams } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { useState, useEffect } from 'react';
-import { AlertCircle, Construction } from 'lucide-react';
+import { Construction } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { queryKeys } from '@/lib/query-keys';
 import { getRun } from '@/api/endpoints';
 import { useSSE } from '@/hooks/useSSE';
 import { useRunStore } from '@/stores/run.store';
 import { useAppStore } from '@/stores/app.store';
+import { isTerminalStatus } from '@/lib/run-status';
 import { PipelineStepper } from '@/components/run-detail/PipelineStepper';
 import { RunTimers } from '@/components/run-detail/RunTimers';
 import { RunActions } from '@/components/run-detail/RunActions';
 import { AttemptTabs } from '@/components/run-detail/AttemptTabs';
 import { StatusBadge } from '@/components/shared/StatusBadge';
-import { ACTIVE_RUN_STALE_TIME_MS, COMPLETED_RUN_STALE_TIME_MS } from '@/lib/constants';
-import type { RunStatus } from '@/api/types';
-
-const terminalStatuses: RunStatus[] = ['Succeeded', 'Exhausted', 'Cancelled', 'Interrupted', 'EnvironmentFailed'];
+import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+import { ErrorState } from '@/components/shared/ErrorState';
 
 const tabLabels = [
   'Verification',
@@ -31,19 +31,26 @@ export function RunDetailScreen() {
   const { runId } = useParams({ from: '/runs/$runId' });
   const setActiveRun = useAppStore((s) => s.setActiveRun);
   const currentStatus = useRunStore((s) => s.currentStatus);
+  const resetRunStore = useRunStore((s) => s.reset);
   const [selectedAttempt, setSelectedAttempt] = useState(1);
   const [activeTab, setActiveTab] = useState(0);
 
-  const isTerminal = currentStatus ? terminalStatuses.includes(currentStatus) : false;
+  // Reset RunStore when switching between runs to prevent state bleed
+  useEffect(() => {
+    resetRunStore();
+  }, [runId, resetRunStore]);
 
   const { data: run, isLoading, isError } = useQuery({
     queryKey: queryKeys.runs.detail(runId),
     queryFn: () => getRun(runId),
-    staleTime: isTerminal ? COMPLETED_RUN_STALE_TIME_MS : ACTIVE_RUN_STALE_TIME_MS,
-    refetchInterval: isTerminal ? false : ACTIVE_RUN_STALE_TIME_MS,
   });
 
-  // Subscribe to SSE for live updates
+  // Derive terminal from both SSE store and API data (SSE store is null on first render)
+  const displayStatus = currentStatus ?? run?.status ?? null;
+  const isTerminal = isTerminalStatus(displayStatus);
+  const showBuildStep = run?.runMode === 'Build';
+
+  // Subscribe to SSE for live updates (only for non-terminal runs)
   useSSE(isTerminal ? null : runId);
 
   // Track active run in app store
@@ -56,25 +63,14 @@ export function RunDetailScreen() {
     };
   }, [runId, isTerminal, setActiveRun]);
 
-  // Sync current status from API data when SSE hasn't provided one
-  const displayStatus = currentStatus ?? run?.status ?? null;
-  const showBuildStep = run?.runMode === 'Build';
-
   if (isLoading) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
-      </div>
-    );
+    return <LoadingSpinner size="lg" className="flex-1" />;
   }
 
   if (isError || !run) {
     return (
       <div className="flex flex-1 items-center justify-center">
-        <div className="flex flex-col items-center gap-3 text-red-400">
-          <AlertCircle className="h-8 w-8" />
-          <p className="text-sm">Failed to load run {runId}</p>
-        </div>
+        <ErrorState message={`Failed to load run ${runId}`} />
       </div>
     );
   }
@@ -117,11 +113,12 @@ export function RunDetailScreen() {
             <button
               key={label}
               onClick={() => setActiveTab(i)}
-              className={`px-4 py-2 text-sm font-medium transition-colors ${
+              className={cn(
+                'px-4 py-2 text-sm font-medium transition-colors',
                 activeTab === i
                   ? 'border-b-2 border-blue-500 text-foreground'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
             >
               {label}
             </button>

@@ -1,5 +1,4 @@
 export const API_BASE_URL = 'http://127.0.0.1:19440';
-export const WS_BASE_URL = 'ws://127.0.0.1:19441';
 
 export const HEALTH_POLL_INTERVAL_MS = 5000;
 export const RUNS_STALE_TIME_MS = 30_000;

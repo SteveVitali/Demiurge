@@ -16,6 +16,9 @@ import demiurge.persistence._
 // Phase 7: API route tests — real SQLite, real HTTP, localhost only
 class RoutesSuite extends FunSuite {
 
+  // Allow Origin header in HttpURLConnection (restricted by default in Java)
+  System.setProperty("sun.net.http.allowRestrictedHeaders", "true")
+
   private var tmpDir: Path = _
   private var dbPath: Path = _
   private var conn: Connection = _
@@ -225,5 +228,127 @@ class RoutesSuite extends FunSuite {
     // We verify this by checking the server binds to the loopback address.
     val addr = server.getAddress
     assertEquals(addr.getAddress.getHostAddress, "127.0.0.1")
+  }
+
+  // --- Desktop Phase 1: CORS middleware tests ---
+
+  private def httpOptions(path: String, origin: String): (Int, Map[String, String]) = {
+    val url = new URL(s"http://127.0.0.1:$port$path")
+    val c = url.openConnection().asInstanceOf[HttpURLConnection]
+    c.setRequestMethod("OPTIONS")
+    c.setRequestProperty("Origin", origin)
+    c.setConnectTimeout(2000)
+    c.setReadTimeout(2000)
+    try {
+      val status = c.getResponseCode
+      val headers = Map(
+        "Access-Control-Allow-Origin" -> Option(c.getHeaderField("Access-Control-Allow-Origin")).getOrElse(""),
+        "Access-Control-Allow-Methods" -> Option(c.getHeaderField("Access-Control-Allow-Methods")).getOrElse(""),
+      )
+      (status, headers)
+    } finally { c.disconnect() }
+  }
+
+  private def httpGetWithOrigin(path: String, origin: String): (Int, String, String) = {
+    val url = new URL(s"http://127.0.0.1:$port$path")
+    val c = url.openConnection().asInstanceOf[HttpURLConnection]
+    c.setRequestMethod("GET")
+    c.setRequestProperty("Origin", origin)
+    c.setConnectTimeout(2000)
+    c.setReadTimeout(2000)
+    try {
+      val status = c.getResponseCode
+      val stream = if (status >= 400) c.getErrorStream else c.getInputStream
+      val body = if (stream != null) new String(stream.readAllBytes()) else ""
+      val corsHeader = Option(c.getHeaderField("Access-Control-Allow-Origin")).getOrElse("")
+      (status, body, corsHeader)
+    } finally { c.disconnect() }
+  }
+
+  test("CORS preflight responds with 204 for allowed origin") {
+    val (status, headers) = httpOptions("/health", "http://localhost:1420")
+    assertEquals(status, 204)
+    assertEquals(headers("Access-Control-Allow-Origin"), "http://localhost:1420")
+    assert(headers("Access-Control-Allow-Methods").contains("GET"))
+  }
+
+  test("CORS preflight responds with 204 for tauri origin") {
+    val (status, headers) = httpOptions("/health", "tauri://localhost")
+    assertEquals(status, 204)
+    assertEquals(headers("Access-Control-Allow-Origin"), "tauri://localhost")
+  }
+
+  test("CORS preflight does not set header for disallowed origin") {
+    val (status, headers) = httpOptions("/health", "http://evil.com")
+    assertEquals(status, 204)
+    assertEquals(headers("Access-Control-Allow-Origin"), "")
+  }
+
+  test("CORS headers set on normal GET for allowed origin") {
+    val (status, _, corsHeader) = httpGetWithOrigin("/health", "http://localhost:1420")
+    assertEquals(status, 200)
+    assertEquals(corsHeader, "http://localhost:1420")
+  }
+
+  test("CORS headers not set on normal GET for disallowed origin") {
+    val (status, _, corsHeader) = httpGetWithOrigin("/health", "http://evil.com")
+    assertEquals(status, 200)
+    assertEquals(corsHeader, "")
+  }
+
+  // --- Desktop Phase 1: GET /runs (paginated list) ---
+
+  test("GET /runs returns paginated list") {
+    insertRun("list-run-1", RunStatus.Succeeded)
+    insertRun("list-run-2", RunStatus.Exhausted)
+    insertRun("list-run-3", RunStatus.InspectingRepo)
+
+    val (status, body) = httpGet("/runs?offset=0&limit=2")
+    assertEquals(status, 200)
+    val json = jsonDecode[Json](body).toOption.get
+    assertEquals(json.hcursor.get[Boolean]("ok").toOption, Some(true))
+    val data = json.hcursor.downField("data")
+    assertEquals(data.get[Int]("total").toOption, Some(3))
+    assertEquals(data.get[Int]("limit").toOption, Some(2))
+    val items = data.downField("items").focus.flatMap(_.asArray)
+    assert(items.isDefined)
+    assertEquals(items.get.length, 2)
+  }
+
+  test("GET /runs with status filter") {
+    insertRun("filt-run-1", RunStatus.Succeeded)
+    insertRun("filt-run-2", RunStatus.Exhausted)
+    insertRun("filt-run-3", RunStatus.Succeeded)
+
+    val (status, body) = httpGet("/runs?status=Succeeded")
+    assertEquals(status, 200)
+    val json = jsonDecode[Json](body).toOption.get
+    val data = json.hcursor.downField("data")
+    assertEquals(data.get[Int]("total").toOption, Some(2))
+    val items = data.downField("items").focus.flatMap(_.asArray).get
+    assert(items.forall(j => j.hcursor.get[String]("status").toOption.contains("Succeeded")))
+  }
+
+  // --- Desktop Phase 1: GET /runs/active ---
+
+  test("GET /runs/active returns active run") {
+    insertRun("active-run-1", RunStatus.Succeeded)
+    insertRun("active-run-2", RunStatus.Verifying)
+
+    val (status, body) = httpGet("/runs/active")
+    assertEquals(status, 200)
+    val json = jsonDecode[Json](body).toOption.get
+    assertEquals(json.hcursor.get[Boolean]("ok").toOption, Some(true))
+    assertEquals(json.hcursor.downField("data").get[String]("runId").toOption, Some("active-run-2"))
+  }
+
+  test("GET /runs/active returns 404 when no active run") {
+    insertRun("done-run-1", RunStatus.Succeeded)
+    insertRun("done-run-2", RunStatus.Cancelled)
+
+    val (status, body) = httpGet("/runs/active")
+    assertEquals(status, 404)
+    val json = jsonDecode[Json](body).toOption.get
+    assertEquals(json.hcursor.get[Boolean]("ok").toOption, Some(false))
   }
 }

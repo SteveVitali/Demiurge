@@ -50,6 +50,7 @@ function categorize(status: AnyStatus): StatusCategory {
     // Warning/Partial
     case 'Flake':
     case 'Inconclusive':
+    case 'Blocked':
     case 'RepairFailed':
     case 'RunningUnhealthy':
     case 'Degraded':

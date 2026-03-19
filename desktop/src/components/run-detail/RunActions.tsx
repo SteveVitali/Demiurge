@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { XCircle, Play } from 'lucide-react';
 import { cancelRun, resumeRun } from '@/api/endpoints';
 import { queryKeys } from '@/lib/query-keys';
+import { isTerminalStatus } from '@/lib/run-status';
 import type { RunStatus } from '@/api/types';
 
 interface RunActionsProps {
@@ -9,8 +10,7 @@ interface RunActionsProps {
   status: RunStatus;
 }
 
-const terminalStatuses: RunStatus[] = ['Succeeded', 'Exhausted', 'Cancelled', 'Interrupted'];
-const resumableStatuses: RunStatus[] = ['Interrupted', 'ReadyToVerify', 'AnalyzingFailure', 'PlanningRepair'];
+const RESUMABLE_STATUSES: RunStatus[] = ['Interrupted', 'RepairFailed'];
 
 export function RunActions({ runId, status }: RunActionsProps) {
   const queryClient = useQueryClient();
@@ -29,8 +29,8 @@ export function RunActions({ runId, status }: RunActionsProps) {
     },
   });
 
-  const canCancel = !terminalStatuses.includes(status);
-  const canResume = resumableStatuses.includes(status);
+  const canCancel = !isTerminalStatus(status);
+  const canResume = RESUMABLE_STATUSES.includes(status);
 
   return (
     <div className="flex items-center gap-2">
