@@ -15,10 +15,22 @@ import { Resend } from 'resend';
 
 const FROM_ADDRESS = 'Demiurge <noreply@demiurge.dev>';
 
+let cachedResend: Resend | null | undefined;
+
 function getResend(): Resend | null {
+  if (cachedResend !== undefined) return cachedResend;
   const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) return null;
-  return new Resend(apiKey);
+  cachedResend = apiKey ? new Resend(apiKey) : null;
+  return cachedResend;
+}
+
+function escapeHtml(unsafe: string): string {
+  return unsafe
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 export interface SendEmailParams {
@@ -66,13 +78,13 @@ export async function sendWelcomeEmail(email: string, licenseKey: string): Promi
         </p>
         <div style="background: #171717; border: 1px solid #262626; border-radius: 8px; padding: 16px; margin: 24px 0;">
           <code style="font-family: 'SF Mono', Monaco, Consolas, monospace; font-size: 16px; color: #6366f1; letter-spacing: 1px;">
-            ${licenseKey}
+            ${escapeHtml(licenseKey)}
           </code>
         </div>
         <p style="color: #a3a3a3; font-size: 14px; line-height: 1.6;">
           Get started in your terminal:
         </p>
-        <pre style="background: #171717; border: 1px solid #262626; border-radius: 8px; padding: 16px; margin: 16px 0; color: #fafafa; font-size: 13px;">demiurge login --license-key ${licenseKey}
+        <pre style="background: #171717; border: 1px solid #262626; border-radius: 8px; padding: 16px; margin: 16px 0; color: #fafafa; font-size: 13px;">demiurge login --license-key ${escapeHtml(licenseKey)}
 demiurge init --smart
 demiurge run</pre>
         <p style="color: #a3a3a3; font-size: 14px; line-height: 1.6;">
@@ -98,7 +110,7 @@ export async function sendTrialExpiringEmail(email: string, daysRemaining: numbe
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 560px; margin: 0 auto; padding: 40px 20px;">
         <h1 style="font-size: 24px; font-weight: 700; color: #fafafa; margin-bottom: 16px;">Your trial is ending soon</h1>
         <p style="color: #a3a3a3; font-size: 14px; line-height: 1.6;">
-          Your Demiurge trial expires in <strong style="color: #eab308;">${daysRemaining} day${daysRemaining === 1 ? '' : 's'}</strong>.
+          Your Demiurge trial expires in <strong style="color: #eab308;">${escapeHtml(String(daysRemaining))} day${daysRemaining === 1 ? '' : 's'}</strong>.
           Upgrade to keep using agentic verification and repair.
         </p>
         <a href="https://demiurge.dev/pricing"
@@ -126,7 +138,7 @@ export async function sendSubscriptionReceiptEmail(
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 560px; margin: 0 auto; padding: 40px 20px;">
         <h1 style="font-size: 24px; font-weight: 700; color: #fafafa; margin-bottom: 16px;">Subscription confirmed</h1>
         <p style="color: #a3a3a3; font-size: 14px; line-height: 1.6;">
-          You're now on the <strong style="color: #22c55e;">${planTier}</strong> plan (${amount}).
+          You're now on the <strong style="color: #22c55e;">${escapeHtml(planTier)}</strong> plan (${escapeHtml(amount)}).
         </p>
         <p style="color: #a3a3a3; font-size: 14px; line-height: 1.6;">
           Manage your subscription at any time from your

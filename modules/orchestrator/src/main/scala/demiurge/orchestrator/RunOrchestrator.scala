@@ -444,7 +444,7 @@ object RunOrchestrator {
     while (attemptNumber <= currentRun.maxAttempts) {
 
       // --- Check for interrupt at top of loop ---
-      if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
+      if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx, accumulatedInputTokens, accumulatedOutputTokens)
 
       // --- Spec §8: Environment health check before verification ---
       planResult.foreach { plan =>
@@ -518,7 +518,7 @@ object RunOrchestrator {
       SignalHandler.updateContext(currentCtx)
 
       // --- Evaluate verdict ---
-      if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
+      if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx, accumulatedInputTokens, accumulatedOutputTokens)
 
       val verdict = verificationResult.get.aggregate.overallVerdict
       val agg = verificationResult.get.aggregate
@@ -590,7 +590,7 @@ object RunOrchestrator {
       repairRetryLoop = false
 
       // Transition: → AnalyzingFailure
-      if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
+      if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx, accumulatedInputTokens, accumulatedOutputTokens)
       currentRun = RunTransitionManager.transition(
         currentCtx,
         RunStatus.AnalyzingFailure,
@@ -600,7 +600,7 @@ object RunOrchestrator {
       SignalHandler.updateContext(currentCtx)
 
       // Transition: → PlanningRepair
-      if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
+      if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx, accumulatedInputTokens, accumulatedOutputTokens)
       currentRun = RunTransitionManager.transition(
         currentCtx,
         RunStatus.PlanningRepair,
@@ -610,7 +610,7 @@ object RunOrchestrator {
       SignalHandler.updateContext(currentCtx)
 
       // Transition: → Repairing
-      if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
+      if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx, accumulatedInputTokens, accumulatedOutputTokens)
 
       // Design §8.2: Agent-backed repair path vs legacy repair path
       var repairOutcome: Option[RepairExecutor.RepairOutcome] = None
@@ -716,7 +716,7 @@ object RunOrchestrator {
         val needsFullRebuild = InfraSensitiveDetector.requiresRebuild(filesChanged)
 
         if (needsFullRebuild) {
-          if (SignalHandler.isInterrupted) return Some(handleInterrupt(currentCtx))
+          if (SignalHandler.isInterrupted) return Some(handleInterrupt(currentCtx, accumulatedInputTokens, accumulatedOutputTokens))
 
           var rebuildResult: Option[RuntimeSupervisor.BootResult] = None
           currentRun = RunTransitionManager.transition(
@@ -746,7 +746,7 @@ object RunOrchestrator {
               RuntimeSnapshotRepo.insert(snap)
           }
         } else {
-          if (SignalHandler.isInterrupted) return Some(handleInterrupt(currentCtx))
+          if (SignalHandler.isInterrupted) return Some(handleInterrupt(currentCtx, accumulatedInputTokens, accumulatedOutputTokens))
 
           var rebootResult: Option[RuntimeSupervisor.BootResult] = None
           currentRun = RunTransitionManager.transition(
@@ -793,7 +793,7 @@ object RunOrchestrator {
             performEnvironmentReset(completed.filesChanged).foreach(earlyReturn => return earlyReturn)
 
             // Transition: → ReadyToVerify
-            if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
+            if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx, accumulatedInputTokens, accumulatedOutputTokens)
             currentRun = RunTransitionManager.transition(
               currentCtx, RunStatus.ReadyToVerify, sideEffect = { _ => })
             currentCtx = currentCtx.copy(run = currentRun)
@@ -863,7 +863,7 @@ object RunOrchestrator {
             performEnvironmentReset(filesChanged).foreach(earlyReturn => return earlyReturn)
 
             // Transition: → ReadyToVerify
-            if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
+            if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx, accumulatedInputTokens, accumulatedOutputTokens)
             currentRun = RunTransitionManager.transition(
               currentCtx, RunStatus.ReadyToVerify, sideEffect = { _ => })
             currentCtx = currentCtx.copy(run = currentRun)

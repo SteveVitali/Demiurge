@@ -35,6 +35,10 @@ vi.mock('@/lib/clerk-helpers', () => ({
   updateClerkUserMetadata: (...args: unknown[]) => mockUpdateClerkUserMetadata(...args),
 }));
 
+vi.mock('@/lib/email', () => ({
+  sendWelcomeEmail: vi.fn().mockResolvedValue(true),
+}));
+
 vi.mock('@/lib/env', () => ({
   env: {
     CLERK_WEBHOOK_SECRET: 'test-webhook-secret',
