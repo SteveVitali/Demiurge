@@ -17,6 +17,7 @@ class AgentBrowserExecutorImpl(
   workerManager: WorkerProcessManager,
   repoRoot:      Path,
   agentConfig:   AgentConfig,
+  artifactRoot:  Path,
 ) extends VerificationEngine.AgentBrowserExecutor {
 
   import AgentBrowserExecutorImpl._
@@ -47,6 +48,7 @@ class AgentBrowserExecutorImpl(
       "userPrompt"         -> userPrompt.asJson,
       "worktreePath"       -> repoRoot.toAbsolutePath.toString.asJson,
       "repoRoot"           -> repoRoot.toAbsolutePath.toString.asJson,
+      "artifactRoot"       -> artifactRoot.toAbsolutePath.toString.asJson,
       "serviceIds"         -> Json.arr(),
       "beforeScreenshots"  -> verifier.beforeScreenshots.asJson,
       "agentConfig"        -> Json.obj(

@@ -15,6 +15,7 @@ export interface AgentExecuteParams {
   userPrompt: string;
   worktreePath: string;
   repoRoot: string;
+  artifactRoot?: string;              // artifact output directory for verification mode
   serviceIds: string[];
   beforeScreenshots?: string[];       // paths to before-implementation screenshots
   agentConfig: {
@@ -181,13 +182,24 @@ export async function handleAgentExecute(
   const allMessages: unknown[] = [];  // collect all messages for transcript artifact
 
   // Design: Agentic Browser Verification — artifact collector for verification mode
-  const artifactCollector = (p.mode === 'verification' && process.env.DEMIURGE_ARTIFACT_ROOT)
+  // Use artifactRoot from params (production flow) or env var (fallback)
+  const effectiveArtifactRoot = p.artifactRoot || process.env.DEMIURGE_ARTIFACT_ROOT;
+  const artifactCollector = (p.mode === 'verification' && effectiveArtifactRoot)
     ? new BrowserArtifactCollector({
-        artifactRoot: process.env.DEMIURGE_ARTIFACT_ROOT,
+        artifactRoot: effectiveArtifactRoot,
         runId: p.runId,
         verifierId: p.runId,  // use runId as verifierId for browser verification
       })
     : null;
+
+  // Track files in cwd before execution so we can detect new screenshots
+  const cwdFilesBefore = new Set<string>();
+  try {
+    const fs = await import('fs');
+    for (const f of fs.readdirSync(p.worktreePath)) {
+      cwdFilesBefore.add(f);
+    }
+  } catch { /* best-effort */ }
 
   try {
     // Design §5.3: Invoke the Agent SDK — query({ prompt, options })
@@ -300,6 +312,23 @@ export async function handleAgentExecute(
           artifactCollector.saveVerdict(verificationVerdict as unknown as Record<string, unknown>);
         }
         artifactCollector.saveTranscript(allMessages);
+
+        // Collect Playwright screenshots: scan cwd for new .png files created during execution
+        const fs = await import('fs');
+        const path = await import('path');
+        const cwdFiles = fs.readdirSync(p.worktreePath);
+        for (const file of cwdFiles) {
+          if (file.endsWith('.png') && !cwdFilesBefore.has(file)) {
+            const fullPath = path.join(p.worktreePath, file);
+            try {
+              const data = fs.readFileSync(fullPath);
+              const label = file.replace(/\.png$/, '');
+              artifactCollector.saveScreenshot(data, label);
+              // Remove from repo root after collecting
+              fs.unlinkSync(fullPath);
+            } catch { /* best-effort per-file */ }
+          }
+        }
       } catch {
         // best-effort artifact collection
       }

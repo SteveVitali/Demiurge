@@ -179,6 +179,7 @@ async function main() {
     userPrompt,
     worktreePath: '/Users/stevenvitali/Desktop/son-of-steve',
     repoRoot: '/Users/stevenvitali/Desktop/son-of-steve',
+    artifactRoot: ARTIFACT_ROOT,
     serviceIds: [],
     agentConfig: {
       model: 'claude-sonnet-4-20250514',

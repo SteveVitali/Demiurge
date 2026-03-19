@@ -452,7 +452,7 @@ object RunOrchestrator {
           // Design: Agentic Browser Verification — build agent browser executor if worker available
           val agentBrowserExecutor: Option[VerificationEngine.AgentBrowserExecutor] =
             workerManager.filter(_.isAlive).map { wm =>
-              new AgentBrowserExecutorImpl(wm, currentCtx.repoRoot, agentConfig)
+              new AgentBrowserExecutorImpl(wm, currentCtx.repoRoot, agentConfig, currentRun.artifactRootPath)
             }
 
           val result = VerificationEngine.runVerification(
