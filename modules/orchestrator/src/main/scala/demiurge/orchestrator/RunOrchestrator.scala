@@ -263,7 +263,7 @@ object RunOrchestrator {
     // Spec §2.1: Retry boot up to max_env_boot_retries (default 2) on failure.
     if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
     if (shouldExecute(RunStatus.BootstrappingEnvironment, startPhase)) {
-      val maxEnvBootRetries = 2
+      val maxEnvBootRetries = 3
       var bootAttempt = 0
       var bootSucceeded = false
 
