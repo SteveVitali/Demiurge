@@ -96,6 +96,8 @@ object CliApp {
     case c: InitManifestCmd   => InitManifestCommand.execute(c, global, conn)
     case c: ServeCmd          => ServeCommand.execute(c, global, conn)
     case HelpCmd              => printHelp(); ExitCodes.Success
+    // LoginCmd, LogoutCmd, ConfigCmd are handled before dispatch() — should never reach here
+    case _ => System.err.println("Error: Unrecognized command in dispatch"); ExitCodes.InputError
   }
 
   private def printHelp(): Unit = {
