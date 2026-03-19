@@ -163,6 +163,9 @@ object LocalApiServer {
       }
     }))
 
+    // Spec 05 §7.5: Usage endpoint for desktop app
+    httpServer.createContext("/usage", CorsMiddleware.wrap(UsageRoutes.getUsageHandler()))
+
     httpServer.setExecutor(java.util.concurrent.Executors.newFixedThreadPool(4))
     httpServer.start()
     server = Some(httpServer)

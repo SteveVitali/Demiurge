@@ -180,3 +180,16 @@ export function updatePreferences(prefs: Partial<SystemPreferences>): Promise<{ 
 export function getKnownRepos(): Promise<string[]> {
   return get<string[]>('/system/repos');
 }
+
+// --- Spec 05: Usage ---
+
+export interface UsageResponse {
+  runs: { used: number; limit: number; periodEnd: string | null };
+  tokens: { used: number; limit: number; periodEnd: string | null };
+  account?: { email: string; planTier: string; entitlements: string[] };
+  offline?: boolean;
+}
+
+export function getUsage(): Promise<UsageResponse> {
+  return get<UsageResponse>('/usage');
+}

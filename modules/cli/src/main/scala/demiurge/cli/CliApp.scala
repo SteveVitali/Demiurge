@@ -35,7 +35,10 @@ object CliApp {
         cmd match {
           case _: RunCmd | _: BuildCmd | _: ResumeCmd =>
             LicenseManager.validate() match {
-              case LicenseStatus.Valid(_, _, _, _, _) => // OK, proceed
+              case LicenseStatus.Valid(planTier, uses, maxUses, _, _) =>
+                // Spec 05 §6.1: Pre-run usage summary
+                val planLabel = if (planTier.nonEmpty) planTier.capitalize else "Active"
+                System.err.println(s"[demiurge] License valid ($planLabel plan). Usage: $uses/$maxUses runs this period.")
               case LicenseStatus.NoCredentials =>
                 System.err.println("Error: Not logged in. Run `demiurge login` to authenticate.")
                 return ExitCodes.InputError

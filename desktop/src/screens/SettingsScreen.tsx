@@ -10,6 +10,7 @@ import type { RunMode } from '@/api/types';
 import { cn } from '@/lib/utils';
 import { CLOUD_API_URL } from '@/lib/constants';
 import { planTierTextColor } from '@/components/PlanTierBadge';
+import { UsageCard } from '@/components/account/UsageCard';
 
 const RUN_MODES: RunMode[] = ['Full', 'Build', 'PlanOnly', 'VerifyOnly', 'InspectOnly'];
 
@@ -116,6 +117,9 @@ function AccountSection() {
             Sign Out
           </button>
         </div>
+
+        {/* Spec 05 §7.2: Usage display */}
+        <UsageCard />
       </div>
     </SettingsSection>
   );
