@@ -7,7 +7,6 @@ import { findAsset, formatBytes } from '@/lib/github-releases';
 
 interface DownloadCardsProps {
   assets: ReleaseAsset[];
-  version: string | null;
 }
 
 interface CardConfig {
@@ -60,7 +59,7 @@ const CARDS: CardConfig[] = [
   },
 ];
 
-export function DownloadCards({ assets, version }: DownloadCardsProps) {
+export function DownloadCards({ assets }: DownloadCardsProps) {
   const detected = useDetectedPlatform();
 
   // Sort so detected platform is first

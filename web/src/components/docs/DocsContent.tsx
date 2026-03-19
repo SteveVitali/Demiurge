@@ -1,11 +1,31 @@
 'use client';
 
+import { type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 
 interface DocsContentProps {
   content: string;
+}
+
+function extractText(node: ReactNode): string {
+  if (typeof node === 'string') return node;
+  if (typeof node === 'number') return String(node);
+  if (!node) return '';
+  if (Array.isArray(node)) return node.map(extractText).join('');
+  if (typeof node === 'object' && 'props' in node) {
+    const element = node as { props: { children?: ReactNode } };
+    return extractText(element.props.children);
+  }
+  return '';
+}
+
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/\s+/g, '-');
 }
 
 export function DocsContent({ content }: DocsContentProps) {
@@ -16,11 +36,7 @@ export function DocsContent({ content }: DocsContentProps) {
         rehypePlugins={[rehypeHighlight]}
         components={{
           h2: ({ children, ...props }) => {
-            const text = typeof children === 'string' ? children : '';
-            const id = text
-              .toLowerCase()
-              .replace(/[^\w\s-]/g, '')
-              .replace(/\s+/g, '-');
+            const id = slugify(extractText(children));
             return (
               <h2 id={id} className="scroll-mt-24" {...props}>
                 {children}
@@ -28,11 +44,7 @@ export function DocsContent({ content }: DocsContentProps) {
             );
           },
           h3: ({ children, ...props }) => {
-            const text = typeof children === 'string' ? children : '';
-            const id = text
-              .toLowerCase()
-              .replace(/[^\w\s-]/g, '')
-              .replace(/\s+/g, '-');
+            const id = slugify(extractText(children));
             return (
               <h3 id={id} className="scroll-mt-24" {...props}>
                 {children}

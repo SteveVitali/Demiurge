@@ -31,10 +31,7 @@ export default async function DownloadPage() {
           </p>
         </div>
 
-        <DownloadCards
-          assets={release?.assets ?? []}
-          version={release?.version ?? null}
-        />
+        <DownloadCards assets={release?.assets ?? []} />
 
         <div className="mt-12">
           <InstallInstructions />

@@ -13,6 +13,12 @@ export function CheckoutButton({ priceId, label, highlighted = false }: Checkout
   const { isSignedIn } = useUser();
   const [loading, setLoading] = useState(false);
 
+  const buttonClasses = `w-full rounded-lg px-4 py-2.5 text-sm font-medium transition-colors cursor-pointer ${
+    highlighted
+      ? 'bg-primary text-white hover:bg-primary-dark'
+      : 'border border-border text-text-secondary hover:text-text-primary hover:border-border-light'
+  }`;
+
   async function handleClick() {
     if (!priceId) return;
 
@@ -35,18 +41,20 @@ export function CheckoutButton({ priceId, label, highlighted = false }: Checkout
     }
   }
 
-  if (!isSignedIn && priceId) {
+  // Free tier (no priceId) — sign up for trial
+  if (!priceId) {
+    return (
+      <SignInButton mode="modal" forceRedirectUrl="/account">
+        <button className={buttonClasses}>{label}</button>
+      </SignInButton>
+    );
+  }
+
+  // Not signed in with a paid tier — sign in first, then redirect to pricing
+  if (!isSignedIn) {
     return (
       <SignInButton mode="modal" forceRedirectUrl="/pricing">
-        <button
-          className={`w-full rounded-lg px-4 py-2.5 text-sm font-medium transition-colors cursor-pointer ${
-            highlighted
-              ? 'bg-primary text-white hover:bg-primary-dark'
-              : 'border border-border text-text-secondary hover:text-text-primary hover:border-border-light'
-          }`}
-        >
-          {label}
-        </button>
+        <button className={buttonClasses}>{label}</button>
       </SignInButton>
     );
   }
@@ -54,12 +62,8 @@ export function CheckoutButton({ priceId, label, highlighted = false }: Checkout
   return (
     <button
       onClick={handleClick}
-      disabled={loading || !priceId}
-      className={`w-full rounded-lg px-4 py-2.5 text-sm font-medium transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-        highlighted
-          ? 'bg-primary text-white hover:bg-primary-dark'
-          : 'border border-border text-text-secondary hover:text-text-primary hover:border-border-light'
-      }`}
+      disabled={loading}
+      className={`${buttonClasses} disabled:opacity-50 disabled:cursor-not-allowed`}
     >
       {loading ? 'Redirecting...' : label}
     </button>

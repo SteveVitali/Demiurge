@@ -5,14 +5,7 @@ import Link from 'next/link';
 import { useUser, UserButton, SignInButton } from '@clerk/nextjs';
 import { Menu, X, Github, Hexagon } from 'lucide-react';
 import { MobileMenu } from './MobileMenu';
-
-const NAV_LINKS = [
-  { href: '/pricing', label: 'Pricing' },
-  { href: '/docs', label: 'Docs' },
-  { href: '/download', label: 'Download' },
-];
-
-const GITHUB_URL = 'https://github.com/SteveVitali/Demiurge';
+import { NAV_LINKS, GITHUB_URL } from './nav-config';
 
 export function Navbar() {
   const { isSignedIn, isLoaded } = useUser();

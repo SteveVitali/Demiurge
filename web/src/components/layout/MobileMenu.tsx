@@ -3,20 +3,13 @@
 import Link from 'next/link';
 import { SignInButton } from '@clerk/nextjs';
 import { Github } from 'lucide-react';
+import { NAV_LINKS, GITHUB_URL } from './nav-config';
 
 interface MobileMenuProps {
   open: boolean;
   onClose: () => void;
   isSignedIn: boolean;
 }
-
-const NAV_LINKS = [
-  { href: '/pricing', label: 'Pricing' },
-  { href: '/docs', label: 'Docs' },
-  { href: '/download', label: 'Download' },
-];
-
-const GITHUB_URL = 'https://github.com/SteveVitali/Demiurge';
 
 export function MobileMenu({ open, onClose, isSignedIn }: MobileMenuProps) {
   if (!open) return null;
