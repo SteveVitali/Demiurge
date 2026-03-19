@@ -6,7 +6,8 @@ import {
 import { AppLayout } from '@/components/layout/AppLayout';
 import { DashboardScreen } from '@/screens/DashboardScreen';
 import { RunDetailScreen } from '@/screens/RunDetailScreen';
-import { PlaceholderScreen } from '@/screens/PlaceholderScreen';
+import { ConfigScreen } from '@/screens/ConfigScreen';
+import { SettingsScreen } from '@/screens/SettingsScreen';
 
 const rootRoute = createRootRoute({
   component: AppLayout,
@@ -24,18 +25,18 @@ const runDetailRoute = createRoute({
   component: RunDetailScreen,
 });
 
-// Coming in Phase 4
+// Desktop Phase 4: Config screen with YAML editor and validation
 const configRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/config',
-  component: () => PlaceholderScreen({ title: 'Configuration', phase: 4 }),
+  component: ConfigScreen,
 });
 
-// Coming in Phase 4
+// Desktop Phase 4: Settings screen with API key management and preferences
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
-  component: () => PlaceholderScreen({ title: 'Settings', phase: 4 }),
+  component: SettingsScreen,
 });
 
 const routeTree = rootRoute.addChildren([

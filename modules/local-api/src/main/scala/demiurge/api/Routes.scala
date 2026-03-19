@@ -238,6 +238,7 @@ object Routes {
 
   // Phase 10: Decoupled run-starter callback for POST /runs
   // CLI wires this to create a real TaskRun and start orchestration in a background thread.
+  // Phase 4 extension: accepts full JSON body string so UI can pass repoPath, mode, budget, git opts.
   @volatile private var runStarter: Option[(String, Connection) => Option[String]] = None
 
   def setRunStarter(starter: (String, Connection) => Option[String]): Unit = {
@@ -262,15 +263,19 @@ object Routes {
             case None =>
               sendJson(exchange, 400, ApiEnvelope.error(400, "Missing 'task' field"))
             case Some(t) =>
+              // Desktop Phase 4: forward the full JSON body to the starter so it
+              // can extract repoPath, mode, maxAttempts, runTimeoutMs, attemptTimeoutMs,
+              // agentBackend, branch, openPr, skipConfirmation, createWorktree etc.
               runStarter match {
                 case Some(starter) =>
                   implicit val conn: Connection = connProvider()
                   try {
-                    starter(t, conn) match {
+                    starter(body, conn) match {
                       case Some(runId) =>
                         sendJson(exchange, 200, ApiEnvelope.success(Json.obj(
                           "runId" -> Json.fromString(runId),
                           "task" -> Json.fromString(t),
+                          "mode" -> json.hcursor.get[String]("mode").getOrElse("Full").asJson,
                           "status" -> Json.fromString("started"),
                         )))
                       case None =>

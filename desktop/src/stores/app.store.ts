@@ -9,6 +9,9 @@ interface AppState {
   sidebarCollapsed: boolean;
   activeScreen: ScreenId;
   commandPaletteOpen: boolean;
+  newRunDialogOpen: boolean;
+  buildDialogOpen: boolean;
+  smartInitWizardOpen: boolean;
 
   setActiveRepo: (path: string | null) => void;
   setActiveRun: (runId: string | null) => void;
@@ -17,6 +20,9 @@ interface AppState {
   setSidebarCollapsed: (collapsed: boolean) => void;
   setActiveScreen: (screen: ScreenId) => void;
   setCommandPaletteOpen: (open: boolean) => void;
+  setNewRunDialogOpen: (open: boolean) => void;
+  setBuildDialogOpen: (open: boolean) => void;
+  setSmartInitWizardOpen: (open: boolean) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -27,6 +33,9 @@ export const useAppStore = create<AppState>((set) => ({
   sidebarCollapsed: false,
   activeScreen: 'dashboard',
   commandPaletteOpen: false,
+  newRunDialogOpen: false,
+  buildDialogOpen: false,
+  smartInitWizardOpen: false,
 
   setActiveRepo: (path) => set({ activeRepoPath: path }),
   setActiveRun: (runId) => set({ activeRunId: runId }),
@@ -35,4 +44,7 @@ export const useAppStore = create<AppState>((set) => ({
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
   setActiveScreen: (screen) => set({ activeScreen: screen }),
   setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
+  setNewRunDialogOpen: (open) => set({ newRunDialogOpen: open }),
+  setBuildDialogOpen: (open) => set({ buildDialogOpen: open }),
+  setSmartInitWizardOpen: (open) => set({ smartInitWizardOpen: open }),
 }));

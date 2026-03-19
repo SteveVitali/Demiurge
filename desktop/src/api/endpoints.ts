@@ -1,4 +1,4 @@
-import { get, post } from './client';
+import { get, post, put } from './client';
 import type {
   TaskRun,
   Attempt,
@@ -16,6 +16,14 @@ import type {
   ServiceSnapshot,
   AgentTranscriptMessage,
   AgentCost,
+  ResolvedConfig,
+  ConfigValidationResult,
+  ConfigSaveResult,
+  SmartInitResult,
+  DoctorResult,
+  SystemPreferences,
+  CreateRunRequest,
+  CreateRunResponse,
 } from './types';
 
 // --- Health ---
@@ -125,4 +133,50 @@ export function getAgentTranscript(runId: string): Promise<AgentTranscriptMessag
 
 export function getAgentCost(runId: string): Promise<AgentCost> {
   return get<AgentCost>(`/runs/${runId}/agent/cost`);
+}
+
+// --- Phase 4: Run Creation ---
+
+export function createRun(request: CreateRunRequest): Promise<CreateRunResponse> {
+  return post<CreateRunResponse>('/runs', request);
+}
+
+// --- Phase 4: Config ---
+
+export function getConfig(repoPath: string): Promise<ResolvedConfig> {
+  return get<ResolvedConfig>(`/config?repo=${encodeURIComponent(repoPath)}`);
+}
+
+export function saveManifest(repoPath: string, yaml: string): Promise<ConfigSaveResult> {
+  return put<ConfigSaveResult>('/config/manifest', { repoPath, yaml });
+}
+
+export function saveRequirements(repoPath: string, yaml: string): Promise<ConfigSaveResult> {
+  return put<ConfigSaveResult>('/config/requirements', { repoPath, yaml });
+}
+
+export function validateConfig(manifest?: string, requirements?: string): Promise<ConfigValidationResult> {
+  return post<ConfigValidationResult>('/config/validate', { manifest, requirements });
+}
+
+export function smartInit(repoPath: string, taskHint?: string): Promise<SmartInitResult> {
+  return post<SmartInitResult>('/config/init-smart', { repoPath, taskHint });
+}
+
+// --- Phase 4: System ---
+
+export function getDoctor(): Promise<DoctorResult> {
+  return get<DoctorResult>('/system/doctor');
+}
+
+export function getPreferences(): Promise<SystemPreferences> {
+  return get<SystemPreferences>('/system/preferences');
+}
+
+export function updatePreferences(prefs: Partial<SystemPreferences>): Promise<{ status: string }> {
+  return put<{ status: string }>('/system/preferences', prefs);
+}
+
+export function getKnownRepos(): Promise<string[]> {
+  return get<string[]>('/system/repos');
 }

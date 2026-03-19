@@ -346,3 +346,88 @@ export interface PatchRecord {
   linesAdded: number;
   linesRemoved: number;
 }
+
+// --- Phase 4: Config types ---
+
+export interface ResolvedConfig {
+  repoPath: string;
+  manifestYaml: string | null;
+  requirementsYaml: string | null;
+  manifestExists: boolean;
+  requirementsExists: boolean;
+  provenance: ConfigProvenance;
+}
+
+export interface ConfigProvenance {
+  manifest: 'explicit' | 'cached' | 'inferred' | 'missing';
+  requirements: 'explicit' | 'cached' | 'inferred' | 'missing';
+}
+
+export interface ConfigValidationResult {
+  valid: boolean;
+  errors: ConfigValidationIssue[];
+  warnings: ConfigValidationIssue[];
+}
+
+export interface ConfigValidationIssue {
+  field: string;
+  message: string;
+  line?: number;
+}
+
+export interface ConfigSaveResult {
+  success: boolean;
+  path: string;
+}
+
+export interface SmartInitResult {
+  status: 'accepted';
+  repoPath: string;
+  message: string;
+}
+
+// --- Phase 4: System types ---
+
+export interface DoctorResult {
+  checks: DoctorCheck[];
+}
+
+export interface DoctorCheck {
+  name: string;
+  status: 'pass' | 'fail' | 'warn';
+  message: string;
+}
+
+export interface SystemPreferences {
+  theme: 'system' | 'light' | 'dark';
+  fontSize: number;
+  logLineLimit: number;
+  autoConnectOnLaunch: boolean;
+  showSystemTrayNotifications: boolean;
+  defaultRepoPath: string | null;
+  defaultRunMode: RunMode;
+  defaultMaxAttempts: number;
+  defaultRunTimeoutMs: number;
+}
+
+// --- Phase 4: Run creation types ---
+
+export interface CreateRunRequest {
+  repoPath: string;
+  task: string;
+  mode?: RunMode;
+  maxAttempts?: number;
+  runTimeoutMs?: number;
+  attemptTimeoutMs?: number;
+  agentBackend?: string;
+  branch?: string;
+  openPr?: boolean;
+  skipConfirmation?: boolean;
+}
+
+export interface CreateRunResponse {
+  runId: string;
+  task: string;
+  mode: string;
+  status: string;
+}
