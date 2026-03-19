@@ -226,9 +226,9 @@ object AgentInitExecutor {
        |
        |This ensures that code changes made during repair are picked up on restart.
        |Build-tool projects may take 10+ minutes for the initial build in a clean workspace.
-       |Set readiness timeout_ms to at least 1200000 (20 min) for Bazel/compiled projects.
+       |Set readiness timeout_ms to at least 600000 (10 min) for Bazel/compiled projects.
        |Set interval_ms to 5000 and max_failures to at least timeout_ms / interval_ms
-       |(e.g. timeout_ms: 1200000 / interval_ms: 5000 = max_failures: 240).
+       |(e.g. timeout_ms: 600000 / interval_ms: 5000 = max_failures: 120).
        |Set initial_delay_ms to at least 15000.
        |Set run_timeout_ms and attempt_timeout_ms high enough to accommodate build time
        |(e.g. run_timeout_ms: 1800000, attempt_timeout_ms: 1200000).
