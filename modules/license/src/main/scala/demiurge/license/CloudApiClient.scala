@@ -29,28 +29,11 @@ object CloudApiClient {
           decode[ValidateResponse](body) match {
             case Right(r) if r.valid =>
               LicenseStatus.Valid(r.planTier, r.uses, r.maxUses, r.expiry, r.entitlements)
-            case Right(r) =>
-              r.code match {
-                case "EXPIRED"            => LicenseStatus.Expired(r.expiry)
-                case "SUSPENDED"          => LicenseStatus.Suspended("License suspended")
-                case "NO_MACHINE"         => LicenseStatus.MachineNotActivated
-                case "TOO_MANY_MACHINES"  => LicenseStatus.TooManyMachines
-                case "OVER_LIMIT"         => LicenseStatus.OverLimit(r.uses, r.maxUses)
-                case _                    => LicenseStatus.NotFound
-              }
-            case Left(_) => LicenseStatus.NetworkError("Failed to parse validation response")
+            case Right(r) => statusFromCode(r)
+            case Left(_)  => LicenseStatus.NetworkError("Failed to parse validation response")
           }
         case 403 =>
-          decode[ValidateResponse](body).map { r =>
-            r.code match {
-              case "EXPIRED"           => LicenseStatus.Expired(r.expiry)
-              case "SUSPENDED"         => LicenseStatus.Suspended("License suspended")
-              case "NO_MACHINE"        => LicenseStatus.MachineNotActivated
-              case "TOO_MANY_MACHINES" => LicenseStatus.TooManyMachines
-              case "OVER_LIMIT"        => LicenseStatus.OverLimit(r.uses, r.maxUses)
-              case _                   => LicenseStatus.NotFound
-            }
-          }.getOrElse(LicenseStatus.NotFound)
+          decode[ValidateResponse](body).map(statusFromCode).getOrElse(LicenseStatus.NotFound)
         case 404 => LicenseStatus.NotFound
         case _   => LicenseStatus.NetworkError(s"HTTP $status")
       }
@@ -133,6 +116,15 @@ object CloudApiClient {
     } catch {
       case e: Exception => Left(s"Network error: ${e.getMessage}")
     }
+  }
+
+  private def statusFromCode(r: ValidateResponse): LicenseStatus = r.code match {
+    case "EXPIRED"           => LicenseStatus.Expired(r.expiry)
+    case "SUSPENDED"         => LicenseStatus.Suspended("License suspended")
+    case "NO_MACHINE"        => LicenseStatus.MachineNotActivated
+    case "TOO_MANY_MACHINES" => LicenseStatus.TooManyMachines
+    case "OVER_LIMIT"        => LicenseStatus.OverLimit(r.uses, r.maxUses)
+    case _                   => LicenseStatus.NotFound
   }
 
   private def readBody(conn: HttpURLConnection): String = {

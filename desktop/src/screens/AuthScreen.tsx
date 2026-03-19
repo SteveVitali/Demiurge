@@ -156,7 +156,7 @@ export function AuthScreen() {
             <p className="text-center text-xs text-muted-foreground">
               Get a license key at{' '}
               <a
-                href="https://demiurge.dev/pricing"
+                href={`${CLOUD_API_URL}/pricing`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-blue-400 hover:underline"

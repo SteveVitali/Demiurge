@@ -73,7 +73,6 @@
     "shell": {
       "open": true
     },
-    "notification": {},
     "deep-link": {
       "desktop": {
         "schemes": ["demiurge"]

@@ -14,15 +14,18 @@ export function planTierColor(tier: string): string {
   return TIER_COLORS[tier] ?? DEFAULT_COLOR;
 }
 
+const TIER_TEXT_COLORS: Record<string, string> = {
+  trial: 'text-yellow-400',
+  starter: 'text-green-400',
+  pro: 'text-blue-400',
+  team: 'text-purple-400',
+  enterprise: 'text-indigo-400',
+};
+
+const DEFAULT_TEXT_COLOR = 'text-green-400';
+
 export function planTierTextColor(tier: string): string {
-  const textColors: Record<string, string> = {
-    trial: 'text-yellow-400',
-    starter: 'text-green-400',
-    pro: 'text-blue-400',
-    team: 'text-purple-400',
-    enterprise: 'text-indigo-400',
-  };
-  return textColors[tier] ?? 'text-green-400';
+  return TIER_TEXT_COLORS[tier] ?? DEFAULT_TEXT_COLOR;
 }
 
 export function PlanTierBadge({ tier, className }: { tier: string; className?: string }) {
