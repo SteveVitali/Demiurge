@@ -202,6 +202,21 @@ fn update_tray(
     if let Some(tray) = app.tray_by_id(tray_id) {
         let _ = tray.set_tooltip(Some(&tooltip));
 
+        // §12.4: Dynamic tray icon color based on run state
+        let icon_name = match run_state.status.as_str() {
+            "running"   => "icons/icon-blue.png",
+            "succeeded" => "icons/icon-green.png",
+            "failed"    => "icons/icon-red.png",
+            _           => "icons/icon.png",
+        };
+        if let Ok(icon) = tauri::image::Image::from_path(
+            app.path().resource_dir()
+                .unwrap_or_default()
+                .join(icon_name),
+        ) {
+            let _ = tray.set_icon(Some(icon));
+        }
+
         // Rebuild menu with current state
         if let Ok(menu) = build_tray_menu(app, run_state, recent_runs) {
             let _ = tray.set_menu(Some(menu));

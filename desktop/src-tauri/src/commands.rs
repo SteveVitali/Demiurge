@@ -23,9 +23,10 @@ pub async fn get_backend_status(sidecar: State<'_, Arc<SidecarManager>>) -> Resu
 }
 
 #[tauri::command]
-pub async fn open_folder_dialog() -> Result<Option<String>, String> {
-    // Phase 1: placeholder — actual native dialog will be wired via tauri-plugin-dialog
-    Ok(None)
+pub async fn open_folder_dialog(app: AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let picked = app.dialog().file().blocking_pick_folder();
+    Ok(picked.map(|p| p.to_string()))
 }
 
 // Desktop Phase 5 — §12.5: Create a detached log window for a specific service.

@@ -28,8 +28,11 @@ pub fn run() {
             let handle = app.handle().clone();
             tray::setup_tray(&handle)?;
 
-            // Try to connect to backend on startup
+            // Give sidecar the AppHandle so it can spawn the JVM binary (§12.2)
             let sidecar = app.state::<Arc<SidecarManager>>().inner().clone();
+            sidecar.set_app_handle(handle.clone());
+
+            // Try to connect to (or spawn) backend on startup
             tauri::async_runtime::spawn(async move {
                 let _ = sidecar.start().await;
             });

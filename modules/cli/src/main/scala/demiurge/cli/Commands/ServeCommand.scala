@@ -6,11 +6,14 @@ import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 
+import io.circe.parser.{decode => jsonDecode}
+import io.circe.Json
+
 import demiurge.api.{LocalApiServer, Routes}
 import demiurge.cli.ExitCodes
 import demiurge.cli.CommandParsers.{GlobalOpts, ServeCmd}
 import demiurge.model.{RunMode, RunStatus, TaskRun}
-import demiurge.persistence.TaskRunRepo
+import demiurge.persistence.{Database, TaskRunRepo}
 
 // Desktop Phase 5 — Appendix C: Backend `serve` command.
 // Persistent server mode for the desktop app sidecar.
@@ -30,37 +33,76 @@ object ServeCommand {
 
     // Register run-starter callback so POST /runs can start orchestration on a new thread.
     // Only one run at a time — return 409 if a run is already in progress.
-    Routes.setRunStarter((task: String, apiConn: Connection) => {
+    // The body parameter is the full JSON string from the HTTP request, allowing
+    // the UI to pass repoPath, mode, maxAttempts, runTimeoutMs, agentBackend, etc.
+    Routes.setRunStarter((body: String, apiConn: Connection) => {
       val activeRun = TaskRunRepo.getActiveRun()(apiConn)
       if (activeRun.isDefined) {
-        // Concurrent run conflict — caller gets None which Routes converts to 409
         None
       } else {
         try {
+          val json = jsonDecode[Json](body).getOrElse(Json.obj())
+          val cursor = json.hcursor
+
+          val task = cursor.get[String]("task").getOrElse("")
+          val repoPath = cursor.get[String]("repoPath")
+            .toOption.map(Paths.get(_)).getOrElse(global.repo)
+          val runMode = cursor.get[String]("mode")
+            .toOption.flatMap(m => RunMode.values.find(_.toString.equalsIgnoreCase(m)))
+            .getOrElse(RunMode.Full)
+          val maxAttempts = cursor.get[Int]("maxAttempts").toOption.getOrElse(
+            if (runMode == RunMode.Build) 8 else 5
+          )
+
           val runId = UUID.randomUUID().toString
+          val runArtifactRoot = artifactRoot.resolve(runId)
+          Files.createDirectories(runArtifactRoot)
+
           val run = TaskRun(
             runId = runId,
-            repoPath = global.repo,
-            worktreePath = global.repo,
+            repoPath = repoPath,
+            worktreePath = repoPath,
             gitRef = None,
             taskText = task,
             changedFiles = None,
             status = RunStatus.Created,
-            runMode = RunMode.Full,
+            runMode = runMode,
             createdAt = Instant.now(),
             startedAt = None,
             endedAt = None,
-            maxAttempts = 5,
+            maxAttempts = maxAttempts,
             attemptCount = 0,
             envBootAttempts = 0,
             currentAttemptId = None,
             finalVerdict = None,
             finalSummary = None,
             policySnapshotId = s"policy-$runId",
-            lockFilePath = global.repo.resolve(".demiurge").resolve("run.lock"),
-            artifactRootPath = artifactRoot.resolve(runId),
+            lockFilePath = repoPath.resolve(".demiurge").resolve("run.lock"),
+            artifactRootPath = runArtifactRoot,
           )
           TaskRunRepo.insert(run)(apiConn)
+
+          // Spawn orchestration on a background thread so the HTTP response returns immediately
+          val orchestrationGlobal = global.copy(repo = repoPath)
+          val orchestrationThread = new Thread(() => {
+            val threadConn = Database.open(dbPath)
+            try {
+              System.err.println(s"[serve] Starting orchestration for run $runId (mode=$runMode)")
+              OrchestrationRunner.run(run, orchestrationGlobal, repoPath, threadConn)
+              System.err.println(s"[serve] Orchestration completed for run $runId")
+            } catch {
+              case e: Exception =>
+                System.err.println(s"[serve] Orchestration failed for run $runId: ${e.getMessage}")
+                try {
+                  TaskRunRepo.updateStatus(runId, RunStatus.Exhausted, endedAt = Some(Instant.now()))(threadConn)
+                } catch { case _: Exception => }
+            } finally {
+              try { threadConn.close() } catch { case _: Exception => }
+            }
+          }, s"orchestration-$runId")
+          orchestrationThread.setDaemon(true)
+          orchestrationThread.start()
+
           Some(runId)
         } catch {
           case e: Exception =>
