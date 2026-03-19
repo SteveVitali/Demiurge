@@ -17,6 +17,7 @@ object LocalApiServer {
 
   def start(
     port: Int = 19440,
+    wsPort: Int = 19441,
     dbPath: Path,
     artifactRootResolver: String => Option[Path] = _ => None,
   ): HttpServer = {
@@ -65,6 +66,21 @@ object LocalApiServer {
           } else if (path.matches("/runs/[^/]+/attempts/\\d+/patches")) {
             // Desktop Phase 2: Patches
             FailureRoutes.getPatchesHandler(connProvider).handle(exchange)
+          } else if (path.matches("/runs/[^/]+/environment") && method == "GET") {
+            // Desktop Phase 3: Environment snapshot
+            EnvironmentRoutes.getEnvironmentHandler(connProvider).handle(exchange)
+          } else if (path.matches("/runs/[^/]+/services/[^/]+/restart") && method == "POST") {
+            // Desktop Phase 3: Service restart
+            EnvironmentRoutes.restartServiceHandler(connProvider).handle(exchange)
+          } else if (path.matches("/runs/[^/]+/services") && method == "GET") {
+            // Desktop Phase 3: Service list
+            EnvironmentRoutes.getServicesHandler(connProvider).handle(exchange)
+          } else if (path.matches("/runs/[^/]+/agent/transcript") && method == "GET") {
+            // Desktop Phase 3: Agent transcript
+            AgentRoutes.getTranscriptHandler(connProvider).handle(exchange)
+          } else if (path.matches("/runs/[^/]+/agent/cost") && method == "GET") {
+            // Desktop Phase 3: Agent cost
+            AgentRoutes.getCostHandler(connProvider).handle(exchange)
           } else if (path.matches("/runs/[^/]+/resume") && method == "POST") {
             Routes.postResumeHandler(connProvider).handle(exchange)
           } else if (path.matches("/runs/[^/]+/cancel") && method == "POST") {
@@ -98,6 +114,15 @@ object LocalApiServer {
     httpServer.setExecutor(java.util.concurrent.Executors.newFixedThreadPool(4))
     httpServer.start()
     server = Some(httpServer)
+
+    // Desktop Phase 3: Start WebSocket server alongside HTTP
+    try {
+      WebSocketServer.start(wsPort)
+    } catch {
+      case e: Exception =>
+        System.err.println(s"[local-api] Failed to start WebSocket server on :$wsPort: ${e.getMessage}")
+    }
+
     httpServer
   }
 
@@ -106,6 +131,8 @@ object LocalApiServer {
       s.stop(1) // 1 second grace period
     }
     server = None
+    // Desktop Phase 3: Stop WebSocket server
+    WebSocketServer.stop()
   }
 
   def isRunning: Boolean = server.isDefined

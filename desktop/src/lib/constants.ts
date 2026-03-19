@@ -8,5 +8,10 @@ export const COMPLETED_RUN_STALE_TIME_MS = Infinity;
 export const SSE_RECONNECT_BASE_MS = 1000;
 export const SSE_RECONNECT_MAX_MS = 30_000;
 
+export const WS_BASE_URL = 'ws://127.0.0.1:19441';
+export const WS_RECONNECT_BASE_MS = 1000;
+export const WS_RECONNECT_MAX_MS = 30_000;
+export const WS_HEARTBEAT_INTERVAL_MS = 25_000;
+
 export const RECENT_RUNS_LIMIT = 5;
 export const RUNS_PAGE_SIZE = 20;

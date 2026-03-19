@@ -298,6 +298,43 @@ export interface FailurePacket {
   softBlockers: string[];
 }
 
+// --- Phase 3: Environment DTOs ---
+
+export interface ServiceSnapshot {
+  serviceId: string;
+  status: ServiceStatus;
+  pid: number | null;
+  containerId: string | null;
+  logLineCount: number;
+  startupMode: string;
+}
+
+export interface RuntimeSnapshot {
+  runId: string;
+  status: RunStatus;
+  runMode: string;
+  services: ServiceSnapshot[];
+}
+
+// --- Phase 3: Agent DTOs ---
+
+export type AgentMessageType = 'text' | 'tool_use' | 'tool_result' | 'progress' | 'error';
+
+export interface AgentTranscriptMessage {
+  id: string;
+  messageType: AgentMessageType;
+  data: Record<string, unknown>;
+  timestamp: string;
+}
+
+export interface AgentCost {
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  numTurns: number;
+  durationMs: number;
+}
+
 // --- Patch Record DTOs ---
 
 export interface PatchRecord {

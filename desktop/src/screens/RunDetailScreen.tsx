@@ -1,13 +1,14 @@
 import { useParams } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { useState, useEffect } from 'react';
-import { Construction } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { queryKeys } from '@/lib/query-keys';
 import { getRun } from '@/api/endpoints';
 import { useSSE } from '@/hooks/useSSE';
+import { useWebSocket } from '@/hooks/useWebSocket';
 import { useRunStore } from '@/stores/run.store';
 import { useAppStore } from '@/stores/app.store';
+import type { RunStatus } from '@/api/types';
 import { isTerminalStatus } from '@/lib/run-status';
 import { PipelineStepper } from '@/components/run-detail/PipelineStepper';
 import { RunTimers } from '@/components/run-detail/RunTimers';
@@ -20,15 +21,20 @@ import { VerificationPanel } from '@/components/verification/VerificationPanel';
 import { ArtifactBrowser } from '@/components/artifacts/ArtifactBrowser';
 import { InspectionPanel } from '@/components/inspection/InspectionPanel';
 import { EventsPanel } from '@/components/events/EventsPanel';
+import { AgentPanel } from '@/components/agent/AgentPanel';
+import { EnvironmentPanel } from '@/components/environment/EnvironmentPanel';
+import { FailureAnalysisPanel } from '@/components/failure/FailureAnalysisPanel';
 
-const tabLabels = [
+const BASE_TAB_LABELS = [
   'Verification',
   'Agent',
   'Environment',
   'Artifacts',
   'Inspection',
   'Events',
-];
+] as const;
+
+const FAILURE_STATUSES: RunStatus[] = ['Exhausted', 'EnvironmentFailed'];
 
 export function RunDetailScreen() {
   const { runId } = useParams({ from: '/runs/$runId' });
@@ -52,9 +58,14 @@ export function RunDetailScreen() {
   const displayStatus = currentStatus ?? run?.status ?? null;
   const isTerminal = isTerminalStatus(displayStatus);
   const showBuildStep = run?.runMode === 'Build';
+  const showFailureTab = FAILURE_STATUSES.includes(displayStatus as RunStatus);
+  const tabLabels = showFailureTab ? [...BASE_TAB_LABELS, 'Failure'] : [...BASE_TAB_LABELS];
 
   // Subscribe to SSE for live updates (only for non-terminal runs)
   useSSE(isTerminal ? null : runId);
+
+  // Desktop Phase 3: WebSocket connection for log tailing + agent transcript
+  const wsRef = useWebSocket(isTerminal ? null : runId);
 
   // Track active run in app store
   useEffect(() => {
@@ -130,35 +141,26 @@ export function RunDetailScreen() {
 
         {/* Tab Content */}
         <div className="flex flex-1 flex-col overflow-hidden">
-          {activeTab === 0 && (
+          {tabLabels[activeTab] === 'Verification' && (
             <VerificationPanel runId={run.runId} attemptNumber={selectedAttempt} />
           )}
-          {activeTab === 1 && (
-            <div className="flex flex-1 items-center justify-center p-12">
-              <div className="flex flex-col items-center gap-3 text-muted-foreground">
-                <Construction className="h-10 w-10" />
-                <p className="text-sm font-medium">Agent Panel</p>
-                <p className="text-xs">Coming in Phase 3</p>
-              </div>
-            </div>
+          {tabLabels[activeTab] === 'Agent' && (
+            <AgentPanel runId={run.runId} wsRef={wsRef} />
           )}
-          {activeTab === 2 && (
-            <div className="flex flex-1 items-center justify-center p-12">
-              <div className="flex flex-col items-center gap-3 text-muted-foreground">
-                <Construction className="h-10 w-10" />
-                <p className="text-sm font-medium">Environment Panel</p>
-                <p className="text-xs">Coming in Phase 3</p>
-              </div>
-            </div>
+          {tabLabels[activeTab] === 'Environment' && (
+            <EnvironmentPanel runId={run.runId} wsRef={wsRef} />
           )}
-          {activeTab === 3 && (
+          {tabLabels[activeTab] === 'Artifacts' && (
             <ArtifactBrowser runId={run.runId} />
           )}
-          {activeTab === 4 && (
+          {tabLabels[activeTab] === 'Inspection' && (
             <InspectionPanel runId={run.runId} />
           )}
-          {activeTab === 5 && (
+          {tabLabels[activeTab] === 'Events' && (
             <EventsPanel runId={run.runId} />
+          )}
+          {tabLabels[activeTab] === 'Failure' && (
+            <FailureAnalysisPanel runId={run.runId} attemptNumber={selectedAttempt} />
           )}
         </div>
       </div>
