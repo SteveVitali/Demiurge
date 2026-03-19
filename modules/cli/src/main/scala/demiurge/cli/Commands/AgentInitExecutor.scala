@@ -142,7 +142,10 @@ object AgentInitExecutor {
        |  <service_id>:
        |    kind: <api|frontend|db|cache|queue|worker>
        |    startup_mode: <script|compose>
-       |    startup_command: <command to start the service>
+       |    # If startup_mode=script: startup_command is REQUIRED (shell command to run)
+       |    # If startup_mode=compose: compose_target is REQUIRED (docker compose service name)
+       |    startup_command: <command to start the service>  # for script mode
+       |    compose_target: <compose service name>           # for compose mode
        |    cwd: <working directory, use absolute path>
        |    env_file: <path to .env file if needed>
        |    env:

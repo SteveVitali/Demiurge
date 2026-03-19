@@ -114,15 +114,33 @@ object RunCommand {
         if (!global.quiet) {
           System.err.println(s"[init] ${initResult.summary}")
         }
-        // Also copy the generated files back to the original repo for future runs
+        // Post-process: replace worktree paths with repo root paths in the generated YAML.
+        // The agent explores the worktree, so CWDs will reference it. We need repo root paths
+        // so that remapPlanCwds() can correctly remap them to each run's worktree.
+        val worktreeStr = worktreePath.toAbsolutePath.normalize().toString
+        val repoStr = global.repo.toAbsolutePath.normalize().toString
+        val fixPaths = (yaml: String) => yaml.replace(worktreeStr, repoStr)
+
+        // Rewrite the files in the worktree with corrected paths
+        try {
+          initResult.demiurgeYaml.foreach { yaml =>
+            Files.writeString(manifestPath, fixPaths(yaml))
+          }
+          val worktreeReqs = worktreePath.resolve("requirements.yaml")
+          initResult.requirementsYaml.foreach { yaml =>
+            Files.writeString(worktreeReqs, fixPaths(yaml))
+          }
+        } catch { case _: Exception => }
+
+        // Also copy the corrected files back to the original repo for future runs
         try {
           val repoManifest = global.repo.resolve("demiurge.yaml")
           if (!Files.exists(repoManifest)) {
-            initResult.demiurgeYaml.foreach(yaml => Files.writeString(repoManifest, yaml))
+            initResult.demiurgeYaml.foreach(yaml => Files.writeString(repoManifest, fixPaths(yaml)))
           }
           val repoReqs = global.repo.resolve("requirements.yaml")
           if (!Files.exists(repoReqs)) {
-            initResult.requirementsYaml.foreach(yaml => Files.writeString(repoReqs, yaml))
+            initResult.requirementsYaml.foreach(yaml => Files.writeString(repoReqs, fixPaths(yaml)))
           }
         } catch { case _: Exception => /* best-effort copy to repo root */ }
       } else {
