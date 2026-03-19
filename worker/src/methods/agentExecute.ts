@@ -274,6 +274,10 @@ export async function handleAgentExecute(
     // AbortController.abort() may throw
     if (isInterrupted) {
       resultText = 'Agent session interrupted by timeout';
+    } else if (resultText) {
+      // SDK already emitted a result message (e.g. is_error with "Credit balance is too low")
+      // before the process exited — don't mask the captured result with a generic exit error
+      success = false;
     } else {
       throw err;
     }
