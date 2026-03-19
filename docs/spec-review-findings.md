@@ -47,7 +47,7 @@ All enums in `core-model/src/main/scala/demiurge/model/enums.scala` match the sp
 | RequirementPriority | 3 | 3 | ✅ |
 | RequirementCategory | 8 | 8 | ✅ |
 | VerdictStatus | 6 | 6 | ✅ |
-| VerifierType | 9 | 10 | +AgentBrowser for agentic browser UI verification |
+| VerifierType | 9 | 9 | ✅ |
 | FailureClass | 18 | 18 | ✅ |
 | ServiceKind | 7 | 7 | ✅ |
 | StartupMode | 4 | 4 | ✅ |
@@ -151,7 +151,7 @@ All enums in `core-model/src/main/scala/demiurge/model/enums.scala` match the sp
 
 ## 9. CLI Commands (Spec §15) — ✅ Complete
 
-All commands implemented: `run`, `build`, `plan`, `resume`, `status`, `inspect-run`, `open-artifact`, `explain-failure`, `cancel`, `clean`, `doctor`, `init` (aliased as `init-manifest`), `serve`.
+All commands implemented: `run`, `resume`, `status`, `cancel`, `clean`, `doctor`, `plan`, `inspect-run`, `open-artifact`, `explain-failure`, `init-manifest`, `build`.
 
 **Exit codes** match spec §14.3: Success=0, Exhausted=1, Cancelled=2, Errored=3, InputError=4, ConcurrentRunConflict=5, ResumeFailed=10.
 

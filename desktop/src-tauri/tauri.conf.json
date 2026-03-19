@@ -72,9 +72,6 @@
   "plugins": {
     "shell": {
       "open": true
-    },
-    "notification": {
-      "all": true
     }
   }
 }

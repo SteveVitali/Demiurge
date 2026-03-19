@@ -47,9 +47,6 @@ demiurge run --task <description> [flags]
 | `--replay-inference` | No | `false` | Replay cached inference (no live API calls) |
 | `--headless` | No | `true` | Run browser in headless mode |
 | `--no-headless` | No | | Run browser with visible UI |
-| `--branch <name>` | No | None | Create a named git branch with changes |
-| `--open-pr` | No | `false` | Create branch and open a pull request via `gh` CLI |
-| `--yes`, `-y` | No | `false` | Skip interactive confirmation prompts |
 
 **Duration format:** Plain number (seconds), or suffixed: `30s`, `5m`, `1h`, `500ms`.
 
@@ -67,33 +64,6 @@ demiurge run --task <description> [flags]
 9. Cleans up (worker shutdown, lock release)
 
 **Repair backend:** When `ANTHROPIC_API_KEY` is set and a worker is available, the Claude Code agent (multi-turn, agentic) is used for repair by default. Set `DEMIURGE_AGENT_BACKEND=none` to fall back to legacy single-shot LLM patch repair.
-
-### `build`
-
-Build mode — autonomous feature generation with verify/repair loop. Syntactic sugar for `demiurge run --mode build`.
-
-```
-demiurge build --task <description> [flags]
-```
-
-| Flag | Required | Default | Description |
-|------|----------|---------|-------------|
-| `--task <text>` | Yes | | Task description |
-| `--max-attempts <n>` | No | 8 | Maximum verification/repair attempts (higher default for build) |
-| `--run-timeout <duration>` | No | From budget | Overall run timeout (2h default for build) |
-| `--attempt-timeout <duration>` | No | From budget | Per-attempt timeout |
-| `--max-patch-lines <n>` | No | From budget | Maximum lines in generated code |
-| `--changed-files <list>` | No | None | Comma-separated list of changed files |
-| `--git-ref <ref>` | No | HEAD | Git ref to check out in worktree |
-| `--branch <name>` | No | None | Create a named git branch with changes |
-| `--open-pr` | No | `false` | Create branch and open a pull request via `gh` CLI |
-| `--yes`, `-y` | No | `false` | Skip interactive confirmation prompts |
-| `--run-id <id>` | No | Auto-generated | Custom run ID |
-| `--replay-inference` | No | `false` | Replay cached inference (no live API calls) |
-| `--headless` | No | `true` | Run browser in headless mode |
-| `--no-headless` | No | | Run browser with visible UI |
-
-Build mode uses higher budget defaults than regular runs (2h run timeout, 8 max attempts, 500k tokens, 5000 max patch lines).
 
 ### `plan`
 
@@ -239,7 +209,7 @@ Exit code 1 if any required check fails.
 
 ### `init`
 
-Generate `demiurge.yaml` and `requirements.yaml` configuration files. Also available as `init-manifest` (legacy alias).
+Generate `demiurge.yaml` and `requirements.yaml` configuration files.
 
 ```
 demiurge init [flags]
@@ -258,22 +228,6 @@ demiurge init [flags]
 **Auto-triggered:** When `demiurge run` is invoked and no `demiurge.yaml` exists, `--smart` init runs automatically if `ANTHROPIC_API_KEY` is set. Generated files are also copied back to the original repo for future runs.
 
 If existing config is found (explicit or cached), the deterministic path loads and displays it instead of regenerating. Use `--force` to regenerate.
-
-### `serve`
-
-Start a persistent backend server for the desktop application sidecar.
-
-```
-demiurge serve [flags]
-```
-
-| Flag | Required | Default | Description |
-|------|----------|---------|-------------|
-| `--port <n>` | No | `19440` | HTTP API server port |
-| `--ws-port <n>` | No | `19441` | WebSocket server port |
-| `--db <path>` | No | `.demiurge/demiurge.db` | SQLite database path |
-
-Starts a persistent `LocalApiServer` and WebSocket server that stays running until terminated (SIGTERM). Used by the Tauri desktop app as a sidecar process. Accepts `POST /runs` to start orchestration runs. The WebSocket server provides real-time event streaming alongside the existing SSE endpoint.
 
 ## Exit Codes
 

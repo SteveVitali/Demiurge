@@ -33,20 +33,20 @@
 
 ## §1. Overview & Goals
 
-Demiurge is currently a pure CLI tool (13 commands, Scala backend, TypeScript worker) that orchestrates verifier-first web task automation. This document specifies a **desktop GUI application** that serves as a full interactive replacement for the CLI while preserving CLI compatibility.
+Demiurge is currently a pure CLI tool (11 commands, Scala backend, TypeScript worker) that orchestrates verifier-first web task automation. This document specifies a **desktop GUI application** that serves as a full interactive replacement for the CLI while preserving CLI compatibility.
 
 ### 1.1 What Exists Today
 
 | Layer | Technology | LOC |
 |-------|-----------|-----|
-| CLI entry point | Scala (`CliApp`, 13 command handlers) | ~2,200 |
+| CLI entry point | Scala (`CliApp`, 11 command handlers) | ~2,200 |
 | Local HTTP API | `com.sun.net.httpserver` on `:19440` | ~450 |
 | SSE event stream | `EventStream` → `RunTransitionManager` | ~200 |
 | Orchestrator | `RunOrchestrator` state machine (21 states) | ~900 |
-| Persistence | SQLite WAL, 17 tables, 13 repo classes | ~2,500 |
+| Persistence | SQLite WAL, 16 tables, 13 repo classes | ~2,500 |
 | Worker | TypeScript/Playwright, stdio JSON-RPC | ~1,470 |
 | Agent backend | Claude Code SDK via worker | ~700 |
-| Core model | 79+ case classes, 22 enums | ~1,800 |
+| Core model | 79+ case classes, 21 enums | ~1,800 |
 
 The existing `LocalApiServer` already exposes REST endpoints and SSE streaming. The desktop app builds on top of this infrastructure rather than replacing it.
 
@@ -2416,7 +2416,7 @@ type ServiceStatus =
   | 'Pending' | 'Starting' | 'RunningHealthy' | 'RunningUnhealthy'
   | 'Degraded' | 'Stopped' | 'Failed';
 
-// Verifier type — mirrors VerifierType enum (10 values)
+// Verifier type — mirrors VerifierType enum (9 values)
 type VerifierType =
   | 'EnvironmentReadiness' | 'HttpApiContract' | 'BrowserFlow'
   | 'StateAssertion' | 'QueueJob' | 'ConsoleLogSanity'
