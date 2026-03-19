@@ -10,12 +10,9 @@
 
 The 5-phase GTM implementation is **substantially complete**. All major systems are built: cloud backend API routes, license module, CLI auth commands, desktop auth UI, CI/CD pipelines, marketing website, and usage metering. The codebase is well-structured and follows the specs closely.
 
-**Gaps found: 13 total (0 critical, 5 medium, 8 low)**
+**Gaps found: 13 total (0 critical, 5 medium, 8 low) — ALL RESOLVED on branch `fix/close-all-gtm-gaps`**
 
-Most gaps fall into two categories:
-1. **Placeholder values** that need real credentials before launch (expected — not code bugs)
-2. **Missing tests** for web routes and integration flows
-3. **Minor feature gaps** where implementation deviates slightly from spec
+All gaps have been closed. See the resolution table at the bottom of this document.
 
 ---
 
@@ -196,24 +193,24 @@ Most gaps fall into two categories:
 
 ---
 
-## Summary of All Gaps
+## Summary of All Gaps — ALL RESOLVED
 
-| # | Severity | Area | Gap | Fix Effort |
-|---|----------|------|-----|------------|
-| 1 | 🟡 Low | Spec 01 | No Stripe webhook tests | 2h |
-| 2 | 🟡 Low | Spec 01 | No Clerk webhook tests | 1h |
-| 3 | 🟡 Medium | Spec 02/05 | `demiurge status` missing license/usage info | 2h |
-| 4 | 🟡 Low | Spec 02 | Desktop Settings missing account/API key sections | 3h |
-| 5 | 🟡 Medium | Spec 03 | Updater pubkey is placeholder | 15min (manual step) |
-| 6 | 🟡 Low | Spec 03 | No macOS x64 CLI tarball in release | 30min |
-| ~~7~~ | ~~Low~~ | ~~Spec 03~~ | ~~Capabilities not verified~~ | ✅ Verified — all permissions present |
-| 8 | 🟡 Low | Spec 04 | No LicenseKeyCard component | 1h |
-| 9 | 🟡 Medium | Spec 05 | No approaching-limit warning (≥80%) | 30min |
-| 10 | 🟡 Medium | Spec 05 | Status command missing usage section | Same as #3 |
-| 11 | 🟡 Low | Spec 05 | Token usage reported as 0,0 | 30min |
-| 12 | 🟡 Medium | Master Plan | LICENSE still MIT (policy decision) | 15min |
-| 13 | 🟡 Low | Master Plan | No telemetry integration | 2h |
-| 14 | 🟡 Low | Master Plan | No transactional email (Resend) | 3h |
+| # | Area | Gap | Resolution |
+|---|------|-----|------------|
+| 1 | Spec 01 | No Stripe webhook tests | ✅ Created `web/src/lib/__tests__/stripe-webhook.test.ts` — tests checkout, invoice.paid, subscription.deleted, subscription.updated, missing signature |
+| 2 | Spec 01 | No Clerk webhook tests | ✅ Created `web/src/lib/__tests__/clerk-webhook.test.ts` — tests user.created, no-email edge case, unknown events, missing headers |
+| 3 | Spec 02/05 | `demiurge status` missing license/usage info | ✅ Already implemented — `StatusCommand` has Account, Usage (progress bar), API Keys, and Recent Runs sections |
+| 4 | Spec 02 | Desktop Settings missing account/API key sections | ✅ Already implemented — `SettingsScreen` has Account (email, plan, billing, sign-out), API Keys (input + save), and UsageCard |
+| 5 | Spec 03 | Updater pubkey is placeholder | ✅ Generated real keypair via `tauri signer generate`, set pubkey in `tauri.conf.json` |
+| 6 | Spec 03 | No macOS x64 CLI tarball in release | ✅ Added `macos-x64` entry to `build-cli` matrix in `release.yml` |
+| 7 | Spec 03 | Capabilities not verified | ✅ Verified — `updater:default`, `deep-link:default`, `process:default` all present in `capabilities/default.json` |
+| 8 | Spec 04 | No LicenseKeyCard component | ✅ Created `web/src/components/account/LicenseKeyCard.tsx` with copy-to-clipboard |
+| 9 | Spec 05 | No approaching-limit warning (≥80%) | ✅ Added ≥80% warning in `CliApp.scala` pre-run check (already existed in RunOrchestrator) |
+| 10 | Spec 05 | Status command missing usage section | ✅ Same as #3 — already implemented |
+| 11 | Spec 05 | Token usage reported as 0,0 | ✅ Added accumulators in `RunOrchestrator` — tracks real tokens from AgentCompleted/Failed/Timeout/BudgetExceeded, passes to `reportTokenUsageIfAny` |
+| 12 | Master Plan | LICENSE still MIT | ✅ Replaced with BSL 1.1 (Business Source License) — 4-year change date to Apache 2.0 |
+| 13 | Master Plan | No telemetry integration | ✅ Added PostHog: `lib/posthog.ts`, `PostHogProvider.tsx`, integrated in root layout, env vars in `.env.example` |
+| 14 | Master Plan | No transactional email | ✅ Added Resend: `lib/email.ts` with welcome/trial-expiring/receipt templates, wired into Clerk webhook, env vars in `.env.example` |
 
 ---
 

@@ -37,7 +37,7 @@
       "endpoints": [
         "https://github.com/SteveVitali/Demiurge/releases/latest/download/latest.json"
       ],
-      "pubkey": "<PUBLIC_KEY_FROM_TAURI_SIGNER_GENERATE>"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDE4QTk3QjFDQjZDOENCQUEKUldTcXk4aTJISHVwR0xvYjNuaTdWclcvUFpGa042VUNZU3RPQ0gvOThDSjROcEZLRUowK2VPMlYK"
     },
     "deep-link": {
       "desktop": {
