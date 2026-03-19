@@ -1,10 +1,19 @@
-import { redirect } from 'next/navigation';
+import { Hero } from '@/components/landing/Hero';
+import { DemoVideo } from '@/components/landing/DemoVideo';
+import { FeaturesGrid } from '@/components/landing/FeaturesGrid';
+import { HowItWorks } from '@/components/landing/HowItWorks';
+import { Testimonials } from '@/components/landing/Testimonials';
+import { CTABanner } from '@/components/landing/CTABanner';
 
-/**
- * Root page — redirects to the marketing site.
- * The web/ backend is primarily an API layer; the marketing site
- * will be built separately (Spec 04).
- */
-export default function Home() {
-  redirect('https://demiurge.dev');
+export default function HomePage() {
+  return (
+    <>
+      <Hero />
+      <DemoVideo />
+      <FeaturesGrid />
+      <HowItWorks />
+      <Testimonials />
+      <CTABanner />
+    </>
+  );
 }
