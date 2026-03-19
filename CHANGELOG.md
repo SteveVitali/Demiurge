@@ -16,8 +16,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Homebrew formula for CLI (`brew install demiurge`) and Cask for desktop app
 - `useAutoUpdate` React hook for in-app update checks and installation
 - Desktop build check in CI pipeline (TypeScript compilation verification)
-- Deep link support (`demiurge://` protocol)
-- Single-instance enforcement with deep-link forwarding
 - Process plugin for app relaunch after updates
 - CHANGELOG.md for tracking release notes
 

@@ -9,6 +9,9 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+permissions:
+  contents: write
+
 env:
   TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
   TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -158,6 +161,7 @@ jobs:
   build-cli:
     needs: build-sidecar
     strategy:
+      fail-fast: false
       matrix:
         include:
           - platform: macos-latest
@@ -212,6 +216,7 @@ jobs:
   update-homebrew:
     needs: finalize-release
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - name: Update Homebrew formula
         uses: mislav/bump-homebrew-formula-action@v3
