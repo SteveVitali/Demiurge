@@ -44,7 +44,9 @@ object RunCommand {
     Files.createDirectories(artifactRoot)
 
     // Create isolated git worktree (Spec §4.2, Design §12.3)
-    val agentMode = Option(System.getenv("DEMIURGE_AGENT_BACKEND")).exists(_.nonEmpty)
+    // Agent mode is default when ANTHROPIC_API_KEY is set (unless explicitly disabled)
+    val agentDisabled = Option(System.getenv("DEMIURGE_AGENT_BACKEND")).exists(v => v.equalsIgnoreCase("none") || v.equalsIgnoreCase("disabled"))
+    val agentMode = !agentDisabled && Option(System.getenv("ANTHROPIC_API_KEY")).exists(_.nonEmpty)
     val worktreePath = try {
       WorktreeManager.create(global.repo, runId, cmd.gitRef.orElse(Some("HEAD")), agentMode = agentMode)
     } catch {
@@ -94,6 +96,41 @@ object RunCommand {
 
     if (!global.quiet) {
       System.out.println(OutputFormatter.formatRun(run, global.format))
+    }
+
+    // Auto-trigger smart init when no demiurge.yaml exists and ANTHROPIC_API_KEY is available
+    val manifestPath = worktreePath.resolve("demiurge.yaml")
+    if (!Files.exists(manifestPath) && agentMode) {
+      if (!global.quiet) {
+        System.err.println("[init] No demiurge.yaml found — running smart init automatically...")
+      }
+      val initResult = AgentInitExecutor.execute(
+        repoRoot = worktreePath,
+        outputPath = manifestPath,
+        force = false,
+        quiet = global.quiet,
+      )
+      if (initResult.success) {
+        if (!global.quiet) {
+          System.err.println(s"[init] ${initResult.summary}")
+        }
+        // Also copy the generated files back to the original repo for future runs
+        try {
+          val repoManifest = global.repo.resolve("demiurge.yaml")
+          if (!Files.exists(repoManifest)) {
+            initResult.demiurgeYaml.foreach(yaml => Files.writeString(repoManifest, yaml))
+          }
+          val repoReqs = global.repo.resolve("requirements.yaml")
+          if (!Files.exists(repoReqs)) {
+            initResult.requirementsYaml.foreach(yaml => Files.writeString(repoReqs, yaml))
+          }
+        } catch { case _: Exception => /* best-effort copy to repo root */ }
+      } else {
+        if (!global.quiet) {
+          System.err.println(s"[init] Smart init failed: ${initResult.summary}")
+          System.err.println("[init] Continuing with inspection-based planning...")
+        }
+      }
     }
 
     // Start local API server (Spec §14.4)

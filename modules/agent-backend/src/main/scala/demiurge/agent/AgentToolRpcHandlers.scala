@@ -74,7 +74,17 @@ object AgentToolRpcHandlers {
       case "agent/toolUse" =>
         // Real-time tool use notifications — log for transcript, no response needed
         val toolName = notification.params.hcursor.downField("toolName").as[String].getOrElse("unknown")
-        System.err.println(s"[agent] Tool use: $toolName")
+        val inputSummary = notification.params.hcursor.downField("inputSummary").as[String].getOrElse("")
+        val shortInput = if (inputSummary.length > 100) inputSummary.take(100) + "..." else inputSummary
+        System.err.println(s"[agent] ▸ $toolName ${if (shortInput.nonEmpty) s"— $shortInput" else ""}")
+
+      case "agent/progress" =>
+        // Agent text progress — limited stdout logging
+        val text = notification.params.hcursor.downField("text").as[String].getOrElse("")
+        if (text.nonEmpty) {
+          val truncated = if (text.length > 120) text.take(120) + "..." else text
+          System.err.println(s"[agent] $truncated")
+        }
 
       case _ =>
         // Unknown notification — ignore
