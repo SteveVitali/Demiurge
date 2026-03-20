@@ -317,7 +317,7 @@ requirements:
 - **`log`** — Log content check. Searches for a pattern in service logs.
 - **`state`** — State assertion (custom logic).
 - **`browser_flow`** — Playwright browser flow with actions and assertions (requires `browserFlowSpec` in the requirement graph).
-- **`agent_browser`** — Agentic browser UI verification via Claude Code agent with Playwright MCP tools. The agent autonomously navigates, screenshots, and evaluates the UI against the requirement description.
+- **`agent_browser`** — Agentic browser UI verification via Claude Code agent with Playwright MCP tools. The agent autonomously navigates, takes screenshots, and produces structured verdicts with confidence scores and visual taste judgments.
 
 ## `selectors.yaml`
 

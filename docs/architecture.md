@@ -5,20 +5,24 @@ Demiurge is a verifier-first orchestration platform for automating last-mile web
 ## Design Principles
 
 1. **Verifier-first** — every task completion claim is backed by executable verifiers that produce structured verdicts
-2. **Persist-before-side-effects** — every state transition is written to SQLite before any side effect executes (Spec §4.1)
+2. **Persist-before-side-effects** — every state transition is written to SQLite before any side effect executes
 3. **Isolated execution** — each run operates in a dedicated git worktree with its own artifact directory and lock file
 4. **Structured observability** — all events are typed, timestamped, and persisted; available via SSE streaming
 5. **Budget enforcement** — inference tokens, artifact disk, repair attempts, and timeouts are all bounded
+6. **Priority-aware verification** — only `Required` priority verifiers block success; `Important` and `NiceToHave` failures are reported but do not prevent a passing verdict
 
 ## System Overview
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│                      CLI (demiurge)                      │
+│              Desktop App (Tauri 2 + React)                │
+│    Dashboard · Run Detail · Verdicts · Artifacts         │
+├──────────────────────────────────────────────────────────┤
+│                      CLI (demiurge)                       │
 │   Main → CliApp → CommandParsers → Command handlers      │
 ├──────────────────────────────────────────────────────────┤
 │                  Local API Server                         │
-│   127.0.0.1:19440 — REST + SSE (com.sun.net.httpserver) │
+│   127.0.0.1:19440 — REST + SSE + CORS                   │
 ├──────────────────────────────────────────────────────────┤
 │                     Orchestrator                          │
 │   RunOrchestrator · RunTransitionManager · AttemptManager │
@@ -29,7 +33,7 @@ Demiurge is a verifier-first orchestration platform for automating last-mile web
 │  Repo   │Requirement│ Environ- │    Verification          │
 │Inspector│ Compiler  │  ment    │      Engine              │
 │         │           │ Planner  │ HTTP/TCP/Exec/Log/State  │
-│         │           │          │ BrowserFlow (via worker)  │
+│         │           │          │ Browser/AgentBrowser     │
 ├─────────┴──────────┴───────────┼─────────────────────────┤
 │      Runtime Supervisor        │   Worker Protocol        │
 │  (boot, teardown, fixtures,    │  (stdio JSON-RPC 2.0)   │
@@ -37,8 +41,8 @@ Demiurge is a verifier-first orchestration platform for automating last-mile web
 ├────────────────────────────────┼─────────────────────────┤
 │  Failure Analysis              │   Browser Worker (TS)    │
 │  Inference Service             │  Playwright · Artifacts  │
-│  Repair API · Claude Backend   │  Auth Bootstrap          │
-│  Artifact Store · Evidence     │  Page Snapshots          │
+│  Repair API · Claude Backend   │  Agent SDK Execution     │
+│  Artifact Store · Evidence     │  Auth Bootstrap          │
 ├────────────────────────────────┴─────────────────────────┤
 │               Persistence (SQLite WAL mode)               │
 │  17 tables · TaskRun · Attempt · Verdict · Event ·       │
@@ -55,23 +59,26 @@ Created
   → InspectingRepo
     → CompilingRequirements
       → PlanningEnvironment
-        → BootstrappingEnvironment
-          ├─→ EnvironmentFailed (terminal if boot fails)
-          └─→ SeedingFixtures
-                → BootstrappingAuth (if auth configured)
-                  → ReadyToVerify
-                    → Verifying
-                      ├─→ Succeeded (all pass)
-                      ├─→ Exhausted (no repair backend or already repaired)
-                      └─→ AnalyzingFailure
-                            → PlanningRepair
-                              → Repairing
-                                ├─→ RepairFailed → Exhausted
-                                └─→ SoftResettingEnvironment
-                                      → ReadyToVerify
-                                        → Verifying
-                                          ├─→ Succeeded
-                                          └─→ Exhausted
+        ├─→ PlanningFeature (Build mode only)
+        │     → GeneratingCode
+        │       → BootstrappingEnvironment
+        └─→ BootstrappingEnvironment (Full/Verify mode)
+              ├─→ EnvironmentFailed (terminal if boot fails)
+              └─→ SeedingFixtures
+                    → BootstrappingAuth (if auth configured)
+                      → ReadyToVerify
+                        → Verifying
+                          ├─→ Succeeded (all required pass)
+                          ├─→ Exhausted (no repair backend or max attempts)
+                          └─→ AnalyzingFailure
+                                → PlanningRepair
+                                  → Repairing
+                                    ├─→ RepairFailed → Exhausted
+                                    └─→ SoftResettingEnvironment
+                                          → ReadyToVerify
+                                            → Verifying
+                                              ├─→ Succeeded
+                                              └─→ Exhausted
 
 Special transitions:
   Any state → Cancelled (via cancel command or API)
@@ -94,10 +101,10 @@ This ensures that if the process crashes during a side effect, the persisted sta
 
 Foundation types shared across all modules:
 
-- **22 enums** — `RunStatus`, `AttemptStatus`, `VerdictStatus`, `FailureClass`, `VerifierType`, `ArtifactType`, `ServiceKind`, `StartupMode`, `AuthMode`, `RunMode`, `ResetStrategy`, `InferenceProvider`, `GenerationMode`, etc.
-- **79+ case classes** — `TaskRun`, `Attempt`, `RequirementVerdict`, `SystemEvent`, `ArtifactRecord`, `RuntimePlan`, `RuntimeSnapshot`, `RequirementGraph`, `FailurePacket`, `InferenceRequest`/`Response`, `BrowserAction`, `Assertion`, `Observation`, etc.
+- **22 enums** — `RunStatus` (23 values), `AttemptStatus`, `VerdictStatus`, `FailureClass`, `VerifierType` (10 types including `AgentBrowser`), `ArtifactType` (24 types), `ServiceKind`, `StartupMode`, `AuthMode`, `RunMode` (5 modes including `Build`), `ResetStrategy`, `InferenceProvider`, `GenerationMode`, `RepairResultStatus`, `WorkerTaskStatus`, etc.
+- **116+ case classes** — `TaskRun`, `Attempt`, `RequirementVerdict`, `SystemEvent`, `ArtifactRecord`, `RuntimePlan`, `RuntimeSnapshot`, `RequirementGraph`, `FailurePacket`, `InferenceRequest`/`Response`, `BrowserAction`, `Assertion`, `Observation`, `FeaturePlan`, `ResolvedConfig`, `AgentBrowserVerifierSpec`, etc.
 - **JSON codecs** — circe semiauto derivation for all DTOs
-- **ExecutionBudgetDefaults** — default budget values (max attempts, timeouts, disk limits)
+- **ExecutionBudgetDefaults** / **BuildBudgetDefaults** — default budget values for verification and build modes
 
 ### Persistence (`modules/persistence`)
 
@@ -154,9 +161,9 @@ Exit codes: 0=success, 1=exhausted, 2=cancelled, 3=errored, 4=input error, 5=con
 
 ### Local API (`modules/local-api`)
 
-HTTP server on `127.0.0.1:19440` using `com.sun.net.httpserver` (JDK built-in, no external deps).
+HTTP server on `127.0.0.1:19440` using `com.sun.net.httpserver` (JDK built-in, no external deps). CORS middleware allows cross-origin requests from the desktop app.
 
-Endpoints: `GET /health`, `GET /runs/{id}`, `POST /runs`, `GET /runs/{id}/plan`, `GET /runs/{id}/attempts`, `GET /runs/{id}/attempts/{n}/verdicts`, `GET /runs/{id}/artifacts`, `GET /runs/{id}/artifacts/{id}/content`, `POST /runs/{id}/resume`, `POST /runs/{id}/cancel`, `GET /runs/{id}/events` (SSE).
+Endpoints: `GET /health`, `GET /runs` (paginated list), `GET /runs/active`, `POST /runs`, `GET /runs/{id}`, `GET /runs/{id}/plan`, `GET /runs/{id}/attempts`, `GET /runs/{id}/attempts/{n}/verdicts`, `GET /runs/{id}/artifacts` (paginated, filtered), `GET /runs/{id}/artifacts/{id}/content`, `POST /runs/{id}/resume`, `POST /runs/{id}/cancel`, `GET /runs/{id}/events` (SSE).
 
 All responses use a JSON envelope (`ApiEnvelope`). The SSE endpoint streams `SystemEvent` objects in real-time.
 
@@ -166,9 +173,11 @@ Generates and executes verifiers from a `RequirementGraph`:
 
 - **Verifier types** — `HttpVerifier`, `TcpVerifier`, `ExecVerifier`, `LogContainsVerifier`, `StateVerifier`, `BrowserFlowVerifier`, `AgentBrowserVerifier`
 - **VerifierGenerator** — maps `RequirementGraph` nodes to executable verifiers
-- **VerifierExecutor** — runs HTTP/TCP/exec/log/state verifiers in-process
-- **VerdictAggregator** — aggregates individual outcomes into an overall verdict
+- **VerifierExecutor** — runs HTTP/TCP/exec/log/state verifiers in-process; dispatches browser and agent verifiers to the worker
+- **VerdictAggregator** — priority-aware aggregation: only `Required` verifiers block success; `Important`/`NiceToHave` failures are tracked but non-blocking
+- **VerificationPlanner** — organizes verifiers into layers with parallel groups; supports `stopOnFailure` and blocked requirement tracking
 - **BrowserFlowVerifier** — dispatched to the TypeScript worker via `WorkerProcessManager`; supports selector fallbacks
+- **AgentBrowserVerifier** — LLM-driven browser UI verification via Claude Agent SDK + Playwright MCP server; produces structured observations with confidence scores and visual taste judgments
 
 ### Worker Protocol (`modules/worker-protocol`)
 
@@ -206,6 +215,8 @@ Bridge between the Scala orchestrator and the TypeScript worker for agentic oper
 - **AgentExecutor** — sends `agent/execute` JSON-RPC requests to the worker, which runs Claude Agent SDK `query()` with MCP tools for verification, service health checks, and log access
 - **AgentToolRpcHandlers** — handles callback notifications from the worker (verify_requirements, restart_service, get_service_logs, check_service_health, get_requirement_details) and agent progress events
 - **AgentSystemPromptBuilder** — builds system/user prompts with failure context for the agent
+- **AgentBrowserExecutorImpl** — executes agentic browser UI verification via Claude Agent SDK + Playwright MCP server
+- **BrowserVerificationPromptBuilder** — builds structured prompts for LLM-driven UI verification with multi-viewport and taste judgment support
 
 ### Repair Pipeline
 
@@ -278,9 +289,10 @@ Orchestrator → RunTransitionManager.transition()
 
 GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every push to `main` and on pull requests:
 
-1. **Bazel build** — `bazel build //...` (all 43+ targets)
-2. **Bazel tests** — `bazel test //...` (all 20+ test targets, including unit and integration)
-3. **Worker tests** — `npm ci && npm test` in the `worker/` directory
+1. **Bazel build** — `bazel build //...` (all 46 targets)
+2. **Bazel tests** — `bazel test //...` (all 22 test targets, including unit and integration)
+3. **Worker tests** — `npm ci && npm test` in the `worker/` directory (4 test suites)
+4. **Playwright** — Chromium browser installed for browser flow tests
 
 Bazel caching is configured via `bazel-contrib/setup-bazel` for fast incremental builds.
 
@@ -289,6 +301,7 @@ Bazel caching is configured via `bazel-contrib/setup-bazel` for fast incremental
 - **Unit tests** — per-module, exercising individual components with stubs (e.g., `OrchestratorSuite`, `ResumeSuite`)
 - **End-to-end integration tests** — `EndToEndSuite` exercises the full orchestration pipeline with in-memory SQLite and configurable stub backends (`EndToEndTestHarness`). Covers: full pass, build mode, multi-attempt repair, exhaustion, auth bootstrap, resume from checkpoint, and signal interruption.
 - **Resume tests** — `ResumeSuite` validates that `ResumeDataLoader` correctly loads persisted state and that `RunOrchestrator` skips completed phases when resuming.
+- **Worker tests** — Jest test suites covering RPC protocol, browser flow execution, auth bootstrap, and agentic browser verification.
 
 All tests are deterministic and fast — no external network calls, no real Docker containers, no real LLM API calls.
 
@@ -327,6 +340,8 @@ The desktop app communicates with the Scala backend via a sidecar process:
 3. SSE/WebSocket streams provide live pipeline updates, agent transcripts, and log tailing
 4. The sidecar is packaged as a fat JAR via `desktop/scripts/package-sidecar.sh`
 
+See [desktop.md](desktop.md) for setup and development instructions.
+
 ## Technology Stack
 
 | Component | Technology |
@@ -345,7 +360,7 @@ The desktop app communicates with the Scala backend via a sidecar process:
 | MCP | @modelcontextprotocol/sdk ^1.27.1, @playwright/mcp ^0.0.28 |
 | Testing (TS) | Jest 29.7 + ts-jest |
 | Functional | Cats 2.12.0, Shapeless 2.3.12 |
-| Desktop framework | Tauri v2 (Rust core) |
+| Desktop framework | Tauri v2 (Rust core), Vite 6 |
 | Desktop frontend | React 19, TypeScript, Tailwind CSS v4 |
 | Desktop state | Zustand 5, TanStack Query 5, TanStack Router 1 |
 | Desktop UI | Monaco Editor, React Flow, xterm.js, Framer Motion, Lucide |

@@ -20,12 +20,12 @@ Demiurge/
 │   ├── persistence/            # SQLite repos, migrations
 │   ├── orchestrator/           # Run state machine, transitions
 │   ├── cli/                    # CLI commands, arg parsing
-│   ├── local-api/              # HTTP server, SSE streaming
+│   ├── local-api/              # HTTP server, SSE streaming, CORS
 │   ├── manifest/               # demiurge.yaml parser
-│   ├── config-resolver/         # Layered config resolution
+│   ├── config-resolver/        # Layered config resolution
 │   ├── repo-inspector/         # Repository analysis
 │   ├── requirement-compiler/   # Requirements → RequirementGraph
-│   ├── agent-backend/          # Agent SDK integration
+│   ├── agent-backend/          # Agent SDK integration, browser verification
 │   ├── requirements/           # requirements.yaml parser
 │   ├── selectors/              # selectors.yaml parser
 │   ├── environment-planner/    # RuntimePlan generation
@@ -37,12 +37,12 @@ Demiurge/
 │   ├── repair-claude/          # Claude repair backend
 │   ├── artifact-store/         # Artifact sink, evidence collector
 │   ├── worker-protocol/        # JSON-RPC 2.0 worker client
-│   └── policy/                 # Policy enforcement (stub)
+│   └── policy/                 # Policy enforcement
 ├── worker/                     # TypeScript browser worker
 │   ├── src/                    # Source files
 │   │   ├── rpc/                # JSON-RPC 2.0 server
 │   │   ├── browser/            # BrowserManager (Playwright)
-│   │   ├── artifacts/          # ArtifactWriter
+│   │   ├── artifacts/          # ArtifactWriter, browser artifact collector
 │   │   ├── methods/            # RPC method handlers (incl. agent/execute)
 │   │   ├── utils/              # Checksum utilities
 │   │   └── index.ts            # Entry point
@@ -65,6 +65,7 @@ Demiurge/
 │   └── fixtures/               # Integration test fixtures
 │       ├── simple-node-http/   # Simple Node.js API fixture
 │       └── compose-app/        # Docker Compose fullstack fixture
+├── .github/workflows/ci.yml   # GitHub Actions CI
 ├── MODULE.bazel                # Bazel module definition
 ├── .bazelrc                    # Bazel build settings
 ├── BUILD.bazel                 # Root BUILD file
@@ -80,6 +81,22 @@ bazel build //...
 ```
 
 This builds all 46 targets across 22 Scala modules. Bazel handles dependency resolution, Scala compilation, and Java runtime automatically.
+
+### Build the desktop application
+
+```bash
+cd desktop
+npm install
+npm run tauri build
+```
+
+The desktop app requires the Rust toolchain. For development with hot reload:
+
+```bash
+cd desktop
+npm install
+npm run tauri dev
+```
 
 ### Build a specific module
 
@@ -132,6 +149,16 @@ bazel test //...
 
 This runs 22 test targets across all modules. Tests use MUnit 1.0.3.
 
+### Run desktop app in development mode
+
+```bash
+cd desktop
+npm install
+npm run tauri dev
+```
+
+This starts the Vite dev server on `http://localhost:1420` with hot reload and launches the Tauri window.
+
 ### Run tests for a specific module
 
 ```bash
@@ -180,7 +207,7 @@ core-model (no deps)
   ├── selectors (core-model, snakeyaml)
   ├── config-resolver (core-model, manifest, requirements)
   ├── repo-inspector (core-model, manifest, circe, snakeyaml, cats)
-  ├── agent-backend (core-model, worker-protocol)
+  ├── agent-backend (core-model, worker-protocol, verification-engine)
   ├── inference (core-model)
   ├── failure-analysis (core-model, inference)
   ├── environment-planner (core-model)
@@ -216,13 +243,24 @@ core-model (no deps)
 - **State machine invariant** — persist-before-side-effects for all state transitions
 - **No external HTTP library** — API server uses JDK built-in `com.sun.net.httpserver`
 
-### TypeScript
+### TypeScript (Worker)
 
 - **ES2022** target with CommonJS modules
 - **Strict mode** enabled
 - **Playwright 1.42.1** for browser automation
+- **Claude Code SDK** for agentic repair and browser verification
 - **Jest + ts-jest** for testing
 - **stdio JSON-RPC 2.0** for inter-process communication
+
+### TypeScript (Desktop)
+
+- **React 19** with Vite 6
+- **TanStack Query** for server state management
+- **TanStack Router** for routing
+- **Zustand 5** for client state
+- **Tailwind CSS 4** for styling
+- **Framer Motion 11** for animations
+- **Tauri 2** plugins: shell, dialog, notification, store, window-state
 
 ### Build System
 

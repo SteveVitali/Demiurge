@@ -6,11 +6,14 @@ Demiurge orchestrates environment setup, requirement verification, failure analy
 
 ## Key Features
 
-- **Verifier-first architecture** — requirements are compiled into executable verifiers (HTTP, TCP, exec, log, state, browser flow) that produce structured verdicts
+- **Verifier-first architecture** — requirements are compiled into executable verifiers (HTTP, TCP, exec, log, state, browser flow, agentic browser) that produce structured verdicts
 - **Automated environment management** — boots services via scripts or Docker Compose, runs readiness probes, seeds fixtures
 - **Browser automation** — Playwright-based browser worker (TypeScript) for UI flow verification, screenshot capture, DOM/accessibility snapshots
+- **Agentic browser verification** — Claude Agent SDK + Playwright MCP server for LLM-driven UI verification with visual taste judgment, multi-viewport testing, and structured observation capture
 - **Agentic repair via Claude Code** — when verification fails, Demiurge delegates to the Claude Code agent (multi-turn, with file editing and shell access) to fix the issue; legacy single-shot LLM patch repair available as fallback
+- **Build mode** — autonomous feature generation from a task description: plans implementation, generates code, boots environment, verifies, and repairs in a loop until all verifiers pass
 - **Auto-configuration** — when no `demiurge.yaml` exists, `demiurge run` automatically invokes the Claude Code agent to generate configuration files tailored to your project
+- **Desktop application** — Tauri 2 + React desktop GUI for monitoring runs, inspecting verdicts/artifacts, and controlling the orchestration pipeline
 - **Isolated execution** — each run operates in a dedicated git worktree with its own SQLite database, artifacts, and lock file
 - **Structured observability** — JSON event stream, SSE-capable local API, structured logging, full artifact capture
 - **Smart resume** — interrupted runs resume from the last completed phase, skipping already-persisted work; attempt counters continue where they left off
@@ -19,68 +22,76 @@ Demiurge orchestrates environment setup, requirement verification, failure analy
 
 ## Architecture Overview
 
-Demiurge is a **Scala 2.13 + TypeScript** dual-stack project built with **Bazel**.
+Demiurge is a **Scala 2.13 + TypeScript + Rust** multi-stack project built with **Bazel** (Scala backend) and **Tauri** (desktop app).
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                    CLI (demiurge)                    │
-│  run · plan · resume · status · inspect-run · ...   │
-├─────────────────────────────────────────────────────┤
-│                   Orchestrator                       │
-│  RunOrchestrator · RunTransitionManager · Signals   │
-├──────────┬──────────┬───────────┬───────────────────┤
-│  Repo    │ Require- │ Environ-  │   Verification    │
-│Inspector │  ment    │   ment    │     Engine        │
-│          │ Compiler │  Planner  │ (HTTP/TCP/Browser) │
-├──────────┴──────────┴───────────┼───────────────────┤
-│         Runtime Supervisor      │  Worker Protocol  │
-│   (boot, teardown, fixtures)    │  (JSON-RPC 2.0)   │
-├─────────────────────────────────┼───────────────────┤
-│  Agent Backend · Repair API     │  Browser Worker   │
-│  Failure Analysis · Inference   │  (TypeScript/     │
-│  Artifact Store · Evidence      │   Playwright)     │
-├─────────────────────────────────┴───────────────────┤
-│              Persistence (SQLite WAL)                │
-│  TaskRun · Attempt · Verdict · Event · Artifact     │
-└─────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│              Desktop App (Tauri 2 + React)               │
+│    Dashboard · Run Detail · Verdicts · Artifacts        │
+├─────────────────────────────────────────────────────────┤
+│                     CLI (demiurge)                       │
+│  run · build · plan · resume · status · inspect-run · … │
+├─────────────────────────────────────────────────────────┤
+│              Local API (127.0.0.1:19440)                 │
+│        REST + SSE · CORS · Paginated Endpoints          │
+├─────────────────────────────────────────────────────────┤
+│                      Orchestrator                        │
+│  RunOrchestrator · RunTransitionManager · Signals        │
+├──────────┬──────────┬───────────┬───────────────────────┤
+│  Repo    │ Require- │ Environ-  │    Verification       │
+│Inspector │  ment    │   ment    │      Engine           │
+│          │ Compiler │  Planner  │ HTTP/TCP/Browser/Agent │
+├──────────┴──────────┴───────────┼───────────────────────┤
+│       Runtime Supervisor        │   Worker Protocol     │
+│  (boot, teardown, fixtures)     │   (JSON-RPC 2.0)      │
+├─────────────────────────────────┼───────────────────────┤
+│  Agent Backend · Repair API     │   Browser Worker      │
+│  Failure Analysis · Inference   │   (TypeScript/        │
+│  Artifact Store · Evidence      │    Playwright)        │
+├─────────────────────────────────┴───────────────────────┤
+│               Persistence (SQLite WAL)                   │
+│   TaskRun · Attempt · Verdict · Event · Artifact         │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ### Module Map
 
 | Module | Language | Purpose |
 |--------|----------|---------|
-| `modules/core-model` | Scala | 21 enums, 79+ case classes, JSON codecs (circe) |
+| `modules/core-model` | Scala | 21 enums, 116+ case classes, JSON codecs (circe) |
 | `modules/persistence` | Scala | SQLite WAL, migrations, repos (TaskRun, Attempt, Verdict, Event, Artifact, etc.) |
 | `modules/orchestrator` | Scala | Run state machine, transition manager, signal handler, timeout enforcer, resume manager |
-| `modules/cli` | Scala | 11 CLI commands, arg parsing, output formatting (human/JSON) |
-| `modules/local-api` | Scala | HTTP server (127.0.0.1:19440), REST + SSE event streaming |
+| `modules/cli` | Scala | 12 CLI commands, arg parsing, output formatting (human/JSON) |
+| `modules/local-api` | Scala | HTTP server (127.0.0.1:19440), REST + SSE event streaming, CORS |
 | `modules/manifest` | Scala | `demiurge.yaml` parser (SnakeYAML) |
 | `modules/config-resolver` | Scala | Layered config resolution (explicit YAML → cached inference), `ResolvedConfig` DTOs |
 | `modules/repo-inspector` | Scala | Repository analysis, changed-file impact mapping |
 | `modules/requirement-compiler` | Scala | Requirements + selectors → RequirementGraph with VerifierSpecs |
-| `modules/agent-backend` | Scala | Agent SDK integration — bridges orchestrator to TypeScript worker for agentic operations |
+| `modules/agent-backend` | Scala | Agent SDK integration — bridges orchestrator to TypeScript worker for agentic repair, build, and browser verification |
 | `modules/requirements` | Scala | `requirements.yaml` parser and validator |
 | `modules/selectors` | Scala | `selectors.yaml` parser (CSS/XPath/test-id strategies) |
 | `modules/environment-planner` | Scala | RuntimePlan generation from inspection + requirements |
 | `modules/runtime-supervisor` | Scala | Service boot/teardown, readiness probes, fixture execution |
-| `modules/verification-engine` | Scala | Verifier generation, execution, verdict aggregation |
+| `modules/verification-engine` | Scala | Verifier generation, execution, verdict aggregation (priority-aware) |
 | `modules/failure-analysis` | Scala | LLM-backed + rule-based failure analysis |
 | `modules/inference` | Scala | LLM inference gateway with budget, cache, timeout, replay |
 | `modules/repair-api` | Scala | FailurePacket builder, PatchProposal DTOs, PatchApplier |
 | `modules/repair-claude` | Scala | Claude API client, prompt builder, repair backend |
 | `modules/artifact-store` | Scala | Artifact sink (temp-then-rename, SHA-256, gzip), evidence collector |
 | `modules/worker-protocol` | Scala | JSON-RPC 2.0 client, WorkerProcessManager, message types |
-| `modules/policy` | Scala | Policy enforcement (stub) |
-| `worker/` | TypeScript | Playwright browser worker — stdio JSON-RPC 2.0 bridge |
+| `modules/policy` | Scala | Policy enforcement (filesystem, network, browser, tool, destructive action) |
+| `worker/` | TypeScript | Playwright browser worker — stdio JSON-RPC 2.0 bridge, agent SDK execution |
+| `desktop/` | TypeScript + Rust | Tauri 2 desktop application — React frontend with real-time run monitoring |
 
 ## Prerequisites
 
 - **Java 17** (provided by Bazel via `remotejdk_17`)
 - **Bazel 9.0+** (with Bzlmod)
-- **Node.js >= 18** (for browser worker)
+- **Node.js >= 18** (for browser worker and desktop app)
 - **Git >= 2.20**
 - **Docker + Docker Compose V2** (optional, for compose-based services)
 - **Playwright browsers** (optional, for browser flow verification)
+- **Rust toolchain** (optional, for desktop app development)
 
 Run `demiurge doctor` to check all prerequisites.
 
@@ -89,16 +100,17 @@ Run `demiurge doctor` to check all prerequisites.
 ### Build
 
 ```bash
+# Build all Scala modules (46 targets)
 bazel build //...
 ```
 
 ### Test
 
 ```bash
-# Scala tests (20+ test targets)
+# Scala tests (22 test targets)
 bazel test //...
 
-# TypeScript worker tests
+# TypeScript worker tests (4 test suites)
 cd worker && npm install && npm test
 ```
 
@@ -107,6 +119,9 @@ cd worker && npm install && npm test
 ```bash
 # Execute a verification run
 demiurge run --task "Verify the login flow works end-to-end"
+
+# Build mode — generate code from a task description
+demiurge build --task "Add user registration with email/password"
 
 # Plan without executing
 demiurge plan --task "Add user registration" --changed-files "src/auth.ts,src/pages/register.tsx"
@@ -150,6 +165,7 @@ See [docs/configuration.md](docs/configuration.md) for the full manifest schema 
 - [CLI Reference](docs/cli-reference.md) — all commands, flags, exit codes, output formats
 - [API Reference](docs/api-reference.md) — local HTTP API endpoints, SSE event streaming
 - [Configuration](docs/configuration.md) — `demiurge.yaml` manifest, `requirements.yaml`, `selectors.yaml`
+- [Desktop Application](docs/desktop.md) — Tauri desktop GUI, setup, and development
 - [Development Guide](docs/development.md) — building, testing, contributing, module structure
 
 ## License

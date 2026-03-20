@@ -4,6 +4,8 @@ Demiurge runs a local HTTP API server during active runs. The server binds to `1
 
 The server starts automatically with `demiurge run` and stops when the run completes.
 
+All endpoints support CORS (Cross-Origin Resource Sharing) to allow requests from the desktop application.
+
 ## Response Envelope
 
 All JSON responses use a standard envelope:
@@ -42,6 +44,52 @@ Health check.
   }
 }
 ```
+
+### `GET /runs`
+
+List all runs with pagination, sorting, and optional status filtering.
+
+**Query parameters:**
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `offset` | `0` | Pagination offset |
+| `limit` | `20` | Page size |
+| `sort` | `created_at` | Sort field |
+| `order` | `desc` | Sort order: `asc` or `desc` |
+| `status` | None | Filter by run status (e.g., `Succeeded`, `Verifying`) |
+
+**Response:**
+```json
+{
+  "ok": true,
+  "data": {
+    "items": [ ... ],
+    "total": 42,
+    "offset": 0,
+    "limit": 20
+  }
+}
+```
+
+### `GET /runs/active`
+
+Get the currently active run (if any).
+
+**Response (success):**
+```json
+{
+  "ok": true,
+  "data": {
+    "runId": "abc-123",
+    "status": "Verifying",
+    "taskText": "Verify the login flow works",
+    ...
+  }
+}
+```
+
+**Errors:** `404` if no active run.
 
 ### `POST /runs`
 
