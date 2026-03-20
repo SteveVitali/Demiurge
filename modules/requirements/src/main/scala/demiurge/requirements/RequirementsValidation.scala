@@ -4,7 +4,7 @@ package demiurge.requirements
 object RequirementsValidation {
 
   private val validTypes: Set[String] = Set(
-    "http", "process", "state", "log", "tcp", "browser", "env_readiness",
+    "http", "process", "state", "log", "tcp", "browser", "agent_browser", "env_readiness",
   )
 
   private val validSeverities: Set[String] = Set(
