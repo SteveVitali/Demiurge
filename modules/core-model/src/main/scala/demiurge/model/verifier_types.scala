@@ -22,6 +22,7 @@ case class VerifierSpec(
   queueJobSpec:       Option[QueueJobVerifierSpec],
   persistenceSpec:    Option[PersistenceReloadVerifierSpec],
   regressionSpec:     Option[RegressionVerifierSpec],
+  agentBrowserSpec:   Option[AgentBrowserVerifierSpec] = None,
 )
 
 // Spec §3.2: BrowserFlowVerifierSpec
@@ -159,3 +160,23 @@ case class RegressionVerifierSpec(
   regressionScope:    List[String],
   toleranceOverrides: Map[String, Double],
 )
+
+// Design: Agentic Browser UI Verification §7.2
+case class AgentBrowserVerifierSpec(
+  entryUrl:            String,
+  featureDescription:  String,
+  viewports:           List[Viewport]       = Nil,
+  tasteSensitivity:    TasteSensitivity     = TasteSensitivity.Normal,
+  tasteTriggersRepair: Boolean              = true,
+  maxBudgetUsd:        Double               = 50.0,
+)
+
+case class Viewport(width: Int, height: Int)
+
+sealed trait TasteSensitivity
+object TasteSensitivity {
+  case object Strict  extends TasteSensitivity  // all taste issues → repair
+  case object Normal  extends TasteSensitivity  // warning + error → repair
+  case object Lenient extends TasteSensitivity  // only error → repair
+  case object Off     extends TasteSensitivity  // never triggers repair
+}

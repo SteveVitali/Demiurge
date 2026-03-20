@@ -66,6 +66,7 @@ object VerificationPlanner {
     case VerifierType.ConsoleLogSanity     => 1
     case VerifierType.NetworkExpectation   => 1
     case VerifierType.BrowserFlow          => 2
+    case VerifierType.AgentBrowser         => 2
     case VerifierType.StateAssertion       => 2
     case VerifierType.QueueJob             => 3
     case VerifierType.PersistenceReload    => 3

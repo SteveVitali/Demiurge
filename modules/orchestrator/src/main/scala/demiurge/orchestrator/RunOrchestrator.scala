@@ -13,7 +13,7 @@ import demiurge.repair._
 import demiurge.config.{ConfigResolver, ConfigResolverImpl}
 import demiurge.inference.InferenceService
 import demiurge.worker.WorkerProcessManager
-import demiurge.agent.{AgentBackend, AgentConfig, AgentResult, AgentCompleted, AgentFailed, AgentTimeout, AgentBudgetExceeded, AgentToolRpcHandlers}
+import demiurge.agent.{AgentBackend, AgentConfig, AgentResult, AgentCompleted, AgentFailed, AgentTimeout, AgentBudgetExceeded, AgentToolRpcHandlers, AgentBrowserExecutorImpl}
 
 // Spec §4.1: Synchronous orchestrator loop.
 // Executes the path: Created → InspectingRepo → CompilingRequirements →
@@ -449,6 +449,12 @@ object RunOrchestrator {
           val attempt = AttemptManager.createAttempt(currentRun.runId, attemptNumber)
           val verifying = AttemptManager.startVerifying(attempt)
 
+          // Design: Agentic Browser Verification — build agent browser executor if worker available
+          val agentBrowserExecutor: Option[VerificationEngine.AgentBrowserExecutor] =
+            workerManager.filter(_.isAlive).map { wm =>
+              new AgentBrowserExecutorImpl(wm, currentCtx.repoRoot, agentConfig, currentRun.artifactRootPath)
+            }
+
           val result = VerificationEngine.runVerification(
             currentRun.runId,
             attemptNumber,
@@ -457,6 +463,7 @@ object RunOrchestrator {
             inferenceService,
             resolvedConfig,
             authContext,
+            agentBrowserExecutor,
           )
           verificationResult = Some(result)
 
@@ -612,7 +619,21 @@ object RunOrchestrator {
                 agentConfig.copy(timeoutMs = rc.policies.attemptTimeoutMs - 30000)
               case _ => agentConfig
             }
-            agentRepairResult = Some(agent.executeRepair(repairContext, effectiveAgentConfig))
+
+            // Design: Agentic Browser Verification §11 — enable browser tools on repair agent
+            // when the requirement graph contains frontend/browser verifiers
+            val hasFrontendRequirements = requirementResult.get.nodes.exists(n =>
+              n.category == RequirementCategory.UiFlow ||
+              n.verifiers.exists(v =>
+                v.verifierType == VerifierType.BrowserFlow ||
+                v.verifierType == VerifierType.AgentBrowser
+              )
+            )
+            val repairAgentConfig = if (hasFrontendRequirements) {
+              effectiveAgentConfig.copy(enableBrowserTools = true)
+            } else effectiveAgentConfig
+
+            agentRepairResult = Some(agent.executeRepair(repairContext, repairAgentConfig))
           } else {
             // Legacy repair path
             val backend = repairBackend.get

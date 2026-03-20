@@ -43,6 +43,10 @@ jobs:
         run: npm ci
         working-directory: worker
 
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+        working-directory: worker
+
       - name: Run worker tests
         run: npm test
         working-directory: worker

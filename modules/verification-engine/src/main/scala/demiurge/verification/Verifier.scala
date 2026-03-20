@@ -75,6 +75,22 @@ case class BrowserFlowVerifier(
   selectorFallbacks: Map[String, demiurge.model.SelectorRef] = Map.empty,
 ) extends Verifier
 
+// Design: Agentic Browser UI Verification §7.2
+case class AgentBrowserVerifier(
+  id:                  String,
+  requirementId:       String,
+  entryUrl:            String,
+  featureDescription:  String,
+  timeout:             Duration,
+  maxRetries:          Int,
+  maxBudgetUsd:        Double                          = 50.0,
+  maxTurns:            Int                             = 30,
+  viewports:           List[demiurge.model.Viewport]   = Nil,
+  tasteSensitivity:    demiurge.model.TasteSensitivity = demiurge.model.TasteSensitivity.Normal,
+  tasteTriggersRepair: Boolean                         = true,
+  beforeScreenshots:   List[String]                    = Nil,
+) extends Verifier
+
 // Phase 6: Extended verifier outcome with artifact refs and observations
 case class BrowserVerifierResult(
   outcome:      VerifierOutcome,

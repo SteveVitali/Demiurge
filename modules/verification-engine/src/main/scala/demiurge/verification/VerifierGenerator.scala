@@ -79,6 +79,24 @@ object VerifierGenerator {
           maxRetries = spec.maxRetries,
         )
 
+      // Design: Agentic Browser UI Verification §15.1
+      case VerifierType.AgentBrowser =>
+        val browser = spec.agentBrowserSpec.getOrElse(
+          throw new IllegalStateException(s"AgentBrowser verifier ${spec.verifierId} missing agentBrowserSpec")
+        )
+        AgentBrowserVerifier(
+          id = spec.verifierId,
+          requirementId = spec.requirementId,
+          entryUrl = browser.entryUrl,
+          featureDescription = browser.featureDescription,
+          timeout = spec.timeout,
+          maxRetries = spec.maxRetries,
+          maxBudgetUsd = browser.maxBudgetUsd,
+          viewports = browser.viewports,
+          tasteSensitivity = browser.tasteSensitivity,
+          tasteTriggersRepair = browser.tasteTriggersRepair,
+        )
+
       case _ =>
         // For unsupported types, create a stub StateVerifier
         StateVerifier(

@@ -40,6 +40,9 @@ object VerifierExecutor {
         // via the worker process manager — not by this in-process executor.
         case _: BrowserFlowVerifier =>
           VerifierOutcome.Error("BrowserFlowVerifier must be executed via WorkerProcessManager")
+        // Design: Agentic Browser UI Verification §15.1
+        case _: AgentBrowserVerifier =>
+          VerifierOutcome.Error("AgentBrowserVerifier must be executed via AgentBrowserExecutor")
       }
     } catch {
       case _: java.net.SocketTimeoutException => VerifierOutcome.TimedOut

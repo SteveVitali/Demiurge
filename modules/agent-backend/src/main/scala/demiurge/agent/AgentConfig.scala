@@ -7,6 +7,8 @@ case class AgentConfig(
   maxBudgetUsd: Option[Double] = None,         // native SDK budget limit per session
   timeoutMs: Long = 300000,                    // 5 min default per attempt
   enableMcpTools: Boolean = true,              // expose Demiurge MCP tools
+  enableBrowserTools: Boolean = false,         // expose Playwright MCP browser tools
+  headedBrowser: Boolean = false,              // launch browser in headed (visible) mode
   sessionId: Option[String] = None,            // for session resume
   resume: Boolean = false,                     // continue from previous session
   pathToClaudeCodeExecutable: Option[String] = None, // override bundled CLI path

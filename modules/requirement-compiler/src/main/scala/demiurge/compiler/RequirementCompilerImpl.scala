@@ -84,6 +84,7 @@ class RequirementCompilerImpl(
       case "state"           => RequirementCategory.PersistenceState
       case "log"             => RequirementCategory.IntegrationInvariant
       case "browser"         => RequirementCategory.UiFlow
+      case "agent_browser"   => RequirementCategory.UiFlow
       case "env_readiness"   => RequirementCategory.EnvironmentReadiness
       case _                 => RequirementCategory.IntegrationInvariant
     }
@@ -95,6 +96,7 @@ class RequirementCompilerImpl(
       case "state"           => VerifierType.StateAssertion
       case "log"             => VerifierType.ConsoleLogSanity
       case "browser"         => VerifierType.BrowserFlow
+      case "agent_browser"   => VerifierType.AgentBrowser
       case "env_readiness"   => VerifierType.EnvironmentReadiness
       case _                 => VerifierType.StateAssertion
     }
@@ -128,6 +130,14 @@ class RequirementCompilerImpl(
       ))
     } else None
 
+    // Design: Agentic Browser UI Verification — agent_browser type uses description as feature spec
+    val agentBrowserSpec = if (entry.`type` == "agent_browser") {
+      Some(AgentBrowserVerifierSpec(
+        entryUrl = entry.expected.getOrElse("http://localhost:3000"),
+        featureDescription = entry.description,
+      ))
+    } else None
+
     val verifierSpec = VerifierSpec(
       verifierId = s"v-${entry.id}",
       verifierType = verifierType,
@@ -147,6 +157,7 @@ class RequirementCompilerImpl(
       queueJobSpec = None,
       persistenceSpec = None,
       regressionSpec = None,
+      agentBrowserSpec = agentBrowserSpec,
     )
 
     RequirementNode(

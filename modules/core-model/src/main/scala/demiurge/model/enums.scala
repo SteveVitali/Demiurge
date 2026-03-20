@@ -135,7 +135,7 @@ object VerdictStatus {
   val values: List[VerdictStatus] = List(Pass, Fail, Inconclusive, Blocked, Timeout, Flake)
 }
 
-// Spec §3.1: VerifierType enum — 9 values
+// Spec §3.1: VerifierType enum — 10 values
 sealed trait VerifierType
 object VerifierType {
   case object EnvironmentReadiness extends VerifierType
@@ -147,11 +147,13 @@ object VerifierType {
   case object NetworkExpectation extends VerifierType
   case object PersistenceReload extends VerifierType
   case object TargetedRegression extends VerifierType
+  case object AgentBrowser extends VerifierType      // Agentic browser UI verification
 
   val values: List[VerifierType] = List(
     EnvironmentReadiness, HttpApiContract, BrowserFlow,
     StateAssertion, QueueJob, ConsoleLogSanity,
-    NetworkExpectation, PersistenceReload, TargetedRegression
+    NetworkExpectation, PersistenceReload, TargetedRegression,
+    AgentBrowser,
   )
 }
 
