@@ -280,7 +280,28 @@ impl SidecarManager {
     }
 
     pub async fn restart(&self) -> Result<(), String> {
+        eprintln!("[demiurge-desktop] Restarting backend...");
+
+        // Kill any running demiurge serve process
+        let _ = std::process::Command::new("pkill")
+            .args(["-f", "demiurge.*serve"])
+            .status();
+
+        // Also try killing by the health port (covers java -jar and bazel run cases)
+        let _ = std::process::Command::new("sh")
+            .args(["-c", "lsof -ti:19440 | xargs kill -9 2>/dev/null"])
+            .status();
+
         self.stop()?;
+
+        // Wait for the process to actually die (health endpoint stops responding)
+        for _ in 0..20 {
+            if !self.check_health_once().await {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+
         tokio::time::sleep(Duration::from_millis(CRASH_RESTART_DELAY_MS)).await;
         *self.dev_process_spawned.lock().unwrap() = false;
         self.start().await

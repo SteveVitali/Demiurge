@@ -55,7 +55,7 @@ object OrchestrationRunner {
         LocalApiServer.start(
           port = 19440,
           dbPath = dbPath,
-          artifactRootResolver = rid => Some(global.repo.resolve(".demiurge").resolve("artifacts").resolve(rid)),
+          artifactRootResolver = _ => Some(global.repo.resolve(".demiurge").resolve("artifacts")),
         )
       } catch { case _: Exception => }
     }
@@ -98,8 +98,9 @@ object OrchestrationRunner {
       conn = conn,
     )
 
+    var finalRun: TaskRun = taskRun
     try {
-      val finalRun = RunOrchestrator.execute(
+      finalRun = RunOrchestrator.execute(
         ctx,
         RepoInspectorImpl,
         compiler,
@@ -114,10 +115,10 @@ object OrchestrationRunner {
         agentBackend = agentBackendOpt,
         agentConfig = agentConfigOpt,
       )
-
-      writeFinalReport(evidenceCollector, runId, finalRun, conn)
       finalRun
     } finally {
+      // Always write final report — even on exception — so the artifact is available
+      writeFinalReport(evidenceCollector, runId, finalRun, conn)
       workerManager.foreach(w => try { w.shutdown() } catch { case _: Exception => })
       // Shut down agent-specific worker if it's a separate instance
       agentWorkerManager.foreach(w => try { w.shutdown() } catch { case _: Exception => })

@@ -258,7 +258,10 @@ object VerificationEngine {
             val result = executor.execute(abv)
             SingleResult(result.outcome, result.observations, result.artifactRefs)
           case None =>
-            SingleResult(VerifierOutcome.Error("No agent browser executor available"), Nil, Nil)
+            SingleResult(VerifierOutcome.Error(
+              "No agent browser executor available — agent_browser verifiers require a running worker process. " +
+              "Ensure ANTHROPIC_API_KEY is set and DEMIURGE_WORKER_PATH points to the worker entry file."
+            ), Nil, Nil)
         }
       case bv: BrowserFlowVerifier =>
         browserExecutor match {

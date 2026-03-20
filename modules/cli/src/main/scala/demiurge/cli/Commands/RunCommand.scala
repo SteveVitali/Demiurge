@@ -178,7 +178,7 @@ object RunCommand {
       LocalApiServer.start(
         port = 19440,
         dbPath = dbPath,
-        artifactRootResolver = rid => Some(global.repo.resolve(".demiurge").resolve("artifacts").resolve(rid)),
+        artifactRootResolver = _ => Some(global.repo.resolve(".demiurge").resolve("artifacts")),
       )
       if (!global.quiet) {
         System.out.println("Local API server started on http://127.0.0.1:19440")

@@ -23,18 +23,64 @@ const pipelineSteps: PipelineStep[] = [
 
 type StepState = 'completed' | 'active' | 'pending' | 'failed' | 'skipped';
 
-function getStepState(step: PipelineStep, currentStatus: RunStatus | null, stepIndex: number, activeIndex: number): StepState {
+// For terminal failure statuses, map back to the pipeline step where the failure originated.
+// This prevents steps that never ran from being shown as "completed".
+function getFailureStepIndex(currentStatus: RunStatus, attemptCount: number): number {
+  if (currentStatus === 'EnvironmentFailed') {
+    return pipelineSteps.findIndex((s) => s.id === 'boot');
+  }
+  if (currentStatus === 'Exhausted') {
+    // Infer origin from attemptCount: 0 means we never reached verification (boot failure),
+    // >0 means we exhausted the repair loop (repair was the last active step)
+    if (attemptCount === 0) return pipelineSteps.findIndex((s) => s.id === 'boot');
+    return pipelineSteps.findIndex((s) => s.id === 'repair');
+  }
+  return -1;
+}
+
+function getStepState(step: PipelineStep, currentStatus: RunStatus | null, stepIndex: number, activeIndex: number, attemptCount: number): StepState {
   if (!currentStatus) return 'pending';
 
-  if (step.states.includes(currentStatus)) return 'active';
-
+  // Check if this is a terminal state
   const terminalFailures: RunStatus[] = ['Exhausted', 'EnvironmentFailed'];
-  if (step.id === 'done' && terminalFailures.includes(currentStatus)) return 'failed';
-  if (step.id === 'done' && currentStatus === 'Succeeded') return 'completed';
-  if (step.id === 'done' && (currentStatus === 'Cancelled' || currentStatus === 'Interrupted')) return 'completed';
+  const isTerminalFailure = terminalFailures.includes(currentStatus);
+  const isTerminalSuccess = currentStatus === 'Succeeded';
+  const isTerminalCancel = currentStatus === 'Cancelled' || currentStatus === 'Interrupted';
+  const isTerminal = isTerminalFailure || isTerminalSuccess || isTerminalCancel;
 
+  // For terminal failures, determine which step actually failed
+  const failedAtIndex = isTerminalFailure ? getFailureStepIndex(currentStatus, attemptCount) : -1;
+
+  // Done step handling
+  if (step.id === 'done') {
+    if (isTerminalFailure) return 'failed';
+    if (isTerminalSuccess) return 'completed';
+    if (isTerminalCancel) return 'completed';
+    // If still in-progress, done is pending
+    return 'pending';
+  }
+
+  // Non-done steps when run is still in progress
+  if (!isTerminal) {
+    if (step.states.includes(currentStatus)) return 'active';
+    if (stepIndex < activeIndex) return 'completed';
+    return 'pending';
+  }
+
+  // Non-done steps when run reached a terminal state
+  if (isTerminalSuccess) return 'completed';
+
+  // Terminal failure: steps before the failed step completed, the failed step is failed, steps after are skipped
+  if (failedAtIndex >= 0) {
+    if (stepIndex < failedAtIndex) return 'completed';
+    if (stepIndex === failedAtIndex) return 'failed';
+    return 'skipped';
+  }
+
+  // Exhausted / Cancelled / Interrupted without a known failure origin:
+  // mark steps before done as completed (they ran in the verify/repair loop)
   if (stepIndex < activeIndex) return 'completed';
-  return 'pending';
+  return 'skipped';
 }
 
 function getActiveStepIndex(currentStatus: RunStatus | null): number {
@@ -62,9 +108,10 @@ interface PipelineStepperProps {
   currentStatus: RunStatus | null;
   showBuildStep?: boolean;
   attemptNumber?: number;
+  attemptCount?: number;
 }
 
-export function PipelineStepper({ currentStatus, showBuildStep = false, attemptNumber = 1 }: PipelineStepperProps) {
+export function PipelineStepper({ currentStatus, showBuildStep = false, attemptNumber = 1, attemptCount = 0 }: PipelineStepperProps) {
   const activeIndex = getActiveStepIndex(currentStatus);
   const steps = showBuildStep ? pipelineSteps : pipelineSteps.filter((s) => s.id !== 'build');
 
@@ -85,7 +132,7 @@ export function PipelineStepper({ currentStatus, showBuildStep = false, attemptN
       >
         {steps.map((step, i) => {
           const stepIndex = pipelineSteps.indexOf(step);
-          const state = getStepState(step, currentStatus, stepIndex, activeIndex);
+          const state = getStepState(step, currentStatus, stepIndex, activeIndex, attemptCount);
           const isLast = i === steps.length - 1;
 
           return (

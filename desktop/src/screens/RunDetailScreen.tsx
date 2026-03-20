@@ -1,6 +1,6 @@
 import { useParams } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
 import { queryKeys } from '@/lib/query-keys';
 import { getRun } from '@/api/endpoints';
@@ -43,6 +43,7 @@ export function RunDetailScreen() {
   const resetRunStore = useRunStore((s) => s.reset);
   const [selectedAttempt, setSelectedAttempt] = useState(1);
   const [activeTab, setActiveTab] = useState(0);
+  const hasAutoSelectedFailureTab = useRef(false);
 
   // Reset RunStore when switching between runs to prevent state bleed
   useEffect(() => {
@@ -54,12 +55,32 @@ export function RunDetailScreen() {
     queryFn: () => getRun(runId),
   });
 
-  // Derive terminal from both SSE store and API data (SSE store is null on first render)
-  const displayStatus = currentStatus ?? run?.status ?? null;
+  // Derive display status: API is source of truth for terminal runs (DB committed),
+  // SSE store is more recent for in-progress runs (real-time updates).
+  // This prevents stale SSE values (e.g. transient EnvironmentFailed from boot retry)
+  // from overriding the actual final status (e.g. Exhausted).
+  const apiStatus = run?.status ?? null;
+  const displayStatus = (apiStatus && isTerminalStatus(apiStatus))
+    ? apiStatus
+    : (currentStatus ?? apiStatus);
   const isTerminal = isTerminalStatus(displayStatus);
   const showBuildStep = run?.runMode === 'Build';
   const showFailureTab = FAILURE_STATUSES.includes(displayStatus as RunStatus);
   const tabLabels = showFailureTab ? [...BASE_TAB_LABELS, 'Failure'] : [...BASE_TAB_LABELS];
+
+  // Auto-select Failure tab when the run enters a failure state
+  useEffect(() => {
+    if (showFailureTab && !hasAutoSelectedFailureTab.current) {
+      hasAutoSelectedFailureTab.current = true;
+      // Failure tab is appended after BASE_TAB_LABELS
+      setActiveTab(BASE_TAB_LABELS.length);
+    }
+  }, [showFailureTab]);
+
+  // Reset auto-select flag when switching runs
+  useEffect(() => {
+    hasAutoSelectedFailureTab.current = false;
+  }, [runId]);
 
   // Subscribe to SSE for live updates (only for non-terminal runs)
   useSSE(isTerminal ? null : runId);
@@ -108,6 +129,7 @@ export function RunDetailScreen() {
         currentStatus={displayStatus}
         showBuildStep={showBuildStep}
         attemptNumber={run.attemptCount}
+        attemptCount={run.attemptCount}
       />
 
       {/* Attempt Tabs */}
@@ -160,7 +182,16 @@ export function RunDetailScreen() {
             <EventsPanel runId={run.runId} />
           )}
           {tabLabels[activeTab] === 'Failure' && (
-            <FailureAnalysisPanel runId={run.runId} attemptNumber={selectedAttempt} />
+            <FailureAnalysisPanel
+              runId={run.runId}
+              attemptNumber={selectedAttempt}
+              runStatus={displayStatus}
+              finalSummary={run.finalSummary}
+              onNavigateToTab={(label) => {
+                const idx = tabLabels.indexOf(label as typeof tabLabels[number]);
+                if (idx >= 0) setActiveTab(idx);
+              }}
+            />
           )}
         </div>
       </div>

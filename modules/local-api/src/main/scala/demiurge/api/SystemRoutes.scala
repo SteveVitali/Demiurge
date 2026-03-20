@@ -7,6 +7,8 @@ import io.circe._
 import io.circe.syntax._
 import io.circe.parser.{decode => jsonDecode}
 
+import demiurge.license.CredentialStore
+
 import RouteHelpers.sendJson
 
 // Desktop Phase 4 — §6.2: System routes (doctor, preferences, repos).
@@ -40,12 +42,12 @@ object SystemRoutes {
       exitCode == 0
     })
 
-    // Check: ANTHROPIC_API_KEY set
-    val apiKeySet = Option(System.getenv("ANTHROPIC_API_KEY")).exists(_.nonEmpty)
+    // Check: ANTHROPIC_API_KEY set (env var or ~/.demiurge/config.json)
+    val apiKeySet = CredentialStore.resolveApiKey("ANTHROPIC_API_KEY", "anthropic").isDefined
     checks += Json.obj(
       "name" -> "anthropic_api_key".asJson,
       "status" -> (if (apiKeySet) "pass" else "warn").asJson,
-      "message" -> (if (apiKeySet) "ANTHROPIC_API_KEY is set" else "ANTHROPIC_API_KEY not found in environment").asJson,
+      "message" -> (if (apiKeySet) "ANTHROPIC_API_KEY is configured" else "ANTHROPIC_API_KEY not found — set via Settings or environment variable").asJson,
     )
 
     // Check: SQLite accessible
@@ -100,6 +102,32 @@ object SystemRoutes {
             }
           }
           sendJson(exchange, 200, ApiEnvelope.success(Json.obj("status" -> "updated".asJson)))
+      }
+    }
+  }
+
+  // POST /system/api-keys → persist API keys to ~/.demiurge/config.json
+  def postApiKeysHandler(): HttpHandler = exchange => {
+    if (exchange.getRequestMethod != "POST") {
+      sendJson(exchange, 405, ApiEnvelope.error(405, "Method not allowed"))
+    } else {
+      val body = new String(exchange.getRequestBody.readAllBytes(), "UTF-8")
+      jsonDecode[Json](body) match {
+        case Left(_) =>
+          sendJson(exchange, 400, ApiEnvelope.error(400, "Invalid JSON body"))
+        case Right(json) =>
+          try {
+            val config = CredentialStore.loadConfig()
+            val updated = config.copy(
+              anthropicApiKey = json.hcursor.get[String]("anthropicApiKey").toOption.orElse(config.anthropicApiKey),
+              openaiApiKey = json.hcursor.get[String]("openaiApiKey").toOption.orElse(config.openaiApiKey),
+            )
+            CredentialStore.saveConfig(updated)
+            sendJson(exchange, 200, ApiEnvelope.success(Json.obj("status" -> "saved".asJson)))
+          } catch {
+            case e: Exception =>
+              sendJson(exchange, 500, ApiEnvelope.error(500, s"Failed to save API key: ${e.getMessage}"))
+          }
       }
     }
   }

@@ -11,7 +11,9 @@ import {
   Wifi,
   WifiOff,
   BarChart3,
+  RefreshCw,
 } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/app.store';
 import { useAuthStore } from '@/stores/auth.store';
@@ -181,10 +183,17 @@ export function Sidebar() {
             <WifiOff className="h-3 w-3 text-red-400" />
           )}
           {!sidebarCollapsed && (
-            <span>
+            <span className="flex-1">
               {backendStatus === 'connected' ? 'Backend connected' : 'Backend offline'}
             </span>
           )}
+          <button
+            onClick={() => void invoke('restart_backend')}
+            className="rounded p-0.5 hover:bg-muted/50 transition-colors"
+            title="Restart backend"
+          >
+            <RefreshCw className="h-3 w-3" />
+          </button>
         </div>
       </div>
     </aside>

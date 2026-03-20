@@ -201,7 +201,7 @@ object ServeCommand {
         port = cmd.port,
         wsPort = cmd.wsPort,
         dbPath = dbPath,
-        artifactRootResolver = rid => Some(artifactRoot.resolve(rid)),
+        artifactRootResolver = _ => Some(artifactRoot),
       )
     } catch {
       case e: Exception =>

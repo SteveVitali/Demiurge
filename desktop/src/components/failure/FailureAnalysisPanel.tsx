@@ -3,20 +3,28 @@ import { AlertTriangle, FileCode, Server as ServerIcon } from 'lucide-react';
 import { queryKeys } from '@/lib/query-keys';
 import { getFailurePacket } from '@/api/endpoints';
 import { FailureClassBadge } from '@/components/shared/FailureClassBadge';
+import { StatusBadge } from '@/components/shared/StatusBadge';
 import { ConfidenceBar } from '@/components/shared/ConfidenceBar';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+import type { RunStatus } from '@/api/types';
 
 // Desktop Phase 3 — §9.12: Failure analysis panel rendering FailurePacket data.
 
 interface FailureAnalysisPanelProps {
   runId: string;
   attemptNumber: number;
+  runStatus?: RunStatus | null;
+  finalSummary?: string | null;
+  onNavigateToTab?: (tabLabel: string) => void;
 }
 
-export function FailureAnalysisPanel({ runId, attemptNumber }: FailureAnalysisPanelProps) {
+export function FailureAnalysisPanel({ runId, attemptNumber, runStatus, finalSummary, onNavigateToTab }: FailureAnalysisPanelProps) {
   const { data: packet, isLoading, isError } = useQuery({
     queryKey: queryKeys.failures.packet(runId, attemptNumber),
     queryFn: () => getFailurePacket(runId, attemptNumber),
+    staleTime: Infinity,
+    gcTime: 10 * 60 * 1000,
+    retry: 1,
   });
 
   if (isLoading) {
@@ -24,6 +32,30 @@ export function FailureAnalysisPanel({ runId, attemptNumber }: FailureAnalysisPa
   }
 
   if (isError || !packet) {
+    // Show run-level failure summary for pre-attempt failures (e.g. environment boot)
+    if (finalSummary) {
+      return (
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="h-5 w-5 text-red-400 shrink-0" />
+            <h3 className="text-sm font-medium">Run Failed</h3>
+            {runStatus && <StatusBadge status={runStatus} />}
+          </div>
+          <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-4">
+            <p className="text-sm">{finalSummary}</p>
+            {finalSummary.toLowerCase().includes('verification') && onNavigateToTab && (
+              <button
+                onClick={() => onNavigateToTab('Verification')}
+                className="mt-3 text-xs text-blue-400 hover:text-blue-300 underline underline-offset-2"
+              >
+                View verification results →
+              </button>
+            )}
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="flex flex-1 items-center justify-center p-12">
         <div className="flex flex-col items-center gap-3 text-muted-foreground">

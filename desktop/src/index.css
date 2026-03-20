@@ -107,4 +107,7 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
+  ::placeholder {
+    opacity: 0.4;
+  }
 }

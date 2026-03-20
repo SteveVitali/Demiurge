@@ -43,12 +43,7 @@ class RoutesSuite extends FunSuite {
     server = LocalApiServer.start(
       port = port,
       dbPath = dbPath,
-      artifactRootResolver = runId => {
-        implicit val c: Connection = Database.open(dbPath)
-        try {
-          TaskRunRepo.getById(runId).map(_.artifactRootPath)
-        } finally { c.close() }
-      },
+      artifactRootResolver = _ => Some(artifactRoot),
     )
     // Give server a moment to start
     Thread.sleep(200)

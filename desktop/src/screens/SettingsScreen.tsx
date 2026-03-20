@@ -1,7 +1,9 @@
 import { useState, useCallback } from 'react';
-import { Key, Monitor, FolderOpen, Palette, Bell, Wrench, CheckCircle, AlertCircle, Eye, EyeOff, User, LogOut, ExternalLink } from 'lucide-react';
+import { Key, Monitor, FolderOpen, Palette, Bell, Wrench, CheckCircle, AlertCircle, Eye, EyeOff, User, LogOut, ExternalLink, RefreshCw } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
+import { post } from '@/api/client';
 import { usePreferencesStore } from '@/stores/preferences.store';
 import { useAuthStore } from '@/stores/auth.store';
 import { getDoctor } from '@/api/endpoints';
@@ -136,18 +138,23 @@ function ApiKeysSection() {
     if (!apiKey.trim()) return;
     setStatus('saving');
     try {
-      const { load } = await import('@tauri-apps/plugin-store');
-      const store = await load('settings.json');
-      await store.set('ANTHROPIC_API_KEY', apiKey.trim());
-      await store.save();
+      // Persist to backend's ~/.demiurge/config.json so the JVM can read it
+      await post('/system/api-keys', { anthropicApiKey: apiKey.trim() });
+      // Also persist to Tauri's secure store for UI state
+      try {
+        const { load } = await import('@tauri-apps/plugin-store');
+        const store = await load('settings.json');
+        await store.set('ANTHROPIC_API_KEY', apiKey.trim());
+        await store.save();
+      } catch {
+        // Tauri store not available (dev mode) — backend config is the important one
+      }
       setAnthropicApiKeySet(true);
       setStatus('saved');
       setTimeout(() => setStatus('idle'), 2000);
     } catch {
-      // Fallback: store in memory (dev mode without Tauri)
-      setAnthropicApiKeySet(true);
-      setStatus('saved');
-      setTimeout(() => setStatus('idle'), 2000);
+      setStatus('error');
+      setTimeout(() => setStatus('idle'), 3000);
     }
   }, [apiKey, setAnthropicApiKeySet]);
 
@@ -394,13 +401,22 @@ function DiagnosticsSection() {
   return (
     <SettingsSection title="Diagnostics" description="System prerequisite checks.">
       <div className="flex flex-col gap-3">
-        <button
-          onClick={() => void refetch()}
-          disabled={isLoading}
-          className="w-fit rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent"
-        >
-          {isLoading ? 'Checking...' : 'Run Doctor'}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => void refetch()}
+            disabled={isLoading}
+            className="w-fit rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent"
+          >
+            {isLoading ? 'Checking...' : 'Run Doctor'}
+          </button>
+          <button
+            onClick={() => void invoke('restart_backend')}
+            className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Restart Backend
+          </button>
+        </div>
 
         {doctor && (
           <div className="flex flex-col gap-2">

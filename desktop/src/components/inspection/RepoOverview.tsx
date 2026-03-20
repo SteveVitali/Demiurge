@@ -90,10 +90,15 @@ export function RepoOverview({ report }: RepoOverviewProps) {
           <div className="flex flex-wrap gap-2">
             {report.manifestsFound.map((m) => (
               <span
-                key={m}
-                className="inline-flex items-center rounded bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-400"
+                key={m.relativePath}
+                className={`inline-flex items-center rounded px-2 py-0.5 text-xs ${
+                  m.parsedSuccessfully
+                    ? 'bg-emerald-500/10 text-emerald-400'
+                    : 'bg-red-500/10 text-red-400'
+                }`}
+                title={m.parsedSuccessfully ? m.manifestType : `${m.manifestType} — ${m.parseErrors.join(', ')}`}
               >
-                {m}
+                {m.relativePath}
               </span>
             ))}
           </div>

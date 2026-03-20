@@ -5,7 +5,6 @@ export const TERMINAL_STATUSES: RunStatus[] = [
   'Exhausted',
   'Cancelled',
   'Interrupted',
-  'EnvironmentFailed',
 ];
 
 export function isTerminalStatus(status: RunStatus | null | undefined): boolean {
