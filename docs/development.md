@@ -80,7 +80,7 @@ Demiurge/
 bazel build //...
 ```
 
-This builds all 46 targets across 22 Scala modules. Bazel handles dependency resolution, Scala compilation, and Java runtime automatically.
+This builds all 48 targets across 23 Scala modules. Bazel handles dependency resolution, Scala compilation, and Java runtime automatically.
 
 ### Build the desktop application
 
@@ -147,7 +147,7 @@ This builds the CLI fat JAR via Bazel and creates a launcher script in `desktop/
 bazel test //...
 ```
 
-This runs 22 test targets across all modules. Tests use MUnit 1.0.3.
+This runs 23 test targets across all modules. Tests use MUnit 1.0.3.
 
 ### Run desktop app in development mode
 
@@ -217,6 +217,7 @@ core-model (no deps)
   ├── repair-claude (core-model, repair-api)
   ├── artifact-store (core-model, persistence)
   ├── worker-protocol (core-model)
+  ├── license (core-model, circe)
   ├── policy (core-model)
   ├── requirement-compiler (core-model, requirements, selectors)
   ├── local-api (core-model, persistence)

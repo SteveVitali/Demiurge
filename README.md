@@ -13,7 +13,8 @@ Demiurge orchestrates environment setup, requirement verification, failure analy
 - **Agentic repair via Claude Code** — when verification fails, Demiurge delegates to the Claude Code agent (multi-turn, with file editing and shell access) to fix the issue; legacy single-shot LLM patch repair available as fallback
 - **Build mode** — autonomous feature generation from a task description: plans implementation, generates code, boots environment, verifies, and repairs in a loop until all verifiers pass
 - **Auto-configuration** — when no `demiurge.yaml` exists, `demiurge run` automatically invokes the Claude Code agent to generate configuration files tailored to your project
-- **Desktop application** — Tauri 2 + React desktop GUI for monitoring runs, inspecting verdicts/artifacts, and controlling the orchestration pipeline
+- **Desktop application** — Tauri 2 + React desktop GUI with full CLI parity: real-time pipeline monitoring, agent transcript streaming, artifact browsing, configuration editing, and environment management
+- **License management** — `demiurge login` / `logout` for authentication, usage tracking, and plan-based limits
 - **Isolated execution** — each run operates in a dedicated git worktree with its own SQLite database, artifacts, and lock file
 - **Structured observability** — JSON event stream, SSE-capable local API, structured logging, full artifact capture
 - **Smart resume** — interrupted runs resume from the last completed phase, skipping already-persisted work; attempt counters continue where they left off
@@ -33,7 +34,7 @@ Demiurge is a **Scala 2.13 + TypeScript + Rust** multi-stack project built with 
 │  run · build · plan · resume · status · inspect-run · … │
 ├─────────────────────────────────────────────────────────┤
 │              Local API (127.0.0.1:19440)                 │
-│        REST + SSE · CORS · Paginated Endpoints          │
+│    REST + SSE + WebSocket · CORS · Paginated Endpoints   │
 ├─────────────────────────────────────────────────────────┤
 │                      Orchestrator                        │
 │  RunOrchestrator · RunTransitionManager · Signals        │
@@ -58,11 +59,11 @@ Demiurge is a **Scala 2.13 + TypeScript + Rust** multi-stack project built with 
 
 | Module | Language | Purpose |
 |--------|----------|---------|
-| `modules/core-model` | Scala | 21 enums, 116+ case classes, JSON codecs (circe) |
+| `modules/core-model` | Scala | 25 enum-like sealed traits, 116+ case classes, JSON codecs (circe) |
 | `modules/persistence` | Scala | SQLite WAL, migrations, repos (TaskRun, Attempt, Verdict, Event, Artifact, etc.) |
 | `modules/orchestrator` | Scala | Run state machine, transition manager, signal handler, timeout enforcer, resume manager |
-| `modules/cli` | Scala | 12 CLI commands, arg parsing, output formatting (human/JSON) |
-| `modules/local-api` | Scala | HTTP server (127.0.0.1:19440), REST + SSE event streaming, CORS |
+| `modules/cli` | Scala | 16 CLI commands, arg parsing, output formatting (human/JSON) |
+| `modules/local-api` | Scala | HTTP + WebSocket server (127.0.0.1:19440), REST + SSE + WS, CORS, config/system/agent routes |
 | `modules/manifest` | Scala | `demiurge.yaml` parser (SnakeYAML) |
 | `modules/config-resolver` | Scala | Layered config resolution (explicit YAML → cached inference), `ResolvedConfig` DTOs |
 | `modules/repo-inspector` | Scala | Repository analysis, changed-file impact mapping |
@@ -79,9 +80,10 @@ Demiurge is a **Scala 2.13 + TypeScript + Rust** multi-stack project built with 
 | `modules/repair-claude` | Scala | Claude API client, prompt builder, repair backend |
 | `modules/artifact-store` | Scala | Artifact sink (temp-then-rename, SHA-256, gzip), evidence collector |
 | `modules/worker-protocol` | Scala | JSON-RPC 2.0 client, WorkerProcessManager, message types |
+| `modules/license` | Scala | License validation, credential storage, usage tracking, cloud API client |
 | `modules/policy` | Scala | Policy enforcement (filesystem, network, browser, tool, destructive action) |
 | `worker/` | TypeScript | Playwright browser worker — stdio JSON-RPC 2.0 bridge, agent SDK execution |
-| `desktop/` | TypeScript + Rust | Tauri 2 desktop application — React frontend with real-time run monitoring |
+| `desktop/` | TypeScript + Rust | Tauri 2 desktop application — 7 screens, 15 component groups, sidecar management |
 
 ## Prerequisites
 
@@ -100,14 +102,14 @@ Run `demiurge doctor` to check all prerequisites.
 ### Build
 
 ```bash
-# Build all Scala modules (46 targets)
+# Build all Scala modules (48 targets)
 bazel build //...
 ```
 
 ### Test
 
 ```bash
-# Scala tests (22 test targets)
+# Scala tests (23 test targets)
 bazel test //...
 
 # TypeScript worker tests (4 test suites)

@@ -101,7 +101,7 @@ This ensures that if the process crashes during a side effect, the persisted sta
 
 Foundation types shared across all modules:
 
-- **22 enums** — `RunStatus` (23 values), `AttemptStatus`, `VerdictStatus`, `FailureClass`, `VerifierType` (10 types including `AgentBrowser`), `ArtifactType` (24 types), `ServiceKind`, `StartupMode`, `AuthMode`, `RunMode` (5 modes including `Build`), `ResetStrategy`, `InferenceProvider`, `GenerationMode`, `RepairResultStatus`, `WorkerTaskStatus`, etc.
+- **25 sealed traits** — `RunStatus` (23 values), `AttemptStatus`, `VerdictStatus`, `FailureClass`, `VerifierType` (10 types including `AgentBrowser`), `ArtifactType` (24 types), `ServiceKind`, `StartupMode`, `AuthMode`, `RunMode` (5 modes including `Build`), `ResetStrategy`, `InferenceProvider`, `GenerationMode`, `ConfigSource`, `TasteSensitivity`, `ToolCategory`, `RepairResultStatus`, `WorkerTaskStatus`, etc.
 - **116+ case classes** — `TaskRun`, `Attempt`, `RequirementVerdict`, `SystemEvent`, `ArtifactRecord`, `RuntimePlan`, `RuntimeSnapshot`, `RequirementGraph`, `FailurePacket`, `InferenceRequest`/`Response`, `BrowserAction`, `Assertion`, `Observation`, `FeaturePlan`, `ResolvedConfig`, `AgentBrowserVerifierSpec`, etc.
 - **JSON codecs** — circe semiauto derivation for all DTOs
 - **ExecutionBudgetDefaults** / **BuildBudgetDefaults** — default budget values for verification and build modes
@@ -137,7 +137,7 @@ The heart of the system — drives the run state machine:
 
 Entry point: `demiurge.cli.Main` → `CliApp.run(args)`.
 
-13 commands, hand-rolled arg parser (no external dependency):
+16 commands, hand-rolled arg parser (no external dependency):
 
 | Command | Description |
 |---------|-------------|
@@ -154,6 +154,9 @@ Entry point: `demiurge.cli.Main` → `CliApp.run(args)`.
 | `doctor` | Check system prerequisites |
 | `init` | Generate `demiurge.yaml` and `requirements.yaml` (deterministic or `--smart` agentic). Also aliased as `init-manifest`. |
 | `serve` | Start persistent backend server (desktop app sidecar) — REST + WebSocket on configurable ports |
+| `login` | Authenticate with Demiurge license server |
+| `logout` | Clear stored credentials |
+| `config` | Get, set, or list configuration values |
 
 Output supports `--format human` (default) and `--format json`.
 
@@ -161,9 +164,19 @@ Exit codes: 0=success, 1=exhausted, 2=cancelled, 3=errored, 4=input error, 5=con
 
 ### Local API (`modules/local-api`)
 
-HTTP server on `127.0.0.1:19440` using `com.sun.net.httpserver` (JDK built-in, no external deps). CORS middleware allows cross-origin requests from the desktop app.
+HTTP + WebSocket server on `127.0.0.1:19440` (HTTP) / `:19441` (WS) using `com.sun.net.httpserver` (JDK built-in, no external deps). CORS middleware allows cross-origin requests from the desktop app.
 
-Endpoints: `GET /health`, `GET /runs` (paginated list), `GET /runs/active`, `POST /runs`, `GET /runs/{id}`, `GET /runs/{id}/plan`, `GET /runs/{id}/attempts`, `GET /runs/{id}/attempts/{n}/verdicts`, `GET /runs/{id}/artifacts` (paginated, filtered), `GET /runs/{id}/artifacts/{id}/content`, `POST /runs/{id}/resume`, `POST /runs/{id}/cancel`, `GET /runs/{id}/events` (SSE).
+Route groups:
+
+- **Runs** — `GET /runs` (paginated), `GET /runs/active`, `POST /runs`, `GET /runs/{id}`, `POST /runs/{id}/resume`, `POST /runs/{id}/cancel`, `GET /runs/{id}/events` (SSE)
+- **Run data** — `GET /runs/{id}/plan`, `GET /runs/{id}/attempts`, `GET /runs/{id}/attempts/{n}/verdicts`, `GET /runs/{id}/artifacts`, `GET /runs/{id}/artifacts/{id}/content`
+- **Inspection** — `GET /runs/{id}/inspection`, `GET /runs/{id}/requirement-graph`, `GET /runs/{id}/feature-plan`
+- **Failure** — `GET /runs/{id}/attempts/{n}/failure-packet`, `GET /runs/{id}/attempts/{n}/patches`
+- **Environment** — `GET /runs/{id}/environment`, `GET /runs/{id}/services`, `POST /runs/{id}/services/{id}/restart`
+- **Agent** — `GET /runs/{id}/agent/transcript`, `GET /runs/{id}/agent/cost`
+- **Config** — `GET /config`, `PUT /config/manifest`, `PUT /config/requirements`, `POST /config/validate`, `POST /config/init-smart`
+- **System** — `GET /health`, `GET /system/doctor`, `GET|PUT /system/preferences`, `POST /system/api-keys`, `GET /system/repos`
+- **Usage** — `GET /usage`
 
 All responses use a JSON envelope (`ApiEnvelope`). The SSE endpoint streams `SystemEvent` objects in real-time.
 
@@ -289,8 +302,8 @@ Orchestrator → RunTransitionManager.transition()
 
 GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every push to `main` and on pull requests:
 
-1. **Bazel build** — `bazel build //...` (all 46 targets)
-2. **Bazel tests** — `bazel test //...` (all 22 test targets, including unit and integration)
+1. **Bazel build** — `bazel build //...` (all 48 targets)
+2. **Bazel tests** — `bazel test //...` (all 23 test targets, including unit and integration)
 3. **Worker tests** — `npm ci && npm test` in the `worker/` directory (4 test suites)
 4. **Playwright** — Chromium browser installed for browser flow tests
 

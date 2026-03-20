@@ -340,25 +340,7 @@ The following artifact types may appear in artifact listings:
 
 ## Desktop API Extensions
 
-The following endpoints were added to support the desktop application. They follow the same JSON envelope convention.
-
-### `GET /runs`
-
-Paginated list of all runs.
-
-**Query parameters:**
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `offset` | `0` | Pagination offset |
-| `limit` | `20` | Page size |
-| `sort` | `created_at` | Sort field |
-| `order` | `desc` | Sort order: `asc` or `desc` |
-| `status` | None | Filter by run status |
-
-### `GET /runs/active`
-
-Get the currently active run (if any). Returns `404` if no run is active.
+The following endpoints were added to support the desktop application. They follow the same JSON envelope convention. `GET /runs` (paginated) and `GET /runs/active` are documented in the main Endpoints section above.
 
 ### `GET /runs/{runId}/environment`
 

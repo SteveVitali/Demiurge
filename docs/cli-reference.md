@@ -283,6 +283,48 @@ demiurge serve [flags]
 
 Starts a persistent `LocalApiServer` and WebSocket server that stays running until terminated (SIGTERM). Used by the Tauri desktop app as a sidecar process. Accepts `POST /runs` to start orchestration runs. The WebSocket server provides real-time event streaming alongside the existing SSE endpoint.
 
+### `login`
+
+Authenticate with the Demiurge license server.
+
+```
+demiurge login [flags]
+```
+
+| Flag | Required | Default | Description |
+|------|----------|---------|-------------|
+| `--license-key <key>` | No | | License key for headless/CI authentication (omit for interactive browser flow) |
+
+Without `--license-key`, opens the browser for interactive authentication. With `--license-key`, validates the key directly (useful for CI environments).
+
+Credentials are stored in `~/.demiurge/credentials.json`.
+
+### `logout`
+
+Clear stored credentials and license cache.
+
+```
+demiurge logout
+```
+
+Removes `~/.demiurge/credentials.json`.
+
+### `config`
+
+Get, set, or list configuration values.
+
+```
+demiurge config <action> [key] [value]
+```
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `action` | Yes | `get`, `set`, or `list` |
+| `key` | For get/set | Configuration key (e.g., `anthropic_api_key`, `cloud_api_url`) |
+| `value` | For set | Value to set |
+
+Configuration is stored in `~/.demiurge/config.json`. The `config set anthropic_api_key <key>` command provides BYOK (bring your own key) support as an alternative to the `ANTHROPIC_API_KEY` environment variable.
+
 ## Exit Codes
 
 ### Run-lifecycle commands (`run`, `resume`)
