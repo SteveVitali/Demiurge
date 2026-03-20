@@ -201,4 +201,119 @@ class TaskRunRepoSuite extends FunSuite {
       assertEquals(TaskRunRepo.getById("run-sum").get.finalSummary, Some("All checks passed"))
     }
   }
+
+  // --- Desktop Phase 1: listPaginated tests ---
+
+  test("TaskRunRepo listPaginated returns paginated results") {
+    withDb { implicit conn =>
+      for (i <- 1 to 5) {
+        val run = makeRun(s"run-pag-$i").copy(
+          createdAt = Instant.parse(s"2025-01-0${i}T00:00:00Z"),
+        )
+        TaskRunRepo.insert(run)
+      }
+
+      val (runs, total) = TaskRunRepo.listPaginated(offset = 0, limit = 3)
+      assertEquals(total, 5)
+      assertEquals(runs.size, 3)
+      // Default sort is created_at DESC
+      assertEquals(runs.head.runId, "run-pag-5")
+    }
+  }
+
+  test("TaskRunRepo listPaginated respects offset") {
+    withDb { implicit conn =>
+      for (i <- 1 to 5) {
+        val run = makeRun(s"run-off-$i").copy(
+          createdAt = Instant.parse(s"2025-01-0${i}T00:00:00Z"),
+        )
+        TaskRunRepo.insert(run)
+      }
+
+      val (runs, total) = TaskRunRepo.listPaginated(offset = 3, limit = 10)
+      assertEquals(total, 5)
+      assertEquals(runs.size, 2)
+      // Offset 3 in DESC order: items 4 and 5 from the end → run-2 and run-1
+      assertEquals(runs.head.runId, "run-off-2")
+      assertEquals(runs.last.runId, "run-off-1")
+    }
+  }
+
+  test("TaskRunRepo listPaginated filters by status") {
+    withDb { implicit conn =>
+      TaskRunRepo.insert(makeRun("run-filt-1").copy(status = RunStatus.Succeeded))
+      TaskRunRepo.insert(makeRun("run-filt-2").copy(status = RunStatus.Exhausted))
+      TaskRunRepo.insert(makeRun("run-filt-3").copy(status = RunStatus.Succeeded))
+
+      val (runs, total) = TaskRunRepo.listPaginated(statusFilter = Some(RunStatus.Succeeded))
+      assertEquals(total, 2)
+      assertEquals(runs.size, 2)
+      assert(runs.forall(_.status == RunStatus.Succeeded))
+    }
+  }
+
+  test("TaskRunRepo listPaginated sorts ascending") {
+    withDb { implicit conn =>
+      for (i <- 1 to 3) {
+        val run = makeRun(s"run-asc-$i").copy(
+          createdAt = Instant.parse(s"2025-01-0${i}T00:00:00Z"),
+        )
+        TaskRunRepo.insert(run)
+      }
+
+      val (runs, _) = TaskRunRepo.listPaginated(sort = "created_at", order = "asc")
+      assertEquals(runs.head.runId, "run-asc-1")
+      assertEquals(runs.last.runId, "run-asc-3")
+    }
+  }
+
+  test("TaskRunRepo listPaginated rejects invalid sort column") {
+    withDb { implicit conn =>
+      TaskRunRepo.insert(makeRun("run-safe"))
+
+      // SQL injection attempt should fall back to created_at
+      val (runs, total) = TaskRunRepo.listPaginated(sort = "1; DROP TABLE task_runs; --")
+      assertEquals(total, 1)
+      assertEquals(runs.size, 1)
+    }
+  }
+
+  // --- Desktop Phase 1: getActiveRun tests ---
+
+  test("TaskRunRepo getActiveRun returns None when all runs are terminal") {
+    withDb { implicit conn =>
+      TaskRunRepo.insert(makeRun("run-ga-1").copy(status = RunStatus.Succeeded))
+      TaskRunRepo.insert(makeRun("run-ga-2").copy(status = RunStatus.Exhausted))
+      TaskRunRepo.insert(makeRun("run-ga-3").copy(status = RunStatus.Cancelled))
+
+      assertEquals(TaskRunRepo.getActiveRun(), None)
+    }
+  }
+
+  test("TaskRunRepo getActiveRun returns the most recent non-terminal run") {
+    withDb { implicit conn =>
+      TaskRunRepo.insert(makeRun("run-ga-old").copy(
+        status = RunStatus.Verifying,
+        createdAt = Instant.parse("2025-01-01T00:00:00Z"),
+      ))
+      TaskRunRepo.insert(makeRun("run-ga-new").copy(
+        status = RunStatus.InspectingRepo,
+        createdAt = Instant.parse("2025-01-02T00:00:00Z"),
+      ))
+      TaskRunRepo.insert(makeRun("run-ga-done").copy(
+        status = RunStatus.Succeeded,
+        createdAt = Instant.parse("2025-01-03T00:00:00Z"),
+      ))
+
+      val active = TaskRunRepo.getActiveRun()
+      assert(active.isDefined)
+      assertEquals(active.get.runId, "run-ga-new")
+    }
+  }
+
+  test("TaskRunRepo getActiveRun returns None on empty database") {
+    withDb { implicit conn =>
+      assertEquals(TaskRunRepo.getActiveRun(), None)
+    }
+  }
 }

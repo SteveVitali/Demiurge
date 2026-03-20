@@ -288,6 +288,35 @@ object Routes {
     }
   }
 
+  // Desktop Phase 1: GET /runs — paginated, sorted list of all runs
+  def listRunsHandler(connProvider: () => Connection): HttpHandler = exchange => {
+    val query = Option(exchange.getRequestURI.getQuery).getOrElse("")
+    val params = parseQueryParams(query)
+    val offset = params.get("offset").flatMap(s => scala.util.Try(s.toInt).toOption).getOrElse(0)
+    val limit = params.get("limit").flatMap(s => scala.util.Try(s.toInt).toOption).getOrElse(20)
+    val sort = params.getOrElse("sort", "created_at")
+    val order = params.getOrElse("order", "desc")
+    val statusFilter = params.get("status").flatMap(s => RunStatus.values.find(_.toString.equalsIgnoreCase(s)))
+
+    implicit val conn: Connection = connProvider()
+    try {
+      val (runs, total) = TaskRunRepo.listPaginated(offset, limit, statusFilter, sort, order)
+      sendJson(exchange, 200, ApiEnvelope.success(
+        ApiModels.paginatedJson(Json.arr(runs.map(_.asJson): _*), total, offset, limit)))
+    } finally { conn.close() }
+  }
+
+  // Desktop Phase 1: GET /runs/active — find the currently active run
+  def getActiveRunHandler(connProvider: () => Connection): HttpHandler = exchange => {
+    implicit val conn: Connection = connProvider()
+    try {
+      TaskRunRepo.getActiveRun() match {
+        case Some(run) => sendJson(exchange, 200, ApiEnvelope.success(run.asJson))
+        case None      => sendJson(exchange, 404, ApiEnvelope.error(404, "No active run"))
+      }
+    } finally { conn.close() }
+  }
+
   // --- Helpers ---
 
   private def sendJson(exchange: HttpExchange, status: Int, body: String): Unit = {

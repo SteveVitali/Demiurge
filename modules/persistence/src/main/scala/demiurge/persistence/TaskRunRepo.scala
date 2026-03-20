@@ -221,6 +221,66 @@ object TaskRunRepo {
     }
   }
 
+  // Desktop Phase 1: Paginated list with optional status filter and sorting
+  def listPaginated(
+    offset: Int = 0,
+    limit: Int = 20,
+    statusFilter: Option[RunStatus] = None,
+    sort: String = "created_at",
+    order: String = "desc",
+  )(implicit conn: Connection): (List[TaskRun], Int) = {
+    val allowedSorts = Set("created_at", "status", "task_text", "run_mode")
+    val safeSort = if (allowedSorts.contains(sort)) sort else "created_at"
+    val safeOrder = if (order.equalsIgnoreCase("asc")) "ASC" else "DESC"
+
+    val whereClause = statusFilter.map(_ => "WHERE status = ?").getOrElse("")
+
+    // Count query
+    val countPs = conn.prepareStatement(s"SELECT COUNT(*) FROM task_runs $whereClause")
+    try {
+      statusFilter.foreach(s => countPs.setString(1, s.toString))
+      val countRs = countPs.executeQuery()
+      val total = if (countRs.next()) countRs.getInt(1) else 0
+      countRs.close()
+
+      // Data query
+      val dataPs = conn.prepareStatement(
+        s"SELECT * FROM task_runs $whereClause ORDER BY $safeSort $safeOrder LIMIT ? OFFSET ?"
+      )
+      try {
+        var paramIdx = 1
+        statusFilter.foreach { s =>
+          dataPs.setString(paramIdx, s.toString)
+          paramIdx += 1
+        }
+        dataPs.setInt(paramIdx, limit)
+        dataPs.setInt(paramIdx + 1, offset)
+        val rs = dataPs.executeQuery()
+        try {
+          val buf = scala.collection.mutable.ListBuffer[TaskRun]()
+          while (rs.next()) { buf += rowToTaskRun(rs) }
+          (buf.toList, total)
+        } finally { rs.close() }
+      } finally { dataPs.close() }
+    } finally { countPs.close() }
+  }
+
+  // Desktop Phase 1: Find any active (non-terminal) run across all repos
+  def getActiveRun()(implicit conn: Connection): Option[TaskRun] = {
+    val terminalStatuses = List("Succeeded", "Exhausted", "Cancelled", "Interrupted", "EnvironmentFailed")
+    val placeholders = terminalStatuses.map(_ => "?").mkString(", ")
+    val ps = conn.prepareStatement(
+      s"SELECT * FROM task_runs WHERE status NOT IN ($placeholders) ORDER BY created_at DESC LIMIT 1"
+    )
+    try {
+      terminalStatuses.zipWithIndex.foreach { case (s, i) => ps.setString(i + 1, s) }
+      val rs = ps.executeQuery()
+      try {
+        if (rs.next()) Some(rowToTaskRun(rs)) else None
+      } finally { rs.close() }
+    } finally { ps.close() }
+  }
+
   // Phase 7: List recent runs ordered by creation time descending
   def listRecent(limit: Int = 20)(implicit conn: Connection): List[TaskRun] = {
     val ps = conn.prepareStatement("SELECT * FROM task_runs ORDER BY created_at DESC LIMIT ?")
