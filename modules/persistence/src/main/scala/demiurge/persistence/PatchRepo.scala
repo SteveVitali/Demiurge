@@ -103,6 +103,28 @@ object PatchRepo {
     }
   }
 
+  // Desktop Phase 2: List patches for a specific run + attempt
+  def listByRunAndAttempt(runId: String, attemptNumber: Int)(implicit conn: Connection): List[PatchRecord] = {
+    val ps = conn.prepareStatement(
+      "SELECT * FROM patch_records WHERE run_id = ? AND attempt_number = ? ORDER BY applied_at ASC")
+    try {
+      ps.setString(1, runId)
+      ps.setInt(2, attemptNumber)
+      val rs = ps.executeQuery()
+      try {
+        val buf = scala.collection.mutable.ListBuffer[PatchRecord]()
+        while (rs.next()) {
+          buf += rowToRecord(rs)
+        }
+        buf.toList
+      } finally {
+        rs.close()
+      }
+    } finally {
+      ps.close()
+    }
+  }
+
   private def rowToRecord(rs: java.sql.ResultSet): PatchRecord = {
     PatchRecord(
       patchRecordId = rs.getString("patch_record_id"),

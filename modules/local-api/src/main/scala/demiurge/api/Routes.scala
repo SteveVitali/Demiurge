@@ -317,32 +317,17 @@ object Routes {
     } finally { conn.close() }
   }
 
-  // --- Helpers ---
+  // --- Helpers (delegated to RouteHelpers) ---
 
-  private def sendJson(exchange: HttpExchange, status: Int, body: String): Unit = {
-    val bytes = body.getBytes("UTF-8")
-    exchange.getResponseHeaders.set("Content-Type", "application/json")
-    exchange.sendResponseHeaders(status, bytes.length.toLong)
-    val os = exchange.getResponseBody
-    try { os.write(bytes) } finally { os.close() }
-  }
+  private def sendJson(exchange: HttpExchange, status: Int, body: String): Unit =
+    RouteHelpers.sendJson(exchange, status, body)
 
-  private def extractPathParam(path: String, prefix: String): String = {
-    val after = path.stripPrefix(prefix)
-    after.split("/")(0)
-  }
+  private def extractPathParam(path: String, prefix: String): String =
+    RouteHelpers.extractPathParam(path, prefix)
 
-  private def extractRunIdFromPath(path: String): String = {
-    val parts = path.split("/").filter(_.nonEmpty)
-    if (parts.length >= 2) parts(1) else ""
-  }
+  private def extractRunIdFromPath(path: String): String =
+    RouteHelpers.extractRunIdFromPath(path)
 
-  private def parseQueryParams(query: String): Map[String, String] = {
-    if (query.isEmpty) Map.empty
-    else query.split("&").flatMap { pair =>
-      val kv = pair.split("=", 2)
-      if (kv.length == 2) Some(kv(0) -> java.net.URLDecoder.decode(kv(1), "UTF-8"))
-      else None
-    }.toMap
-  }
+  private def parseQueryParams(query: String): Map[String, String] =
+    RouteHelpers.parseQueryParams(query)
 }
