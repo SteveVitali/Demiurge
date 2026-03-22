@@ -12,6 +12,10 @@ import type {
   FeaturePlan,
   FailurePacket,
   PatchRecord,
+  RuntimeSnapshot,
+  ServiceSnapshot,
+  AgentTranscriptMessage,
+  AgentCost,
 } from './types';
 
 // --- Health ---
@@ -97,4 +101,28 @@ export function getPatches(runId: string, attemptNumber: number): Promise<PatchR
 
 export function getArtifactContent(runId: string, artifactId: string): Promise<unknown> {
   return get<unknown>(`/runs/${runId}/artifacts/${artifactId}/content`);
+}
+
+// --- Phase 3: Environment ---
+
+export function getEnvironment(runId: string): Promise<RuntimeSnapshot> {
+  return get<RuntimeSnapshot>(`/runs/${runId}/environment`);
+}
+
+export function getServices(runId: string): Promise<ServiceSnapshot[]> {
+  return get<ServiceSnapshot[]>(`/runs/${runId}/services`);
+}
+
+export function restartService(runId: string, serviceId: string): Promise<{ serviceId: string; status: string }> {
+  return post<{ serviceId: string; status: string }>(`/runs/${runId}/services/${serviceId}/restart`);
+}
+
+// --- Phase 3: Agent ---
+
+export function getAgentTranscript(runId: string): Promise<AgentTranscriptMessage[]> {
+  return get<AgentTranscriptMessage[]>(`/runs/${runId}/agent/transcript`);
+}
+
+export function getAgentCost(runId: string): Promise<AgentCost> {
+  return get<AgentCost>(`/runs/${runId}/agent/cost`);
 }

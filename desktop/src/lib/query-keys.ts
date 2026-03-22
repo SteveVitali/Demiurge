@@ -35,6 +35,10 @@ export const queryKeys = {
     snapshot: (runId: string) => ['runs', runId, 'environment'] as const,
     services: (runId: string) => ['runs', runId, 'services'] as const,
   },
+  agent: {
+    transcript: (runId: string) => ['runs', runId, 'agent', 'transcript'] as const,
+    cost: (runId: string) => ['runs', runId, 'agent', 'cost'] as const,
+  },
   config: {
     resolved: (repoPath: string) => ['config', repoPath] as const,
   },

@@ -77,6 +77,7 @@ object AgentToolRpcHandlers {
         val inputSummary = notification.params.hcursor.downField("inputSummary").as[String].getOrElse("")
         val shortInput = if (inputSummary.length > 100) inputSummary.take(100) + "..." else inputSummary
         System.err.println(s"[agent] ▸ $toolName ${if (shortInput.nonEmpty) s"— $shortInput" else ""}")
+        broadcastAgentNotification(ctx, "tool_use", notification.params)
 
       case "agent/progress" =>
         // Agent text progress — limited stdout logging
@@ -85,6 +86,7 @@ object AgentToolRpcHandlers {
           val truncated = if (text.length > 120) text.take(120) + "..." else text
           System.err.println(s"[agent] $truncated")
         }
+        broadcastAgentNotification(ctx, "text", notification.params)
 
       case _ =>
         // Unknown notification — ignore
@@ -331,6 +333,18 @@ object AgentToolRpcHandlers {
       case e: Exception =>
         sendCallbackError(ctx, params, s"Health check failed: ${e.getMessage}")
     }
+  }
+
+  // Desktop Phase 3: Broadcast agent notification to WS clients and store in transcript
+  private def broadcastAgentNotification(ctx: AgentToolContext, messageType: String, params: Json): Unit = {
+    try {
+      demiurge.api.LogStreamManager.broadcastAgentMessage(messageType, params)
+      demiurge.api.AgentRoutes.appendTranscriptMessage(ctx.runId, Json.obj(
+        "messageType" -> messageType.asJson,
+        "data"        -> params,
+        "timestamp"   -> java.time.Instant.now().toString.asJson,
+      ))
+    } catch { case _: Exception => }
   }
 
   private def sendCallbackResponse(ctx: AgentToolContext, callbackId: String, result: Json): Unit = {
