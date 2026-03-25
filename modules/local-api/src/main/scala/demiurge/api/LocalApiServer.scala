@@ -111,6 +111,58 @@ object LocalApiServer {
       }
     }))
 
+    // Desktop Phase 4: Config routes
+    httpServer.createContext("/config", CorsMiddleware.wrap(new com.sun.net.httpserver.HttpHandler {
+      override def handle(exchange: com.sun.net.httpserver.HttpExchange): Unit = {
+        val path = exchange.getRequestURI.getPath
+        val method = exchange.getRequestMethod
+        try {
+          if (path == "/config" && method == "GET") {
+            ConfigRoutes.getConfigHandler(connProvider).handle(exchange)
+          } else if (path == "/config/manifest" && method == "PUT") {
+            ConfigRoutes.putManifestHandler(connProvider).handle(exchange)
+          } else if (path == "/config/requirements" && method == "PUT") {
+            ConfigRoutes.putRequirementsHandler(connProvider).handle(exchange)
+          } else if (path == "/config/validate" && method == "POST") {
+            ConfigRoutes.validateConfigHandler(connProvider).handle(exchange)
+          } else if (path == "/config/init-smart" && method == "POST") {
+            ConfigRoutes.smartInitHandler(connProvider).handle(exchange)
+          } else {
+            RouteHelpers.sendJson(exchange, 404, ApiEnvelope.error(404, "Not found"))
+          }
+        } catch {
+          case e: Exception =>
+            try { RouteHelpers.sendJson(exchange, 500, ApiEnvelope.error(500, e.getMessage)) }
+            catch { case _: Exception => }
+        }
+      }
+    }))
+
+    // Desktop Phase 4: System routes
+    httpServer.createContext("/system", CorsMiddleware.wrap(new com.sun.net.httpserver.HttpHandler {
+      override def handle(exchange: com.sun.net.httpserver.HttpExchange): Unit = {
+        val path = exchange.getRequestURI.getPath
+        val method = exchange.getRequestMethod
+        try {
+          if (path == "/system/doctor" && method == "GET") {
+            SystemRoutes.getDoctorHandler(connProvider).handle(exchange)
+          } else if (path == "/system/preferences" && method == "GET") {
+            SystemRoutes.getPreferencesHandler(connProvider).handle(exchange)
+          } else if (path == "/system/preferences" && method == "PUT") {
+            SystemRoutes.putPreferencesHandler(connProvider).handle(exchange)
+          } else if (path == "/system/repos" && method == "GET") {
+            SystemRoutes.getReposHandler(connProvider).handle(exchange)
+          } else {
+            RouteHelpers.sendJson(exchange, 404, ApiEnvelope.error(404, "Not found"))
+          }
+        } catch {
+          case e: Exception =>
+            try { RouteHelpers.sendJson(exchange, 500, ApiEnvelope.error(500, e.getMessage)) }
+            catch { case _: Exception => }
+        }
+      }
+    }))
+
     httpServer.setExecutor(java.util.concurrent.Executors.newFixedThreadPool(4))
     httpServer.start()
     server = Some(httpServer)
