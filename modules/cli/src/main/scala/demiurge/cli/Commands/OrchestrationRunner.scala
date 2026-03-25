@@ -45,15 +45,19 @@ object OrchestrationRunner {
     val artifactRoot = taskRun.artifactRootPath
     Files.createDirectories(artifactRoot)
 
-    // Start local API server (best-effort, non-fatal)
-    val dbPath = global.repo.resolve(".demiurge").resolve("demiurge.db")
-    try {
-      LocalApiServer.start(
-        port = 19440,
-        dbPath = dbPath,
-        artifactRootResolver = rid => Some(global.repo.resolve(".demiurge").resolve("artifacts").resolve(rid)),
-      )
-    } catch { case _: Exception => }
+    // Start local API server (best-effort, non-fatal).
+    // Skip if the server is already running (e.g. invoked from ServeCommand).
+    val serverStartedByUs = !LocalApiServer.isRunning
+    if (serverStartedByUs) {
+      val dbPath = global.repo.resolve(".demiurge").resolve("demiurge.db")
+      try {
+        LocalApiServer.start(
+          port = 19440,
+          dbPath = dbPath,
+          artifactRootResolver = rid => Some(global.repo.resolve(".demiurge").resolve("artifacts").resolve(rid)),
+        )
+      } catch { case _: Exception => }
+    }
 
     // Wire SSE event streaming
     RunTransitionManager.setEventListener(event => EventStream.publish(event))
@@ -118,7 +122,10 @@ object OrchestrationRunner {
       agentWorkerManager.foreach(w => try { w.shutdown() } catch { case _: Exception => })
       RunTransitionManager.clearEventListener()
       EventStream.markRunEnded(runId)
-      LocalApiServer.stop()
+      // Only stop the server if we started it (don't kill ServeCommand's persistent server)
+      if (serverStartedByUs) {
+        LocalApiServer.stop()
+      }
     }
   }
 

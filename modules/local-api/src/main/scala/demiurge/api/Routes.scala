@@ -279,7 +279,7 @@ object Routes {
                           "status" -> Json.fromString("started"),
                         )))
                       case None =>
-                        sendJson(exchange, 500, ApiEnvelope.error(500, "Failed to start run"))
+                        sendJson(exchange, 409, ApiEnvelope.error(409, "Another run is already in progress"))
                     }
                   } finally { conn.close() }
                 case None =>
