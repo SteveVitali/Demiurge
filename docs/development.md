@@ -9,6 +9,7 @@ This guide covers building, testing, and contributing to the Demiurge project.
 - **Node.js >= 18** — for the TypeScript browser worker
 - **npm** — for worker dependency management
 - **Git >= 2.20** — for worktree operations
+- **Rust toolchain** — for the Tauri desktop app (optional, only needed for desktop development; install via [rustup](https://rustup.rs/))
 
 ## Project Structure
 
@@ -42,10 +43,24 @@ Demiurge/
 │   │   ├── rpc/                # JSON-RPC 2.0 server
 │   │   ├── browser/            # BrowserManager (Playwright)
 │   │   ├── artifacts/          # ArtifactWriter
-│   │   ├── methods/            # RPC method handlers
+│   │   ├── methods/            # RPC method handlers (incl. agent/execute)
 │   │   ├── utils/              # Checksum utilities
 │   │   └── index.ts            # Entry point
 │   └── test/                   # Jest test suites
+├── desktop/                    # Tauri v2 + React desktop application
+│   ├── src/                    # React frontend (TypeScript)
+│   │   ├── api/                # HTTP client, SSE, WebSocket
+│   │   ├── components/         # UI components (agent, artifacts, config, environment, etc.)
+│   │   ├── hooks/              # React hooks (SSE, WebSocket, notifications, keyboard shortcuts)
+│   │   ├── screens/            # Dashboard, RunDetail, Config, Settings, DetachedLog
+│   │   ├── stores/             # Zustand stores (app, run, agent, logs, preferences)
+│   │   ├── lib/                # Utilities, routes, constants
+│   │   └── main.tsx            # Entry point
+│   ├── src-tauri/              # Tauri Rust core
+│   │   ├── src/                # commands.rs, sidecar.rs, tray.rs, lib.rs
+│   │   ├── Cargo.toml          # Rust dependencies
+│   │   └── tauri.conf.json     # Tauri configuration
+│   └── scripts/                # Build scripts (package-sidecar.sh)
 ├── test/
 │   └── fixtures/               # Integration test fixtures
 │       ├── simple-node-http/   # Simple Node.js API fixture
@@ -84,6 +99,29 @@ npm run build
 
 The worker compiles to `worker/dist/`.
 
+### Build the desktop application
+
+```bash
+# Prerequisites: Rust toolchain (rustup), Node.js >= 18
+cd desktop
+npm install
+
+# Development mode (hot-reload)
+npm run tauri dev
+
+# Production build
+npm run tauri build
+```
+
+Before building, package the Scala backend sidecar:
+
+```bash
+cd desktop
+./scripts/package-sidecar.sh
+```
+
+This builds the CLI fat JAR via Bazel and creates a launcher script in `desktop/src-tauri/binaries/` named with the Tauri target triple convention (e.g., `demiurge-sidecar-aarch64-apple-darwin`).
+
 ## Testing
 
 ### Run all Scala tests
@@ -120,7 +158,7 @@ npm install
 npm test
 ```
 
-Worker tests use Jest with ts-jest. Three test suites: `rpc.spec.ts`, `browserflow.spec.ts`, `auth.spec.ts`.
+Worker tests use Jest with ts-jest. Four test suites: `rpc.spec.ts`, `browserflow.spec.ts`, `auth.spec.ts`, `browserVerification.spec.ts`.
 
 ### View test output
 
