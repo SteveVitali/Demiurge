@@ -117,6 +117,12 @@ object CommandParsers {
     smart: Boolean  = false,
   ) extends ParsedCommand
 
+  case class ServeCmd(
+    port: Int = 19440,
+    wsPort: Int = 19441,
+    dbPath: Option[String] = None,
+  ) extends ParsedCommand
+
   case object HelpCmd extends ParsedCommand
 
   case class ParseResult(global: GlobalOpts, command: ParsedCommand)
@@ -160,6 +166,7 @@ object CommandParsers {
       case "doctor"           => Right(ParseResult(global, DoctorCmd()))
       case "init"             => parseInitManifestCmd(args, global)
       case "init-manifest"    => parseInitManifestCmd(args, global)
+      case "serve"            => parseServeCmd(args, global)
       case other              => Left(s"Unknown command: $other")
     }
   }
@@ -385,6 +392,20 @@ object CommandParsers {
         case "--force" :: rest       => cmd = cmd.copy(force = true); remaining = rest
         case "--smart" :: rest       => cmd = cmd.copy(smart = true); remaining = rest
         case unknown :: _            => return Left(s"Unknown flag for init-manifest: $unknown")
+      }
+    }
+    Right(ParseResult(global, cmd))
+  }
+
+  private def parseServeCmd(args: List[String], global: GlobalOpts): Either[String, ParseResult] = {
+    var cmd = ServeCmd()
+    var remaining = args
+    while (remaining.nonEmpty) {
+      remaining match {
+        case "--port" :: v :: rest    => parseInt(v, "--port").map(n => cmd = cmd.copy(port = n)) match { case Left(e) => return Left(e); case _ => }; remaining = rest
+        case "--ws-port" :: v :: rest => parseInt(v, "--ws-port").map(n => cmd = cmd.copy(wsPort = n)) match { case Left(e) => return Left(e); case _ => }; remaining = rest
+        case "--db" :: v :: rest      => cmd = cmd.copy(dbPath = Some(v)); remaining = rest
+        case unknown :: _             => return Left(s"Unknown flag for serve: $unknown")
       }
     }
     Right(ParseResult(global, cmd))

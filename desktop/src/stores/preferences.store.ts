@@ -13,6 +13,7 @@ interface PreferencesState {
   defaultMaxAttempts: number;
   defaultRunTimeoutMs: number;
   anthropicApiKeySet: boolean;
+  hasCompletedOnboarding: boolean;
 
   setTheme: (theme: PreferencesState['theme']) => void;
   setFontSize: (size: number) => void;
@@ -24,6 +25,7 @@ interface PreferencesState {
   setDefaultMaxAttempts: (max: number) => void;
   setDefaultRunTimeoutMs: (ms: number) => void;
   setAnthropicApiKeySet: (set: boolean) => void;
+  setHasCompletedOnboarding: (done: boolean) => void;
 }
 
 export const usePreferencesStore = create<PreferencesState>()(
@@ -39,6 +41,7 @@ export const usePreferencesStore = create<PreferencesState>()(
       defaultMaxAttempts: 5,
       defaultRunTimeoutMs: 1800000,
       anthropicApiKeySet: false,
+      hasCompletedOnboarding: false,
 
       setTheme: (theme) => set({ theme }),
       setFontSize: (fontSize) => set({ fontSize }),
@@ -50,6 +53,7 @@ export const usePreferencesStore = create<PreferencesState>()(
       setDefaultMaxAttempts: (defaultMaxAttempts) => set({ defaultMaxAttempts }),
       setDefaultRunTimeoutMs: (defaultRunTimeoutMs) => set({ defaultRunTimeoutMs }),
       setAnthropicApiKeySet: (anthropicApiKeySet) => set({ anthropicApiKeySet }),
+      setHasCompletedOnboarding: (hasCompletedOnboarding) => set({ hasCompletedOnboarding }),
     }),
     {
       name: 'demiurge-preferences',

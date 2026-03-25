@@ -1,17 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
-import { Search, Trash2, ArrowDownToLine } from 'lucide-react';
+import { Search, Trash2, ArrowDownToLine, ExternalLink } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
 import { cn } from '@/lib/utils';
 import { useLogsStore } from '@/stores/logs.store';
 
 // Desktop Phase 3 — §9.5: xterm.js-based log tailing component.
 // ANSI-colored terminal output with virtual scrolling, search, auto-scroll.
+// Desktop Phase 5 — §12.5: Added "Detach" button to open logs in a new native window.
 
 interface LogTailerProps {
   serviceId: string;
+  runId?: string;
   className?: string;
 }
 
-export function LogTailer({ serviceId, className }: LogTailerProps) {
+export function LogTailer({ serviceId, runId, className }: LogTailerProps) {
   const termRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<import('@xterm/xterm').Terminal | null>(null);
   const fitAddonRef = useRef<import('@xterm/addon-fit').FitAddon | null>(null);
@@ -139,6 +142,15 @@ export function LogTailer({ serviceId, className }: LogTailerProps) {
     lastWrittenRef.current = 0;
   };
 
+  const handleDetach = async () => {
+    if (!runId) return;
+    try {
+      await invoke('create_log_window', { runId, serviceId });
+    } catch (e) {
+      console.error('Failed to create detached log window:', e);
+    }
+  };
+
   return (
     <div className={cn('flex flex-col', className)}>
       {/* Toolbar */}
@@ -189,6 +201,15 @@ export function LogTailer({ serviceId, className }: LogTailerProps) {
           >
             <ArrowDownToLine className="h-3 w-3" />
           </button>
+          {runId && (
+            <button
+              onClick={handleDetach}
+              className="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-accent"
+              title="Detach to new window"
+            >
+              <ExternalLink className="h-3 w-3" />
+            </button>
+          )}
         </div>
       </div>
 

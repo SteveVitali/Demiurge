@@ -22,6 +22,7 @@ pub fn run() {
             commands::restart_backend,
             commands::get_backend_status,
             commands::open_folder_dialog,
+            commands::create_log_window,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

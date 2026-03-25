@@ -8,6 +8,7 @@ import { DashboardScreen } from '@/screens/DashboardScreen';
 import { RunDetailScreen } from '@/screens/RunDetailScreen';
 import { ConfigScreen } from '@/screens/ConfigScreen';
 import { SettingsScreen } from '@/screens/SettingsScreen';
+import { DetachedLogScreen } from '@/screens/DetachedLogScreen';
 
 const rootRoute = createRootRoute({
   component: AppLayout,
@@ -39,11 +40,19 @@ const settingsRoute = createRoute({
   component: SettingsScreen,
 });
 
+// Desktop Phase 5: Detached log window route — rendered in secondary native windows
+const detachedLogRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/logs/$runId/$serviceId',
+  component: DetachedLogScreen,
+});
+
 const routeTree = rootRoute.addChildren([
   dashboardRoute,
   runDetailRoute,
   configRoute,
   settingsRoute,
+  detachedLogRoute,
 ]);
 
 export const router = createRouter({ routeTree });

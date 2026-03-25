@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Demiurge",
         "width": 1200,
         "height": 800,
@@ -41,11 +42,39 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": []
+    "externalBin": [
+      "binaries/demiurge-sidecar"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "10.15",
+      "signingIdentity": null,
+      "entitlements": null
+    },
+    "windows": {
+      "wix": {
+        "language": "en-US"
+      }
+    },
+    "linux": {
+      "deb": {
+        "depends": ["libwebkit2gtk-4.1-0", "libjavascriptcoregtk-4.1-0"]
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    },
+    "category": "DeveloperTool",
+    "shortDescription": "Last-mile web development automation platform",
+    "longDescription": "Demiurge automates verification, repair, and building of web applications using AI. It provides full CLI parity, real-time observability, rich artifact browsing, and interactive configuration through a native desktop experience.",
+    "copyright": "Copyright 2024 Demiurge",
+    "licenseFile": "../../LICENSE"
   },
   "plugins": {
     "shell": {
       "open": true
+    },
+    "notification": {
+      "all": true
     }
   }
 }

@@ -226,6 +226,38 @@ class CommandParsersSuite extends FunSuite {
     assertEquals(CommandParsers.parseSize("1024", "--t"), Right(1024L))
   }
 
+  // --- Serve command ---
+
+  test("parses serve command with defaults") {
+    val result = CommandParsers.parse(Array("serve"))
+    assert(result.isRight)
+    val cmd = result.toOption.get.command.asInstanceOf[ServeCmd]
+    assertEquals(cmd.port, 19440)
+    assertEquals(cmd.wsPort, 19441)
+    assertEquals(cmd.dbPath, None)
+  }
+
+  test("parses serve command with all flags") {
+    val result = CommandParsers.parse(Array("serve", "--port", "8080", "--ws-port", "8081", "--db", "/tmp/test.db"))
+    assert(result.isRight)
+    val cmd = result.toOption.get.command.asInstanceOf[ServeCmd]
+    assertEquals(cmd.port, 8080)
+    assertEquals(cmd.wsPort, 8081)
+    assertEquals(cmd.dbPath, Some("/tmp/test.db"))
+  }
+
+  test("rejects serve with unknown flag") {
+    val result = CommandParsers.parse(Array("serve", "--unknown"))
+    assert(result.isLeft)
+    assert(result.swap.toOption.get.contains("Unknown flag"))
+  }
+
+  test("rejects serve with invalid port") {
+    val result = CommandParsers.parse(Array("serve", "--port", "abc"))
+    assert(result.isLeft)
+    assert(result.swap.toOption.get.contains("Invalid integer"))
+  }
+
   // --- No command specified ---
   test("no command returns error") {
     val result = CommandParsers.parse(Array.empty[String])
