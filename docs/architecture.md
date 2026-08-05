@@ -101,7 +101,7 @@ This ensures that if the process crashes during a side effect, the persisted sta
 
 Foundation types shared across all modules:
 
-- **25 sealed traits** — `RunStatus` (23 values), `AttemptStatus`, `VerdictStatus`, `FailureClass`, `VerifierType` (10 types including `AgentBrowser`), `ArtifactType` (24 types), `ServiceKind`, `StartupMode`, `AuthMode`, `RunMode` (5 modes including `Build`), `ResetStrategy`, `InferenceProvider`, `GenerationMode`, `ConfigSource`, `TasteSensitivity`, `ToolCategory`, `RepairResultStatus`, `WorkerTaskStatus`, etc.
+- **27 sealed traits** — `RunStatus` (23 values), `AttemptStatus`, `VerdictStatus`, `FailureClass`, `VerifierType` (10 types including `AgentBrowser`), `ArtifactType` (24 types), `ServiceKind`, `StartupMode`, `AuthMode`, `RunMode` (5 modes including `Build`), `ResetStrategy`, `InferenceProvider`, `GenerationMode`, `ConfigSource`, `TasteSensitivity`, `ToolCategory`, `RepairResultStatus`, `WorkerTaskStatus`, etc.
 - **116+ case classes** — `TaskRun`, `Attempt`, `RequirementVerdict`, `SystemEvent`, `ArtifactRecord`, `RuntimePlan`, `RuntimeSnapshot`, `RequirementGraph`, `FailurePacket`, `InferenceRequest`/`Response`, `BrowserAction`, `Assertion`, `Observation`, `FeaturePlan`, `ResolvedConfig`, `AgentBrowserVerifierSpec`, etc.
 - **JSON codecs** — circe semiauto derivation for all DTOs
 - **ExecutionBudgetDefaults** / **BuildBudgetDefaults** — default budget values for verification and build modes
@@ -113,7 +113,7 @@ SQLite WAL-mode database with 17 tables (defined in `V001__initial.sql` + `V002_
 - **Database** — connection factory with WAL mode, busy timeout, and pragmas
 - **Migrator** — schema migration runner
 - **TransactionManager** — atomic transaction wrapper
-- **Repos** — `TaskRunRepo`, `AttemptRepo`, `VerdictRepo`, `EventRepo`, `ArtifactRecordRepo`, `FailurePacketRepo`, `PatchRepo`, `RepoInspectionReportRepo`, `RequirementGraphRepo`, `RuntimePlanRepo`, `RuntimeSnapshotRepo`
+- **Repos** — `TaskRunRepo`, `AttemptRepo`, `VerdictRepo`, `EventRepo`, `ArtifactRecordRepo`, `FailurePacketRepo`, `PatchRepo`, `RepoInspectionReportRepo`, `RequirementGraphRepo`, `RuntimePlanRepo`, `RuntimeSnapshotRepo`, `FeaturePlanRepo`, `UsageRecordRepo`
 
 Data is stored at `<repo>/.demiurge/demiurge.db`.
 

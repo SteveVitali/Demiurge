@@ -33,6 +33,7 @@ Demiurge/
 │   ├── verification-engine/    # Verifier gen/exec/aggregation
 │   ├── failure-analysis/       # LLM + rule-based failure analysis
 │   ├── inference/              # LLM inference gateway
+│   ├── license/                # License validation, credentials, usage tracking
 │   ├── repair-api/             # Repair DTOs, patch applier
 │   ├── repair-claude/          # Claude repair backend
 │   ├── artifact-store/         # Artifact sink, evidence collector
@@ -52,7 +53,7 @@ Demiurge/
 │   │   ├── api/                # HTTP client, SSE, WebSocket
 │   │   ├── components/         # UI components (agent, artifacts, config, environment, etc.)
 │   │   ├── hooks/              # React hooks (SSE, WebSocket, notifications, keyboard shortcuts)
-│   │   ├── screens/            # Dashboard, RunDetail, Config, Settings, DetachedLog
+│   │   ├── screens/            # Dashboard, RunDetail, Config, Settings, Auth, AuthCallback, DetachedLog
 │   │   ├── stores/             # Zustand stores (app, run, agent, logs, preferences)
 │   │   ├── lib/                # Utilities, routes, constants
 │   │   └── main.tsx            # Entry point
@@ -61,6 +62,9 @@ Demiurge/
 │   │   ├── Cargo.toml          # Rust dependencies
 │   │   └── tauri.conf.json     # Tauri configuration
 │   └── scripts/                # Build scripts (package-sidecar.sh)
+├── web/                        # Marketing site + licensing backend (Next.js, demiurge.dev)
+├── homebrew/                   # Homebrew formula (CLI) and cask (desktop) templates
+├── docs/                       # Human-facing documentation (published to demiurge.dev)
 ├── test/
 │   └── fixtures/               # Integration test fixtures
 │       ├── simple-node-http/   # Simple Node.js API fixture
@@ -69,7 +73,7 @@ Demiurge/
 ├── MODULE.bazel                # Bazel module definition
 ├── .bazelrc                    # Bazel build settings
 ├── BUILD.bazel                 # Root BUILD file
-└── LICENSE                     # MIT License
+└── LICENSE                     # Business Source License 1.1
 ```
 
 ## Building
@@ -81,22 +85,6 @@ bazel build //...
 ```
 
 This builds all 48 targets across 23 Scala modules. Bazel handles dependency resolution, Scala compilation, and Java runtime automatically.
-
-### Build the desktop application
-
-```bash
-cd desktop
-npm install
-npm run tauri build
-```
-
-The desktop app requires the Rust toolchain. For development with hot reload:
-
-```bash
-cd desktop
-npm install
-npm run tauri dev
-```
 
 ### Build a specific module
 
@@ -199,37 +187,39 @@ bazel test //... --test_output=streamed
 
 ## Module Dependency Graph
 
+Module-to-module dependencies, as declared in each module's `BUILD.bazel`
+(Maven deps like circe/snakeyaml/sqlite-jdbc omitted):
+
 ```
-core-model (no deps)
-  ├── persistence (core-model, sqlite-jdbc)
-  ├── manifest (core-model, snakeyaml)
-  ├── requirements (core-model, snakeyaml)
-  ├── selectors (core-model, snakeyaml)
-  ├── config-resolver (core-model, manifest, requirements)
-  ├── repo-inspector (core-model, manifest, circe, snakeyaml, cats)
-  ├── agent-backend (core-model, worker-protocol, verification-engine)
-  ├── inference (core-model)
-  ├── failure-analysis (core-model, inference)
-  ├── environment-planner (core-model)
-  ├── runtime-supervisor (core-model)
-  ├── verification-engine (core-model)
-  ├── repair-api (core-model)
-  ├── repair-claude (core-model, repair-api)
-  ├── artifact-store (core-model, persistence)
-  ├── worker-protocol (core-model)
-  ├── license (core-model, circe)
-  ├── policy (core-model)
-  ├── requirement-compiler (core-model, requirements, selectors)
-  ├── local-api (core-model, persistence)
-  └── orchestrator (core-model, persistence, repo-inspector, requirement-compiler,
-  │                  environment-planner, runtime-supervisor, verification-engine,
-  │                  repair-api, worker-protocol, artifact-store, inference,
-  │                  failure-analysis)
-  └── cli (core-model, persistence, orchestrator, local-api, manifest,
-           config-resolver, repo-inspector, requirement-compiler,
-           requirements, selectors, environment-planner, runtime-supervisor,
-           verification-engine, repair-api, repair-claude, agent-backend,
-           artifact-store, worker-protocol, inference, failure-analysis)
+No module deps:
+  core-model, requirements, selectors
+
+Depend on core-model only:
+  persistence, manifest, license, policy, inference,
+  artifact-store, worker-protocol
+
+Mid-layer:
+  repo-inspector       (core-model, manifest)
+  environment-planner  (core-model, manifest)
+  runtime-supervisor   (core-model, manifest)
+  failure-analysis     (core-model, inference)
+  verification-engine  (core-model, inference)
+  repair-api           (core-model, inference, policy)
+  repair-claude        (core-model, repair-api)
+  requirement-compiler (core-model, inference, requirements, selectors)
+  config-resolver      (core-model, inference, manifest, repo-inspector,
+                        requirements, selectors)
+  local-api            (core-model, license, persistence, runtime-supervisor)
+  agent-backend        (core-model, inference, local-api, repair-api,
+                        runtime-supervisor, verification-engine, worker-protocol)
+
+Top-layer:
+  orchestrator (core-model, license, persistence, manifest, repo-inspector,
+                requirement-compiler, environment-planner, runtime-supervisor,
+                verification-engine, requirements, selectors, repair-api,
+                agent-backend, inference, config-resolver, worker-protocol, policy)
+  cli          (all of the above except failure-analysis and policy —
+                20 module deps, including orchestrator via :orchestrator-lib)
 ```
 
 ## Coding Conventions
