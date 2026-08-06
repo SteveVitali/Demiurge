@@ -19,7 +19,7 @@ Demiurge orchestrates environment setup, requirement verification, failure analy
 - **Structured observability** — JSON event stream, SSE-capable local API, structured logging, full artifact capture
 - **Smart resume** — interrupted runs resume from the last completed phase, skipping already-persisted work; attempt counters continue where they left off
 - **Signal handling** — SIGINT/SIGTERM are handled gracefully with state persistence
-- **CI/CD** — GitHub Actions workflow builds all targets and runs all tests on every push and PR
+- **CI/CD** — GitHub Actions workflow builds all Bazel targets and runs Scala + worker tests on pushes and PRs to `main` (desktop is type-checked; `web/` tests run locally)
 
 ## Architecture Overview
 
@@ -59,7 +59,7 @@ Demiurge is a **Scala 2.13 + TypeScript + Rust** multi-stack project built with 
 
 | Module | Language | Purpose |
 |--------|----------|---------|
-| `modules/core-model` | Scala | 25 enum-like sealed traits, 116+ case classes, JSON codecs (circe) |
+| `modules/core-model` | Scala | 27 enum-like sealed traits, 116+ case classes, JSON codecs (circe) |
 | `modules/persistence` | Scala | SQLite WAL, migrations, repos (TaskRun, Attempt, Verdict, Event, Artifact, etc.) |
 | `modules/orchestrator` | Scala | Run state machine, transition manager, signal handler, timeout enforcer, resume manager |
 | `modules/cli` | Scala | 16 CLI commands, arg parsing, output formatting (human/JSON) |
@@ -169,7 +169,8 @@ See [docs/configuration.md](docs/configuration.md) for the full manifest schema 
 - [Configuration](docs/configuration.md) — `demiurge.yaml` manifest, `requirements.yaml`, `selectors.yaml`
 - [Desktop Application](docs/desktop.md) — Tauri desktop GUI, setup, and development
 - [Development Guide](docs/development.md) — building, testing, contributing, module structure
+- [Contributing](CONTRIBUTING.md) — how to set up, test, and submit changes
 
 ## License
 
-[MIT](LICENSE) — Copyright (c) 2026 Steven Vitali
+[Business Source License 1.1](LICENSE) — Copyright (c) 2026 Steven Vitali
