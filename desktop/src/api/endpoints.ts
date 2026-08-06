@@ -1,4 +1,5 @@
 import { get, post, put } from './client';
+import type { UsageData } from '@/lib/usage';
 import type {
   TaskRun,
   Attempt,
@@ -179,4 +180,10 @@ export function updatePreferences(prefs: Partial<SystemPreferences>): Promise<{ 
 
 export function getKnownRepos(): Promise<string[]> {
   return get<string[]>('/system/repos');
+}
+
+// --- Spec 05: Usage ---
+
+export function getUsage(): Promise<UsageData> {
+  return get<UsageData>('/usage');
 }

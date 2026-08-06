@@ -10,10 +10,13 @@ import {
   Circle,
   Wifi,
   WifiOff,
+  BarChart3,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/app.store';
 import { useAuthStore } from '@/stores/auth.store';
+import { useUsage } from '@/hooks/useUsage';
+import { usageBarColor, usageTextColor } from '@/lib/usage';
 import { PlanTierBadge } from '@/components/PlanTierBadge';
 import { queryKeys } from '@/lib/query-keys';
 import { getRuns } from '@/api/endpoints';
@@ -40,6 +43,7 @@ export function Sidebar() {
   const activeRunId = useAppStore((s) => s.activeRunId);
   const planTier = useAuthStore((s) => s.planTier);
   const userEmail = useAuthStore((s) => s.userEmail);
+  const { data: usage } = useUsage();
 
   const { data: recentRuns } = useQuery({
     queryKey: queryKeys.runs.list({ limit: RECENT_RUNS_LIMIT, sort: 'created_at', order: 'desc' }),
@@ -136,7 +140,7 @@ export function Sidebar() {
         )}
       </nav>
 
-      {/* Footer — Plan Badge + Backend Status */}
+      {/* Footer — Plan Badge + Usage + Backend Status */}
       <div className="border-t border-border px-3 py-2">
         {!sidebarCollapsed && planTier && (
           <div className="mb-1.5 flex items-center gap-2">
@@ -146,6 +150,30 @@ export function Sidebar() {
             )}
           </div>
         )}
+
+        {/* Spec 05 §7.1: Usage indicator */}
+        {usage && usage.runs.limit > 0 && (() => {
+          const runPct = Math.round((usage.runs.used / usage.runs.limit) * 100);
+          return sidebarCollapsed ? (
+            <div className="mb-1.5 flex justify-center" title={`Runs: ${usage.runs.used}/${usage.runs.limit}`}>
+              <BarChart3 className={cn('h-3 w-3', usageTextColor(runPct))} />
+            </div>
+          ) : (
+            <div className="mb-1.5">
+              <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                <BarChart3 className="h-3 w-3" />
+                <span>Runs: {usage.runs.used}/{usage.runs.limit}</span>
+              </div>
+              <div className="mt-0.5 h-1 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className={cn('h-full rounded-full transition-all duration-300', usageBarColor(runPct))}
+                  style={{ width: `${Math.min(runPct, 100)}%` }}
+                />
+              </div>
+            </div>
+          );
+        })()}
+
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           {backendStatus === 'connected' ? (
             <Wifi className="h-3 w-3 text-emerald-400" />

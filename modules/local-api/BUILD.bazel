@@ -7,6 +7,7 @@ scala_library(
     visibility = ["//visibility:public"],
     deps = [
         "//modules/core-model",
+        "//modules/license",
         "//modules/persistence",
         "//modules/runtime-supervisor",
         "@maven//:io_circe_circe_core_2_13",

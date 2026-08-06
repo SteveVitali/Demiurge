@@ -14,6 +14,7 @@ import demiurge.config.{ConfigResolver, ConfigResolverImpl}
 import demiurge.inference.InferenceService
 import demiurge.worker.WorkerProcessManager
 import demiurge.agent.{AgentBackend, AgentConfig, AgentResult, AgentCompleted, AgentFailed, AgentTimeout, AgentBudgetExceeded, AgentToolRpcHandlers, AgentBrowserExecutorImpl}
+import demiurge.license.{CredentialStore, UsageReporter, UsageReport, UsageLimitExceeded, UsageReportError}
 
 // Spec §4.1: Synchronous orchestrator loop.
 // Executes the path: Created → InspectingRepo → CompilingRequirements →
@@ -109,6 +110,41 @@ object RunOrchestrator {
         inspection = inspection,
         inferenceService = inferenceService,
       )
+    }
+
+    // --- Spec 05 §3.1: Increment license usage (run count) ---
+    // Count the run when it transitions past Created (first real work state).
+    // Resumed runs are NOT counted again (already counted on initial start).
+    val isResume = resumeFromStatus.isDefined
+    if (!isResume && shouldExecute(RunStatus.InspectingRepo, startPhase)) {
+      try {
+        val licenseKey = CredentialStore.loadCredentials().map(_.licenseKey).getOrElse("")
+        val fingerprint = CredentialStore.getMachineFingerprint()
+        UsageReporter.incrementRunCount(licenseKey, fingerprint) match {
+          case Left(_: UsageLimitExceeded) =>
+            System.err.println(s"[demiurge] Run limit reached: uses exceeded maxUses this period")
+            currentRun = RunTransitionManager.transitionToTerminal(
+              currentCtx, RunStatus.Exhausted,
+              summary = Some("Run limit reached — upgrade your plan at https://demiurge.dev/pricing"),
+            )
+            return currentRun
+          case Left(UsageReportError(msg)) =>
+            // Non-fatal: log warning but continue (offline grace)
+            System.err.println(s"[demiurge] Could not report usage: $msg")
+          case Right(UsageReport(uses, maxUses)) =>
+            System.err.println(s"[demiurge] Run $uses/$maxUses this period")
+            // Spec 05 §6.3: Approaching limit warning (≥80%)
+            if (maxUses > 0 && uses.toDouble / maxUses >= 0.8) {
+              val pct = (uses.toDouble / maxUses * 100).toInt
+              System.err.println(s"[demiurge] Warning: $uses/$maxUses runs used this period ($pct%).")
+            }
+          case _ => // Shouldn't happen but handle gracefully
+        }
+      } catch {
+        case e: Exception =>
+          // Non-fatal: usage metering failure should never block a run
+          System.err.println(s"[demiurge] Usage metering skipped: ${e.getMessage}")
+      }
     }
 
     // --- Transition: Created → InspectingRepo ---
@@ -505,6 +541,7 @@ object RunOrchestrator {
         )
         currentCtx = currentCtx.copy(run = currentRun)
         SignalHandler.updateContext(currentCtx)
+        reportTokenUsageIfAny(currentRun)
         return currentRun
       }
 
@@ -519,6 +556,7 @@ object RunOrchestrator {
         )
         currentCtx = currentCtx.copy(run = currentRun)
         SignalHandler.updateContext(currentCtx)
+        reportTokenUsageIfAny(currentRun)
         return currentRun
       }
 
@@ -533,6 +571,7 @@ object RunOrchestrator {
         )
         currentCtx = currentCtx.copy(run = currentRun)
         SignalHandler.updateContext(currentCtx)
+        reportTokenUsageIfAny(currentRun)
         return currentRun
       }
 
@@ -888,12 +927,33 @@ object RunOrchestrator {
     plan.copy(services = remappedServices, fixtureSteps = remappedFixtures)
   }
 
+  /**
+   * Spec 05 §5.2: Report token usage after a run reaches a terminal state.
+   * Fire-and-forget — failures are silently ignored.
+   */
+  private def reportTokenUsageIfAny(run: TaskRun): Unit = {
+    try {
+      val licenseKey = CredentialStore.loadCredentials().map(_.licenseKey).getOrElse("")
+      if (licenseKey.nonEmpty) {
+        // Agent-backed runs track tokens in AgentCompleted results. For now,
+        // we report a summary event so the cloud backend has a record of the run.
+        // The actual per-call token tracking lives in InferenceService/UsageTracker
+        // and is already persisted in SQLite. This is the cloud sync.
+        UsageReporter.reportTokenUsage(licenseKey, run.runId, 0, 0)
+      }
+    } catch {
+      case _: Exception => // Best effort — never block run completion
+    }
+  }
+
   /** Handle interruption: persist Interrupted status. */
   private def handleInterrupt(ctx: RunContext): TaskRun = {
-    RunTransitionManager.transitionToTerminal(
+    val run = RunTransitionManager.transitionToTerminal(
       ctx,
       RunStatus.Interrupted,
       summary = Some("Run interrupted by signal"),
     )
+    reportTokenUsageIfAny(run)
+    run
   }
 }

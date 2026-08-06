@@ -47,4 +47,7 @@ export const queryKeys = {
     preferences: ['system', 'preferences'] as const,
     repos: ['system', 'repos'] as const,
   },
+  usage: {
+    current: (licenseKey: string | null) => ['usage', licenseKey] as const,
+  },
 } as const;
