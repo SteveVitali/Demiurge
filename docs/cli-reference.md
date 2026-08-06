@@ -42,7 +42,7 @@ demiurge run --task <description> [flags]
 | `--max-exploratory-steps <n>` | No | From budget | Maximum exploratory repair steps |
 | `--changed-files <list>` | No | None | Comma-separated list of changed files |
 | `--git-ref <ref>` | No | HEAD | Git ref to check out in worktree |
-| `--mode <mode>` | No | `Full` | Run mode: `Full`, `PlanOnly`, `VerifyOnly`, `RepairOnly` |
+| `--mode <mode>` | No | `Full` | Run mode: `Full`, `PlanOnly`, `VerifyOnly`, `RepairOnly`, `Build` |
 | `--run-id <id>` | No | Auto-generated | Custom run ID |
 | `--replay-inference` | No | `false` | Replay cached inference (no live API calls) |
 | `--headless` | No | `true` | Run browser in headless mode |
@@ -78,22 +78,30 @@ demiurge build --task <description> [flags]
 
 | Flag | Required | Default | Description |
 |------|----------|---------|-------------|
-| `--task <text>` | Yes | | Task description |
-| `--max-attempts <n>` | No | 8 | Maximum verification/repair attempts (higher default for build) |
-| `--run-timeout <duration>` | No | From budget | Overall run timeout (2h default for build) |
+| `--task <text>` | Yes | | Task description for the feature to build |
+| `--max-attempts <n>` | No | 8 | Maximum verification/repair attempts (higher default than `run`) |
+| `--run-timeout <duration>` | No | `2h` | Overall run timeout (higher default than `run`) |
 | `--attempt-timeout <duration>` | No | From budget | Per-attempt timeout |
-| `--max-patch-lines <n>` | No | From budget | Maximum lines in generated code |
+| `--max-patch-lines <n>` | No | 5000 | Maximum lines in generated code (higher default than `run`) |
 | `--changed-files <list>` | No | None | Comma-separated list of changed files |
 | `--git-ref <ref>` | No | HEAD | Git ref to check out in worktree |
-| `--branch <name>` | No | None | Create a named git branch with changes |
-| `--open-pr` | No | `false` | Create branch and open a pull request via `gh` CLI |
-| `--yes`, `-y` | No | `false` | Skip interactive confirmation prompts |
 | `--run-id <id>` | No | Auto-generated | Custom run ID |
 | `--replay-inference` | No | `false` | Replay cached inference (no live API calls) |
 | `--headless` | No | `true` | Run browser in headless mode |
 | `--no-headless` | No | | Run browser with visible UI |
+| `--branch <name>` | No | None | Create a named git branch with generated code |
+| `--open-pr` | No | `false` | Create branch and open a pull request via `gh` CLI |
+| `--yes`, `-y` | No | `false` | Skip interactive confirmation prompts |
 
 Build mode uses higher budget defaults than regular runs (2h run timeout, 8 max attempts, 500k tokens, 5000 max patch lines).
+
+**What happens:**
+1. Same setup as `run` (worktree, lock, SQLite, API server)
+2. **PlanningFeature** — LLM plans the implementation (files to create/modify, approach)
+3. **GeneratingCode** — LLM generates initial code based on the plan
+4. Boots environment, runs verification
+5. If verification fails, enters repair loop (same as `run`)
+6. Optionally creates a git branch (`--branch`) or opens a PR (`--open-pr`)
 
 ### `plan`
 
@@ -274,6 +282,48 @@ demiurge serve [flags]
 | `--db <path>` | No | `.demiurge/demiurge.db` | SQLite database path |
 
 Starts a persistent `LocalApiServer` and WebSocket server that stays running until terminated (SIGTERM). Used by the Tauri desktop app as a sidecar process. Accepts `POST /runs` to start orchestration runs. The WebSocket server provides real-time event streaming alongside the existing SSE endpoint.
+
+### `login`
+
+Authenticate with the Demiurge license server.
+
+```
+demiurge login [flags]
+```
+
+| Flag | Required | Default | Description |
+|------|----------|---------|-------------|
+| `--license-key <key>` | No | | License key for headless/CI authentication (omit for interactive browser flow) |
+
+Without `--license-key`, opens the browser for interactive authentication. With `--license-key`, validates the key directly (useful for CI environments).
+
+Credentials are stored in `~/.demiurge/credentials.json`.
+
+### `logout`
+
+Clear stored credentials and license cache.
+
+```
+demiurge logout
+```
+
+Removes `~/.demiurge/credentials.json`.
+
+### `config`
+
+Get, set, or list configuration values.
+
+```
+demiurge config <action> [key] [value]
+```
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `action` | Yes | `get`, `set`, or `list` |
+| `key` | For get/set | Configuration key (e.g., `anthropic_api_key`, `cloud_api_url`) |
+| `value` | For set | Value to set |
+
+Configuration is stored in `~/.demiurge/config.json`. The `config set anthropic_api_key <key>` command provides BYOK (bring your own key) support as an alternative to the `ANTHROPIC_API_KEY` environment variable.
 
 ## Exit Codes
 
