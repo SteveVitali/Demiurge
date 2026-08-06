@@ -24,11 +24,18 @@ object ServeCommand {
   def execute(cmd: ServeCmd, global: GlobalOpts, conn: Connection): Int = {
     implicit val c: Connection = conn
 
+    // serve daemon uses ~/.demiurge/ as default data dir (not CWD, which may be
+    // Bazel runfiles or another non-writable location when launched as a sidecar)
+    val dataDir = cmd.dbPath
+      .map(p => Paths.get(p).getParent)
+      .getOrElse(Paths.get(System.getProperty("user.home")).resolve(".demiurge"))
+    Files.createDirectories(dataDir)
+
     val dbPath = cmd.dbPath
       .map(Paths.get(_))
-      .getOrElse(global.repo.resolve(".demiurge").resolve("demiurge.db"))
+      .getOrElse(dataDir.resolve("demiurge.db"))
 
-    val artifactRoot = global.repo.resolve(".demiurge").resolve("artifacts")
+    val artifactRoot = dataDir.resolve("artifacts")
     Files.createDirectories(artifactRoot)
 
     // Register run-starter callback so POST /runs can start orchestration on a new thread.

@@ -60,7 +60,11 @@ impl SidecarManager {
         // Try to spawn the sidecar binary via Tauri shell plugin (§12.2)
         let spawned = self.try_spawn_sidecar().await;
         if !spawned {
-            log::info!("Sidecar binary not available, waiting for external backend...");
+            // Dev mode fallback: try to find and run the Bazel-built deploy JAR
+            let dev_spawned = self.try_spawn_dev_backend().await;
+            if !dev_spawned {
+                log::info!("Sidecar binary not available, waiting for external backend...");
+            }
         }
 
         // Wait for backend to become ready
@@ -125,6 +129,73 @@ impl SidecarManager {
             }
             Err(e) => {
                 log::warn!("Sidecar binary not found: {}", e);
+                false
+            }
+        }
+    }
+
+    /// Dev-mode fallback: find the Bazel-built deploy JAR by walking up from the
+    /// current executable directory, then spawn it via `java -jar`.
+    async fn try_spawn_dev_backend(&self) -> bool {
+        // Try to locate the repo root by walking up from CWD or the executable path
+        let search_start = std::env::current_dir().unwrap_or_default();
+        let jar_path = search_start.ancestors()
+            .find_map(|ancestor| {
+                let candidate = ancestor.join("bazel-bin/modules/cli/demiurge_deploy.jar");
+                if candidate.exists() { Some(candidate) } else { None }
+            });
+
+        let jar = match jar_path {
+            Some(p) => p,
+            None => {
+                log::info!("Dev deploy JAR not found in ancestor directories");
+                return false;
+            }
+        };
+
+        log::info!("Found dev deploy JAR at {:?}, spawning via java -jar", jar);
+
+        match std::process::Command::new("java")
+            .args([
+                "-Xmx512m",
+                "-jar",
+                jar.to_str().unwrap_or_default(),
+                "serve",
+                "--port", "19440",
+                "--ws-port", "19441",
+            ])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+        {
+            Ok(mut child) => {
+                // Read stderr in background for logging
+                if let Some(stderr) = child.stderr.take() {
+                    std::thread::spawn(move || {
+                        use std::io::{BufRead, BufReader};
+                        let reader = BufReader::new(stderr);
+                        for line in reader.lines() {
+                            if let Ok(line) = line {
+                                log::info!("[sidecar-dev] {}", line);
+                            }
+                        }
+                    });
+                }
+                if let Some(stdout) = child.stdout.take() {
+                    std::thread::spawn(move || {
+                        use std::io::{BufRead, BufReader};
+                        let reader = BufReader::new(stdout);
+                        for line in reader.lines() {
+                            if let Ok(line) = line {
+                                log::info!("[sidecar-dev] {}", line);
+                            }
+                        }
+                    });
+                }
+                true
+            }
+            Err(e) => {
+                log::warn!("Failed to spawn dev backend via java: {}", e);
                 false
             }
         }

@@ -14,11 +14,13 @@ pub fn run() {
         // Single-instance must be registered first (before deep-link)
         .plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}))
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_process::init())
         .manage(sidecar_manager)
         .invoke_handler(tauri::generate_handler![
             commands::start_backend,

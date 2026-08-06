@@ -1,6 +1,6 @@
 [package]
 name = "demiurge-desktop"
-version = "0.1.0"
+version = "0.2.0"
 description = "Demiurge Desktop Application"
 authors = ["Demiurge"]
 edition = "2021"
@@ -21,6 +21,8 @@ tauri-plugin-store = "2"
 tauri-plugin-window-state = "2"
 tauri-plugin-deep-link = "2"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", features = ["json"] }
