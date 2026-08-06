@@ -123,6 +123,18 @@ object CommandParsers {
     dbPath: Option[String] = None,
   ) extends ParsedCommand
 
+  case class LoginCmd(
+    licenseKey: Option[String] = None  // --license-key for headless/CI
+  ) extends ParsedCommand
+
+  case object LogoutCmd extends ParsedCommand
+
+  case class ConfigCmd(
+    action: String,         // "set" | "get" | "list"
+    key: Option[String] = None,
+    value: Option[String] = None
+  ) extends ParsedCommand
+
   case object HelpCmd extends ParsedCommand
 
   case class ParseResult(global: GlobalOpts, command: ParsedCommand)
@@ -136,7 +148,7 @@ object CommandParsers {
 
   private def parseGlobalAndCommand(args: List[String], global: GlobalOpts): Either[String, ParseResult] = {
     args match {
-      case Nil => Left("No command specified. Available commands: run, plan, resume, status, inspect-run, open-artifact, explain-failure, cancel, clean, doctor, init-manifest")
+      case Nil => Left("No command specified. Available commands: run, build, plan, resume, status, inspect-run, open-artifact, explain-failure, cancel, clean, doctor, init, login, logout, config, serve")
       case "--repo" :: value :: rest => parseGlobalAndCommand(rest, global.copy(repo = Paths.get(value).toAbsolutePath.normalize()))
       case "--format" :: value :: rest =>
         OutputFormat.parse(value) match {
@@ -167,6 +179,9 @@ object CommandParsers {
       case "init"             => parseInitManifestCmd(args, global)
       case "init-manifest"    => parseInitManifestCmd(args, global)
       case "serve"            => parseServeCmd(args, global)
+      case "login"            => parseLoginCmd(args, global)
+      case "logout"           => Right(ParseResult(global, LogoutCmd))
+      case "config"           => parseConfigCmd(args, global)
       case other              => Left(s"Unknown command: $other")
     }
   }
@@ -409,6 +424,35 @@ object CommandParsers {
       }
     }
     Right(ParseResult(global, cmd))
+  }
+
+  private def parseLoginCmd(args: List[String], global: GlobalOpts): Either[String, ParseResult] = {
+    var cmd = LoginCmd()
+    var remaining = args
+    while (remaining.nonEmpty) {
+      remaining match {
+        case "--license-key" :: v :: rest => cmd = cmd.copy(licenseKey = Some(v)); remaining = rest
+        case unknown :: _                 => return Left(s"Unknown flag for login: $unknown")
+      }
+    }
+    Right(ParseResult(global, cmd))
+  }
+
+  private def parseConfigCmd(args: List[String], global: GlobalOpts): Either[String, ParseResult] = {
+    args match {
+      case Nil => Left("config requires an action: set, get, or list")
+      case "set" :: key :: value :: rest =>
+        if (rest.nonEmpty) Left(s"Unexpected arguments after value: ${rest.mkString(" ")}") 
+        else Right(ParseResult(global, ConfigCmd("set", Some(key), Some(value))))
+      case "set" :: key :: Nil => Left("config set requires a value")
+      case "set" :: Nil => Left("config set requires a key and value")
+      case "get" :: key :: rest =>
+        if (rest.nonEmpty) Left(s"Unexpected arguments after key: ${rest.mkString(" ")}") 
+        else Right(ParseResult(global, ConfigCmd("get", Some(key))))
+      case "get" :: Nil => Left("config get requires a key")
+      case "list" :: _ => Right(ParseResult(global, ConfigCmd("list")))
+      case action :: _ => Left(s"Unknown config action: $action. Use: set, get, list")
+    }
   }
 
   // --- Utility parsers ---

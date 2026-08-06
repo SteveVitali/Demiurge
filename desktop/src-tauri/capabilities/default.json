@@ -12,6 +12,7 @@
     "notification:default",
     "notification:allow-notify",
     "store:default",
-    "window-state:default"
+    "window-state:default",
+    "deep-link:default"
   ]
 }

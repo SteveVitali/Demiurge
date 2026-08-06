@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/app.store';
+import { useAuthStore } from '@/stores/auth.store';
+import { PlanTierBadge } from '@/components/PlanTierBadge';
 import { queryKeys } from '@/lib/query-keys';
 import { getRuns } from '@/api/endpoints';
 import { RECENT_RUNS_LIMIT } from '@/lib/constants';
@@ -36,6 +38,8 @@ export function Sidebar() {
   const setSidebarCollapsed = useAppStore((s) => s.setSidebarCollapsed);
   const backendStatus = useAppStore((s) => s.backendStatus);
   const activeRunId = useAppStore((s) => s.activeRunId);
+  const planTier = useAuthStore((s) => s.planTier);
+  const userEmail = useAuthStore((s) => s.userEmail);
 
   const { data: recentRuns } = useQuery({
     queryKey: queryKeys.runs.list({ limit: RECENT_RUNS_LIMIT, sort: 'created_at', order: 'desc' }),
@@ -132,8 +136,16 @@ export function Sidebar() {
         )}
       </nav>
 
-      {/* Footer — Backend Status */}
+      {/* Footer — Plan Badge + Backend Status */}
       <div className="border-t border-border px-3 py-2">
+        {!sidebarCollapsed && planTier && (
+          <div className="mb-1.5 flex items-center gap-2">
+            <PlanTierBadge tier={planTier} />
+            {userEmail && (
+              <span className="truncate text-[10px] text-muted-foreground">{userEmail}</span>
+            )}
+          </div>
+        )}
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           {backendStatus === 'connected' ? (
             <Wifi className="h-3 w-3 text-emerald-400" />

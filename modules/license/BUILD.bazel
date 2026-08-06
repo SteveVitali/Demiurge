@@ -1,0 +1,37 @@
+load("@rules_scala//scala:scala.bzl", "scala_junit_test", "scala_library")
+
+scala_library(
+    name = "license",
+    srcs = glob(
+        ["src/main/scala/**/*.scala"],
+        allow_empty = True,
+    ),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//modules/core-model",
+        "@maven//:com_chuusai_shapeless_2_13",
+        "@maven//:io_circe_circe_core_2_13",
+        "@maven//:io_circe_circe_generic_2_13",
+        "@maven//:io_circe_circe_parser_2_13",
+        "@maven//:org_typelevel_cats_core_2_13",
+        "@maven//:org_typelevel_cats_kernel_2_13",
+    ],
+)
+
+scala_junit_test(
+    name = "license-tests",
+    srcs = glob(
+        ["src/test/scala/**/*.scala"],
+        allow_empty = True,
+    ),
+    suffixes = ["Suite"],
+    deps = [
+        ":license",
+        "//modules/core-model",
+        "@maven//:io_circe_circe_core_2_13",
+        "@maven//:io_circe_circe_generic_2_13",
+        "@maven//:io_circe_circe_parser_2_13",
+        "@maven//:org_scalameta_munit_2_13",
+        "@maven//:org_scalameta_munit_diff_2_13",
+    ],
+)

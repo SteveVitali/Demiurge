@@ -3,6 +3,7 @@ mod sidecar;
 mod tray;
 
 use std::sync::Arc;
+use tauri::{Emitter, Listener, Manager};
 use sidecar::SidecarManager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -10,6 +11,9 @@ pub fn run() {
     let sidecar_manager = Arc::new(SidecarManager::new());
 
     tauri::Builder::default()
+        // Single-instance must be registered first (before deep-link)
+        .plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}))
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -27,6 +31,14 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
             tray::setup_tray(&handle)?;
+
+            // Listen for deep link events (demiurge://auth-callback?...) and emit to frontend
+            let deep_link_handle = handle.clone();
+            app.listen("deep-link://new-url", move |event: tauri::Event| {
+                if let Some(window) = deep_link_handle.get_webview_window("main") {
+                    let _ = window.emit("deep-link-received", event.payload());
+                }
+            });
 
             // Give sidecar the AppHandle so it can spawn the JVM binary (§12.2)
             let sidecar = app.state::<Arc<SidecarManager>>().inner().clone();

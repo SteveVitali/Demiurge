@@ -4,6 +4,7 @@ import java.sql.Connection
 
 import demiurge.cli._
 import demiurge.cli.CommandParsers._
+import demiurge.license.CredentialStore
 
 // Phase 7: `demiurge doctor` command — Spec §14.1
 // Canonical checks: Node.js >= 18, package manager, Docker, Docker Compose V2,
@@ -114,9 +115,11 @@ object DoctorCommand {
   }
 
   private def checkAnthropicKey(): CheckResult = {
-    val key = System.getenv("ANTHROPIC_API_KEY")
-    if (key != null && key.nonEmpty) CheckResult("ANTHROPIC_API_KEY", "pass", "Set", required = false)
-    else CheckResult("ANTHROPIC_API_KEY", "warn", "Not set (needed if Anthropic provider is configured)", required = false)
+    // BYOK: check env var first, then ~/.demiurge/config.json
+    CredentialStore.resolveApiKey("ANTHROPIC_API_KEY", "anthropic") match {
+      case Some(_) => CheckResult("ANTHROPIC_API_KEY", "pass", "Set", required = false)
+      case None    => CheckResult("ANTHROPIC_API_KEY", "warn", "Not set (env var or `demiurge config set anthropic-api-key`)", required = false)
+    }
   }
 
   private def checkPort(port: Int): CheckResult = {

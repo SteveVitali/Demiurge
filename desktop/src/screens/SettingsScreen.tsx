@@ -1,11 +1,15 @@
 import { useState, useCallback } from 'react';
-import { Key, Monitor, FolderOpen, Palette, Bell, Wrench, CheckCircle, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { Key, Monitor, FolderOpen, Palette, Bell, Wrench, CheckCircle, AlertCircle, Eye, EyeOff, User, LogOut, ExternalLink } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
 import { usePreferencesStore } from '@/stores/preferences.store';
+import { useAuthStore } from '@/stores/auth.store';
 import { getDoctor } from '@/api/endpoints';
 import { queryKeys } from '@/lib/query-keys';
 import type { RunMode } from '@/api/types';
 import { cn } from '@/lib/utils';
+import { CLOUD_API_URL } from '@/lib/constants';
+import { planTierTextColor } from '@/components/PlanTierBadge';
 
 const RUN_MODES: RunMode[] = ['Full', 'Build', 'PlanOnly', 'VerifyOnly', 'InspectOnly'];
 
@@ -13,6 +17,7 @@ export function SettingsScreen() {
   const [activeSection, setActiveSection] = useState('api-keys');
 
   const sections = [
+    { id: 'account', label: 'Account', icon: User },
     { id: 'api-keys', label: 'API Keys', icon: Key },
     { id: 'paths', label: 'Paths', icon: FolderOpen },
     { id: 'appearance', label: 'Appearance', icon: Palette },
@@ -47,6 +52,7 @@ export function SettingsScreen() {
 
         {/* Section Content */}
         <div className="flex-1 overflow-y-auto">
+          {activeSection === 'account' && <AccountSection />}
           {activeSection === 'api-keys' && <ApiKeysSection />}
           {activeSection === 'paths' && <PathsSection />}
           {activeSection === 'appearance' && <AppearanceSection />}
@@ -56,6 +62,62 @@ export function SettingsScreen() {
         </div>
       </div>
     </div>
+  );
+}
+
+function AccountSection() {
+  const navigate = useNavigate();
+  const { userEmail, planTier, clearCredentials } = useAuthStore();
+
+  const handleSignOut = useCallback(async () => {
+    await clearCredentials();
+    void navigate({ to: '/auth' });
+  }, [clearCredentials, navigate]);
+
+  const handleManageBilling = useCallback(async () => {
+    try {
+      const { open } = await import('@tauri-apps/plugin-shell');
+      await open(`${CLOUD_API_URL}/billing`);
+    } catch {
+      window.open(`${CLOUD_API_URL}/billing`, '_blank');
+    }
+  }, []);
+
+  return (
+    <SettingsSection title="Account" description="Manage your Demiurge account and subscription.">
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium">{userEmail ?? 'No email on file'}</p>
+            {planTier && (
+              <p className="text-xs text-muted-foreground">
+                Plan:{' '}
+                <span className={cn('font-semibold uppercase', planTierTextColor(planTier))}>
+                  {planTier}
+                </span>
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            onClick={() => void handleManageBilling()}
+            className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm hover:bg-accent"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            Manage Billing
+          </button>
+          <button
+            onClick={() => void handleSignOut()}
+            className="flex items-center gap-2 rounded-md border border-red-500/30 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            Sign Out
+          </button>
+        </div>
+      </div>
+    </SettingsSection>
   );
 }
 

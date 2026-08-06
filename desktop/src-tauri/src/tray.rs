@@ -109,7 +109,7 @@ fn build_tray_menu(
     let show = MenuItem::with_id(app, "show", "Show Demiurge", true, None::<&str>)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
 
-    let mut items: Vec<Box<dyn AsRef<dyn tauri::menu::IsMenuItem<tauri::Wry>>>> = vec![
+    let mut items: Vec<Box<dyn tauri::menu::IsMenuItem<tauri::Wry>>> = vec![
         Box::new(show),
         Box::new(sep1),
     ];
@@ -173,10 +173,7 @@ fn build_tray_menu(
 
     let refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = items
         .iter()
-        .map(|b| {
-            let r: &dyn tauri::menu::IsMenuItem<tauri::Wry> = (*b).as_ref().as_ref();
-            r
-        })
+        .map(|b| b.as_ref())
         .collect();
     let menu = Menu::with_items(app, &refs)?;
     Ok(menu)
@@ -203,19 +200,8 @@ fn update_tray(
         let _ = tray.set_tooltip(Some(&tooltip));
 
         // §12.4: Dynamic tray icon color based on run state
-        let icon_name = match run_state.status.as_str() {
-            "running"   => "icons/icon-blue.png",
-            "succeeded" => "icons/icon-green.png",
-            "failed"    => "icons/icon-red.png",
-            _           => "icons/icon.png",
-        };
-        if let Ok(icon) = tauri::image::Image::from_path(
-            app.path().resource_dir()
-                .unwrap_or_default()
-                .join(icon_name),
-        ) {
-            let _ = tray.set_icon(Some(icon));
-        }
+        // TODO: implement once colored icon PNGs are added to icons/
+        // Requires loading raw RGBA data — Tauri v2 Image only supports new(rgba, w, h)
 
         // Rebuild menu with current state
         if let Ok(menu) = build_tray_menu(app, run_state, recent_runs) {
