@@ -223,6 +223,13 @@ export interface ChangedSurface {
   confidence: number;
 }
 
+export interface ManifestRef {
+  manifestType: string;
+  relativePath: string;
+  parsedSuccessfully: boolean;
+  parseErrors: string[];
+}
+
 export interface RepoInspectionReport {
   repoPath: string;
   gitRef: string | null;
@@ -230,7 +237,7 @@ export interface RepoInspectionReport {
   languages: ScoredInference[];
   frameworks: ScoredInference[];
   candidateServices: CandidateService[];
-  manifestsFound: string[];
+  manifestsFound: ManifestRef[];
   changedSurfaceMap: ChangedSurface[] | null;
 }
 

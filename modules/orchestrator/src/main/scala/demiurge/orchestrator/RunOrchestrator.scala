@@ -91,6 +91,9 @@ object RunOrchestrator {
     var patchHistory: List[PatchProposal] = Nil
     var attemptNumber = 1
     var authContext: Option[AuthContext] = None
+    // Spec 05 §5.2: Accumulate token usage across all agent interactions for cloud reporting
+    var accumulatedInputTokens: Long = 0
+    var accumulatedOutputTokens: Long = 0
 
     if (resumeFromStatus.isDefined) {
       val data = ResumeDataLoader.load(currentRun.runId)
@@ -441,7 +444,7 @@ object RunOrchestrator {
     while (attemptNumber <= currentRun.maxAttempts) {
 
       // --- Check for interrupt at top of loop ---
-      if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
+      if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx, accumulatedInputTokens, accumulatedOutputTokens)
 
       // --- Spec §8: Environment health check before verification ---
       planResult.foreach { plan =>
@@ -515,7 +518,7 @@ object RunOrchestrator {
       SignalHandler.updateContext(currentCtx)
 
       // --- Evaluate verdict ---
-      if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
+      if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx, accumulatedInputTokens, accumulatedOutputTokens)
 
       val verdict = verificationResult.get.aggregate.overallVerdict
       val agg = verificationResult.get.aggregate
@@ -541,7 +544,7 @@ object RunOrchestrator {
         )
         currentCtx = currentCtx.copy(run = currentRun)
         SignalHandler.updateContext(currentCtx)
-        reportTokenUsageIfAny(currentRun)
+        reportTokenUsageIfAny(currentRun, accumulatedInputTokens, accumulatedOutputTokens)
         return currentRun
       }
 
@@ -556,7 +559,7 @@ object RunOrchestrator {
         )
         currentCtx = currentCtx.copy(run = currentRun)
         SignalHandler.updateContext(currentCtx)
-        reportTokenUsageIfAny(currentRun)
+        reportTokenUsageIfAny(currentRun, accumulatedInputTokens, accumulatedOutputTokens)
         return currentRun
       }
 
@@ -571,7 +574,7 @@ object RunOrchestrator {
         )
         currentCtx = currentCtx.copy(run = currentRun)
         SignalHandler.updateContext(currentCtx)
-        reportTokenUsageIfAny(currentRun)
+        reportTokenUsageIfAny(currentRun, accumulatedInputTokens, accumulatedOutputTokens)
         return currentRun
       }
 
@@ -587,7 +590,7 @@ object RunOrchestrator {
       repairRetryLoop = false
 
       // Transition: → AnalyzingFailure
-      if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
+      if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx, accumulatedInputTokens, accumulatedOutputTokens)
       currentRun = RunTransitionManager.transition(
         currentCtx,
         RunStatus.AnalyzingFailure,
@@ -597,7 +600,7 @@ object RunOrchestrator {
       SignalHandler.updateContext(currentCtx)
 
       // Transition: → PlanningRepair
-      if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
+      if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx, accumulatedInputTokens, accumulatedOutputTokens)
       currentRun = RunTransitionManager.transition(
         currentCtx,
         RunStatus.PlanningRepair,
@@ -607,7 +610,7 @@ object RunOrchestrator {
       SignalHandler.updateContext(currentCtx)
 
       // Transition: → Repairing
-      if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
+      if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx, accumulatedInputTokens, accumulatedOutputTokens)
 
       // Design §8.2: Agent-backed repair path vs legacy repair path
       var repairOutcome: Option[RepairExecutor.RepairOutcome] = None
@@ -713,7 +716,7 @@ object RunOrchestrator {
         val needsFullRebuild = InfraSensitiveDetector.requiresRebuild(filesChanged)
 
         if (needsFullRebuild) {
-          if (SignalHandler.isInterrupted) return Some(handleInterrupt(currentCtx))
+          if (SignalHandler.isInterrupted) return Some(handleInterrupt(currentCtx, accumulatedInputTokens, accumulatedOutputTokens))
 
           var rebuildResult: Option[RuntimeSupervisor.BootResult] = None
           currentRun = RunTransitionManager.transition(
@@ -743,7 +746,7 @@ object RunOrchestrator {
               RuntimeSnapshotRepo.insert(snap)
           }
         } else {
-          if (SignalHandler.isInterrupted) return Some(handleInterrupt(currentCtx))
+          if (SignalHandler.isInterrupted) return Some(handleInterrupt(currentCtx, accumulatedInputTokens, accumulatedOutputTokens))
 
           var rebootResult: Option[RuntimeSupervisor.BootResult] = None
           currentRun = RunTransitionManager.transition(
@@ -782,12 +785,15 @@ object RunOrchestrator {
             System.err.println(s"[orchestrator] Agent completed: ${completed.summary.take(200)}")
             System.err.println(s"[orchestrator]   Files changed: ${completed.filesChanged.mkString(", ")}")
             System.err.println(s"[orchestrator]   Tokens: ${completed.inputTokens}in/${completed.outputTokens}out, cost=$$${completed.costUsd}")
+            // Spec 05 §5.2: Accumulate real token usage for cloud reporting
+            accumulatedInputTokens += completed.inputTokens
+            accumulatedOutputTokens += completed.outputTokens
 
             // Design §8.2: Environment reset based on changed files
             performEnvironmentReset(completed.filesChanged).foreach(earlyReturn => return earlyReturn)
 
             // Transition: → ReadyToVerify
-            if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
+            if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx, accumulatedInputTokens, accumulatedOutputTokens)
             currentRun = RunTransitionManager.transition(
               currentCtx, RunStatus.ReadyToVerify, sideEffect = { _ => })
             currentCtx = currentCtx.copy(run = currentRun)
@@ -796,6 +802,8 @@ object RunOrchestrator {
 
           case failed: AgentFailed =>
             System.err.println(s"[orchestrator] Agent failed: ${failed.reason}")
+            accumulatedInputTokens += failed.inputTokens
+            accumulatedOutputTokens += failed.outputTokens
             repairRetryCount += 1
             if (repairRetryCount <= maxRepairRetriesPerAttempt) {
               System.err.println(s"[orchestrator] Agent retry $repairRetryCount/$maxRepairRetriesPerAttempt")
@@ -817,6 +825,8 @@ object RunOrchestrator {
 
           case timeout: AgentTimeout =>
             System.err.println(s"[orchestrator] Agent timed out after ${timeout.timeoutMs}ms")
+            accumulatedInputTokens += timeout.inputTokens
+            accumulatedOutputTokens += timeout.outputTokens
             try { supervisor.teardown(planResult.get, currentCtx.repoRoot) } catch { case _: Exception => }
             currentRun = RunTransitionManager.transitionToTerminal(
               currentCtx, RunStatus.Exhausted,
@@ -828,6 +838,8 @@ object RunOrchestrator {
 
           case budget: AgentBudgetExceeded =>
             System.err.println(s"[orchestrator] Agent budget exceeded: $$${budget.actualCostUsd}")
+            accumulatedInputTokens += budget.inputTokens
+            accumulatedOutputTokens += budget.outputTokens
             try { supervisor.teardown(planResult.get, currentCtx.repoRoot) } catch { case _: Exception => }
             currentRun = RunTransitionManager.transitionToTerminal(
               currentCtx, RunStatus.Exhausted,
@@ -851,7 +863,7 @@ object RunOrchestrator {
             performEnvironmentReset(filesChanged).foreach(earlyReturn => return earlyReturn)
 
             // Transition: → ReadyToVerify
-            if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx)
+            if (SignalHandler.isInterrupted) return handleInterrupt(currentCtx, accumulatedInputTokens, accumulatedOutputTokens)
             currentRun = RunTransitionManager.transition(
               currentCtx, RunStatus.ReadyToVerify, sideEffect = { _ => })
             currentCtx = currentCtx.copy(run = currentRun)
@@ -931,15 +943,12 @@ object RunOrchestrator {
    * Spec 05 §5.2: Report token usage after a run reaches a terminal state.
    * Fire-and-forget — failures are silently ignored.
    */
-  private def reportTokenUsageIfAny(run: TaskRun): Unit = {
+  private def reportTokenUsageIfAny(run: TaskRun, inputTokens: Long = 0, outputTokens: Long = 0): Unit = {
     try {
       val licenseKey = CredentialStore.loadCredentials().map(_.licenseKey).getOrElse("")
-      if (licenseKey.nonEmpty) {
-        // Agent-backed runs track tokens in AgentCompleted results. For now,
-        // we report a summary event so the cloud backend has a record of the run.
-        // The actual per-call token tracking lives in InferenceService/UsageTracker
-        // and is already persisted in SQLite. This is the cloud sync.
-        UsageReporter.reportTokenUsage(licenseKey, run.runId, 0, 0)
+      if (licenseKey.nonEmpty && (inputTokens > 0 || outputTokens > 0)) {
+        // Spec 05 §5.2: Report accumulated token usage from agent interactions to the cloud.
+        UsageReporter.reportTokenUsage(licenseKey, run.runId, inputTokens, outputTokens)
       }
     } catch {
       case _: Exception => // Best effort — never block run completion
@@ -947,13 +956,13 @@ object RunOrchestrator {
   }
 
   /** Handle interruption: persist Interrupted status. */
-  private def handleInterrupt(ctx: RunContext): TaskRun = {
+  private def handleInterrupt(ctx: RunContext, inputTokens: Long = 0, outputTokens: Long = 0): TaskRun = {
     val run = RunTransitionManager.transitionToTerminal(
       ctx,
       RunStatus.Interrupted,
       summary = Some("Run interrupted by signal"),
     )
-    reportTokenUsageIfAny(run)
+    reportTokenUsageIfAny(run, inputTokens, outputTokens)
     run
   }
 }

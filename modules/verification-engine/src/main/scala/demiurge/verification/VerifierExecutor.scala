@@ -52,8 +52,24 @@ object VerifierExecutor {
 
   private def executeHttp(v: HttpVerifier): VerifierOutcome = {
     System.err.println(s"[verifier] Executing HTTP ${v.method} ${v.url} (expected ${v.expectedStatus})")
+    val result = executeHttpOnce(v, v.url)
+    result match {
+      case VerifierOutcome.Failed(reason) if reason.contains("Connection refused") && v.url.contains("://localhost") =>
+        // Retry with IPv4/IPv6 fallback (Vite binds IPv6, Java may try IPv4)
+        val ipv4Url = v.url.replace("://localhost", "://127.0.0.1")
+        executeHttpOnce(v, ipv4Url) match {
+          case VerifierOutcome.Passed => VerifierOutcome.Passed
+          case _ =>
+            val ipv6Url = v.url.replace("://localhost", "://[::1]")
+            executeHttpOnce(v, ipv6Url)
+        }
+      case other => other
+    }
+  }
+
+  private def executeHttpOnce(v: HttpVerifier, targetUrl: String): VerifierOutcome = {
     try {
-      val url = new URL(v.url)
+      val url = new URL(targetUrl)
       val conn = url.openConnection().asInstanceOf[HttpURLConnection]
       try {
         conn.setRequestMethod(v.method)
@@ -61,7 +77,7 @@ object VerifierExecutor {
         conn.setReadTimeout(v.timeout.toMillis.toInt.min(30000))
         v.headers.foreach { case (k, value) => conn.setRequestProperty(k, value) }
         val status = conn.getResponseCode
-        System.err.println(s"[verifier] HTTP ${v.method} ${v.url} → $status (expected ${v.expectedStatus})")
+        System.err.println(s"[verifier] HTTP ${v.method} $targetUrl → $status (expected ${v.expectedStatus})")
         if (status == v.expectedStatus) {
           VerifierOutcome.Passed
         } else {
@@ -72,13 +88,13 @@ object VerifierExecutor {
       }
     } catch {
       case _: java.net.SocketTimeoutException =>
-        System.err.println(s"[verifier] Timeout: ${v.url}")
+        System.err.println(s"[verifier] Timeout: $targetUrl")
         VerifierOutcome.TimedOut
       case e: java.net.ConnectException =>
-        System.err.println(s"[verifier] Connection refused: ${v.url}")
+        System.err.println(s"[verifier] Connection refused: $targetUrl")
         VerifierOutcome.Failed(s"Connection refused: ${v.url}")
       case e: Exception =>
-        System.err.println(s"[verifier] Error: ${v.url} — ${e.getClass.getName}: ${e.getMessage}")
+        System.err.println(s"[verifier] Error: $targetUrl — ${e.getClass.getName}: ${e.getMessage}")
         VerifierOutcome.Error(s"HTTP verifier error: ${e.getMessage}")
     }
   }

@@ -1,8 +1,10 @@
+import { Suspense } from 'react';
 import { ClerkProvider } from '@clerk/nextjs';
 import { Inter } from 'next/font/google';
 import type { Metadata } from 'next';
 import { Navbar } from '@/components/layout/Navbar';
 import { Footer } from '@/components/layout/Footer';
+import { PostHogProvider } from '@/components/PostHogProvider';
 import './globals.css';
 
 const inter = Inter({ subsets: ['latin'] });
@@ -38,9 +40,13 @@ export default function RootLayout({
     <ClerkProvider>
       <html lang="en" className="dark">
         <body className={inter.className}>
-          <Navbar />
-          <main className="min-h-screen">{children}</main>
-          <Footer />
+          <Suspense fallback={null}>
+            <PostHogProvider>
+              <Navbar />
+              <main className="min-h-screen">{children}</main>
+              <Footer />
+            </PostHogProvider>
+          </Suspense>
         </body>
       </html>
     </ClerkProvider>

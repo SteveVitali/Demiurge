@@ -37,17 +37,42 @@ object ReadinessChecker {
 
       result match {
         case ProbeSuccess => return true
-        case _ =>
+        case f =>
+          if (failures == 0 || failures % 5 == 0) {
+            System.err.println(s"[readiness] ${probe.target} attempt ${failures + 1}: $f")
+          }
           failures += 1
           val sleepMs = math.min(probe.intervalMs.toLong, deadline - System.currentTimeMillis())
           if (sleepMs > 0) Thread.sleep(sleepMs)
       }
     }
+    System.err.println(s"[readiness] ${probe.target} FAILED after $failures attempts (deadline exceeded: ${System.currentTimeMillis() >= deadline})")
     false
   }
 
-  /** HTTP readiness: GET the target URL, accept 2xx as success. */
+  /** HTTP readiness: GET the target URL, accept 2xx as success.
+   *  Tries the original target first; if it fails with ConnectException and the host
+   *  is "localhost", retries with 127.0.0.1 to handle IPv6/IPv4 mismatch (e.g. Vite
+   *  binds to ::1 but Java resolves localhost to 127.0.0.1 or vice versa).
+   */
   def checkHttp(target: String, timeoutMs: Int): ProbeResult = {
+    val result = checkHttpOnce(target, timeoutMs)
+    result match {
+      case ProbeFailure(reason) if reason.contains("Connection refused") && target.contains("://localhost") =>
+        // Retry with explicit IPv4 loopback
+        val ipv4Target = target.replace("://localhost", "://127.0.0.1")
+        checkHttpOnce(ipv4Target, timeoutMs) match {
+          case s: ProbeSuccess.type => s
+          case _ =>
+            // Also try IPv6 loopback
+            val ipv6Target = target.replace("://localhost", "://[::1]")
+            checkHttpOnce(ipv6Target, timeoutMs)
+        }
+      case other => other
+    }
+  }
+
+  private def checkHttpOnce(target: String, timeoutMs: Int): ProbeResult = {
     try {
       val url = new URL(target)
       val conn = url.openConnection().asInstanceOf[HttpURLConnection]

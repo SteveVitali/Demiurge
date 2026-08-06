@@ -150,6 +150,8 @@ object LocalApiServer {
             SystemRoutes.getPreferencesHandler(connProvider).handle(exchange)
           } else if (path == "/system/preferences" && method == "PUT") {
             SystemRoutes.putPreferencesHandler(connProvider).handle(exchange)
+          } else if (path == "/system/api-keys" && method == "POST") {
+            SystemRoutes.postApiKeysHandler().handle(exchange)
           } else if (path == "/system/repos" && method == "GET") {
             SystemRoutes.getReposHandler(connProvider).handle(exchange)
           } else {

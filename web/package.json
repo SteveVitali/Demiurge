@@ -24,7 +24,9 @@
     "remark-gfm": "^4.0.1",
     "rehype-highlight": "^7.0.0",
     "gray-matter": "^4.0.3",
-    "clsx": "^2.1.1"
+    "clsx": "^2.1.1",
+    "posthog-js": "^1.200.0",
+    "resend": "^4.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

@@ -7,7 +7,7 @@ use tauri_plugin_shell::ShellExt;
 const HEALTH_URL: &str = "http://127.0.0.1:19440/health";
 const MAX_RESTART_ATTEMPTS: u32 = 3;
 const HEALTH_POLL_INTERVAL_MS: u64 = 500;
-const HEALTH_TIMEOUT_MS: u64 = 30000;
+const HEALTH_TIMEOUT_SECS: u64 = 300;
 const CRASH_RESTART_DELAY_MS: u64 = 2000;
 
 #[derive(Debug, Clone, Serialize)]
@@ -22,6 +22,7 @@ pub struct SidecarManager {
     status: Mutex<SidecarStatus>,
     restart_count: Mutex<u32>,
     app_handle: Mutex<Option<AppHandle>>,
+    dev_process_spawned: Mutex<bool>,
 }
 
 impl SidecarManager {
@@ -30,6 +31,7 @@ impl SidecarManager {
             status: Mutex::new(SidecarStatus::Stopped),
             restart_count: Mutex::new(0),
             app_handle: Mutex::new(None),
+            dev_process_spawned: Mutex::new(false),
         }
     }
 
@@ -43,13 +45,25 @@ impl SidecarManager {
     }
 
     pub async fn start(&self) -> Result<(), String> {
+        // Guard: if already Starting or Running, don't spawn again
+        {
+            let status = self.status.lock().unwrap();
+            match *status {
+                SidecarStatus::Starting => return Ok(()),
+                SidecarStatus::Running => return Ok(()),
+                _ => {}
+            }
+        }
         {
             let mut status = self.status.lock().unwrap();
             *status = SidecarStatus::Starting;
         }
 
+        eprintln!("[demiurge-desktop] Starting backend...");
+
         // First check if a backend is already running (e.g. started via CLI)
-        if self.wait_for_ready_quick().await {
+        if self.check_health_once().await {
+            eprintln!("[demiurge-desktop] Backend already running.");
             let mut status = self.status.lock().unwrap();
             *status = SidecarStatus::Running;
             let mut count = self.restart_count.lock().unwrap();
@@ -57,19 +71,23 @@ impl SidecarManager {
             return Ok(());
         }
 
-        // Try to spawn the sidecar binary via Tauri shell plugin (§12.2)
-        let spawned = self.try_spawn_sidecar().await;
-        if !spawned {
-            // Dev mode fallback: try to find and run the Bazel-built deploy JAR
-            let dev_spawned = self.try_spawn_dev_backend().await;
-            if !dev_spawned {
-                log::info!("Sidecar binary not available, waiting for external backend...");
+        // Only attempt to spawn if we haven't already launched a dev process
+        let already_spawned = *self.dev_process_spawned.lock().unwrap();
+        if !already_spawned {
+            let spawned = self.try_spawn_backend().await;
+            if spawned {
+                *self.dev_process_spawned.lock().unwrap() = true;
+            } else {
+                eprintln!("[demiurge-desktop] Could not spawn backend process. Start manually with: bazel run //modules/cli:demiurge -- serve");
             }
+        } else {
+            eprintln!("[demiurge-desktop] Backend process already spawned, polling health...");
         }
 
         // Wait for backend to become ready
         match self.wait_for_ready().await {
             true => {
+                eprintln!("[demiurge-desktop] Backend is ready.");
                 let mut status = self.status.lock().unwrap();
                 *status = SidecarStatus::Running;
                 let mut count = self.restart_count.lock().unwrap();
@@ -79,11 +97,94 @@ impl SidecarManager {
             false => {
                 let mut status = self.status.lock().unwrap();
                 *status = SidecarStatus::Error(
-                    "Backend not reachable. Start it with `demiurge serve` or `demiurge run`.".into(),
+                    "Backend not reachable. Start it with: bazel run //modules/cli:demiurge -- serve".into(),
                 );
                 Err("Backend not reachable".into())
             }
         }
+    }
+
+    /// Try all available spawn methods in order of speed.
+    async fn try_spawn_backend(&self) -> bool {
+        let repo_root = self.find_repo_root();
+
+        // In dev mode (repo root found), skip the bundled sidecar placeholder
+        // and go straight to the real backend spawn methods.
+        if repo_root.is_none() {
+            if self.try_spawn_sidecar().await {
+                eprintln!("[demiurge-desktop] Spawned bundled sidecar binary.");
+                return true;
+            }
+        } else {
+            eprintln!("[demiurge-desktop] Dev mode detected (repo root found), skipping sidecar placeholder.");
+        }
+
+        // 2. Bazel wrapper script (instant, uses already-built output)
+        if let Some(ref root) = repo_root {
+            let wrapper = root.join("bazel-bin/modules/cli/demiurge");
+            if wrapper.exists() {
+                eprintln!("[demiurge-desktop] Found bazel wrapper at {:?}, spawning...", wrapper);
+                if self.spawn_child_logged(
+                    std::process::Command::new(wrapper.as_os_str())
+                        .args(["serve", "--port", "19440", "--ws-port", "19441"])
+                        .current_dir(root)
+                        .stdout(std::process::Stdio::piped())
+                        .stderr(std::process::Stdio::piped()),
+                    "backend",
+                ) {
+                    return true;
+                }
+                eprintln!("[demiurge-desktop] Bazel wrapper script failed to spawn.");
+            }
+        }
+
+        // 3. Deploy JAR via java -jar
+        if let Some(ref root) = repo_root {
+            let jar = root.join("bazel-bin/modules/cli/demiurge_deploy.jar");
+            if jar.exists() {
+                eprintln!("[demiurge-desktop] Found deploy JAR at {:?}, spawning via java -jar...", jar);
+                if self.spawn_child_logged(
+                    std::process::Command::new("java")
+                        .args([
+                            "-Xmx512m",
+                            "-jar",
+                            jar.to_str().unwrap_or_default(),
+                            "serve",
+                            "--port", "19440",
+                            "--ws-port", "19441",
+                        ])
+                        .current_dir(root)
+                        .stdout(std::process::Stdio::piped())
+                        .stderr(std::process::Stdio::piped()),
+                    "backend",
+                ) {
+                    return true;
+                }
+                eprintln!("[demiurge-desktop] Deploy JAR failed to spawn.");
+            }
+        }
+
+        // 4. bazel run (slow — triggers full build)
+        if let Some(ref root) = repo_root {
+            eprintln!("[demiurge-desktop] Trying bazel run (this may take a while to build)...");
+            if self.spawn_child_logged(
+                std::process::Command::new("bazel")
+                    .args(["run", "//modules/cli:demiurge", "--", "serve", "--port", "19440", "--ws-port", "19441"])
+                    .current_dir(root)
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped()),
+                "backend",
+            ) {
+                return true;
+            }
+            eprintln!("[demiurge-desktop] bazel run failed to spawn.");
+        }
+
+        if repo_root.is_none() {
+            eprintln!("[demiurge-desktop] Could not find repo root (MODULE.bazel). CWD = {:?}", std::env::current_dir());
+        }
+
+        false
     }
 
     async fn try_spawn_sidecar(&self) -> bool {
@@ -100,19 +201,18 @@ impl SidecarManager {
                 let cmd = cmd.args(["serve", "--port", "19440", "--ws-port", "19441"]);
                 match cmd.spawn() {
                     Ok((mut rx, _child)) => {
-                        // Monitor sidecar output in background
                         tauri::async_runtime::spawn(async move {
                             use tauri_plugin_shell::process::CommandEvent;
                             while let Some(event) = rx.recv().await {
                                 match event {
                                     CommandEvent::Stdout(line) => {
-                                        log::info!("[sidecar] {}", String::from_utf8_lossy(&line));
+                                        eprintln!("[backend] {}", String::from_utf8_lossy(&line));
                                     }
                                     CommandEvent::Stderr(line) => {
-                                        log::warn!("[sidecar] {}", String::from_utf8_lossy(&line));
+                                        eprintln!("[backend] {}", String::from_utf8_lossy(&line));
                                     }
                                     CommandEvent::Terminated(payload) => {
-                                        log::error!("[sidecar] Process terminated: {:?}", payload);
+                                        eprintln!("[backend] Sidecar terminated: {:?}", payload);
                                         break;
                                     }
                                     _ => {}
@@ -122,62 +222,36 @@ impl SidecarManager {
                         true
                     }
                     Err(e) => {
-                        log::warn!("Failed to spawn sidecar: {}", e);
+                        eprintln!("[demiurge-desktop] Sidecar spawn error: {}", e);
                         false
                     }
                 }
             }
-            Err(e) => {
-                log::warn!("Sidecar binary not found: {}", e);
-                false
-            }
+            Err(_) => false,
         }
     }
 
-    /// Dev-mode fallback: find the Bazel-built deploy JAR by walking up from the
-    /// current executable directory, then spawn it via `java -jar`.
-    async fn try_spawn_dev_backend(&self) -> bool {
-        // Try to locate the repo root by walking up from CWD or the executable path
-        let search_start = std::env::current_dir().unwrap_or_default();
-        let jar_path = search_start.ancestors()
-            .find_map(|ancestor| {
-                let candidate = ancestor.join("bazel-bin/modules/cli/demiurge_deploy.jar");
-                if candidate.exists() { Some(candidate) } else { None }
-            });
+    /// Walk up from CWD to find the repo root (directory containing MODULE.bazel).
+    fn find_repo_root(&self) -> Option<std::path::PathBuf> {
+        let start = std::env::current_dir().unwrap_or_default();
+        start.ancestors()
+            .find(|p| p.join("MODULE.bazel").exists())
+            .map(|p| p.to_path_buf())
+    }
 
-        let jar = match jar_path {
-            Some(p) => p,
-            None => {
-                log::info!("Dev deploy JAR not found in ancestor directories");
-                return false;
-            }
-        };
-
-        log::info!("Found dev deploy JAR at {:?}, spawning via java -jar", jar);
-
-        match std::process::Command::new("java")
-            .args([
-                "-Xmx512m",
-                "-jar",
-                jar.to_str().unwrap_or_default(),
-                "serve",
-                "--port", "19440",
-                "--ws-port", "19441",
-            ])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-        {
+    /// Spawn a child process and pipe its stdout/stderr to eprintln in background threads.
+    /// Returns true if the process was spawned successfully.
+    fn spawn_child_logged(&self, cmd: &mut std::process::Command, tag: &str) -> bool {
+        match cmd.spawn() {
             Ok(mut child) => {
-                // Read stderr in background for logging
+                let tag_err = tag.to_string();
+                let tag_out = tag.to_string();
                 if let Some(stderr) = child.stderr.take() {
                     std::thread::spawn(move || {
                         use std::io::{BufRead, BufReader};
                         let reader = BufReader::new(stderr);
-                        for line in reader.lines() {
-                            if let Ok(line) = line {
-                                log::info!("[sidecar-dev] {}", line);
-                            }
+                        for line in reader.lines().map_while(Result::ok) {
+                            eprintln!("[{}] {}", tag_err, line);
                         }
                     });
                 }
@@ -185,17 +259,15 @@ impl SidecarManager {
                     std::thread::spawn(move || {
                         use std::io::{BufRead, BufReader};
                         let reader = BufReader::new(stdout);
-                        for line in reader.lines() {
-                            if let Ok(line) = line {
-                                log::info!("[sidecar-dev] {}", line);
-                            }
+                        for line in reader.lines().map_while(Result::ok) {
+                            eprintln!("[{}] {}", tag_out, line);
                         }
                     });
                 }
                 true
             }
             Err(e) => {
-                log::warn!("Failed to spawn dev backend via java: {}", e);
+                eprintln!("[demiurge-desktop] Failed to spawn {}: {}", tag, e);
                 false
             }
         }
@@ -208,8 +280,30 @@ impl SidecarManager {
     }
 
     pub async fn restart(&self) -> Result<(), String> {
+        eprintln!("[demiurge-desktop] Restarting backend...");
+
+        // Kill any running demiurge serve process
+        let _ = std::process::Command::new("pkill")
+            .args(["-f", "demiurge.*serve"])
+            .status();
+
+        // Also try killing by the health port (covers java -jar and bazel run cases)
+        let _ = std::process::Command::new("sh")
+            .args(["-c", "lsof -ti:19440 | xargs kill -9 2>/dev/null"])
+            .status();
+
         self.stop()?;
+
+        // Wait for the process to actually die (health endpoint stops responding)
+        for _ in 0..20 {
+            if !self.check_health_once().await {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+
         tokio::time::sleep(Duration::from_millis(CRASH_RESTART_DELAY_MS)).await;
+        *self.dev_process_spawned.lock().unwrap() = false;
         self.start().await
     }
 
@@ -229,21 +323,26 @@ impl SidecarManager {
             return Err("Max restart attempts exceeded".into());
         }
 
-        log::warn!("Backend crashed, attempting restart {}/{}", count, MAX_RESTART_ATTEMPTS);
+        eprintln!("[demiurge-desktop] Backend crashed, attempting restart {}/{}", count, MAX_RESTART_ATTEMPTS);
         tokio::time::sleep(Duration::from_millis(CRASH_RESTART_DELAY_MS)).await;
+        *self.dev_process_spawned.lock().unwrap() = false;
         self.start().await
     }
 
-    async fn wait_for_ready_quick(&self) -> bool {
+    pub fn mark_running(&self) {
+        let mut status = self.status.lock().unwrap();
+        *status = SidecarStatus::Running;
+        let mut count = self.restart_count.lock().unwrap();
+        *count = 0;
+    }
+
+    pub async fn check_health_once(&self) -> bool {
         let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(1))
+            .timeout(Duration::from_secs(2))
             .build()
             .unwrap_or_default();
 
-        match client.get(HEALTH_URL).send().await {
-            Ok(resp) if resp.status().is_success() => true,
-            _ => false,
-        }
+        matches!(client.get(HEALTH_URL).send().await, Ok(resp) if resp.status().is_success())
     }
 
     async fn wait_for_ready(&self) -> bool {
@@ -252,11 +351,14 @@ impl SidecarManager {
             .build()
             .unwrap_or_default();
 
-        let max_attempts = HEALTH_TIMEOUT_MS / HEALTH_POLL_INTERVAL_MS;
-        for _ in 0..max_attempts {
+        let max_attempts = (HEALTH_TIMEOUT_SECS * 1000) / HEALTH_POLL_INTERVAL_MS;
+        for i in 0..max_attempts {
             match client.get(HEALTH_URL).send().await {
                 Ok(resp) if resp.status().is_success() => return true,
                 _ => {}
+            }
+            if i > 0 && i % 20 == 0 {
+                eprintln!("[demiurge-desktop] Still waiting for backend... ({}s)", (i * HEALTH_POLL_INTERVAL_MS) / 1000);
             }
             tokio::time::sleep(Duration::from_millis(HEALTH_POLL_INTERVAL_MS)).await;
         }

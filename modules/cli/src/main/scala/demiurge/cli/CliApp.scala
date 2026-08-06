@@ -39,6 +39,13 @@ object CliApp {
                 // Spec 05 §6.1: Pre-run usage summary
                 val planLabel = if (planTier.nonEmpty) planTier.capitalize else "Active"
                 System.err.println(s"[demiurge] License valid ($planLabel plan). Usage: $uses/$maxUses runs this period.")
+                // Spec 05 §6.3: Approaching limit warning (≥80%)
+                if (maxUses > 0) {
+                  val pct = (uses.toDouble / maxUses * 100).toInt
+                  if (pct >= 80) {
+                    System.err.println(s"[demiurge] Warning: $uses/$maxUses runs used this period ($pct%). Consider upgrading.")
+                  }
+                }
               case LicenseStatus.NoCredentials =>
                 System.err.println("Error: Not logged in. Run `demiurge login` to authenticate.")
                 return ExitCodes.InputError

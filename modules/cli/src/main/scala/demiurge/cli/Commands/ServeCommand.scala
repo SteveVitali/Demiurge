@@ -14,6 +14,8 @@ import demiurge.cli.ExitCodes
 import demiurge.cli.CommandParsers.{GlobalOpts, ServeCmd}
 import demiurge.model.{RunMode, RunStatus, TaskRun}
 import demiurge.persistence.{Database, TaskRunRepo}
+import demiurge.orchestrator.{WorktreeManager, LockManager}
+import demiurge.license.CredentialStore
 
 // Desktop Phase 5 — Appendix C: Backend `serve` command.
 // Persistent server mode for the desktop app sidecar.
@@ -60,15 +62,82 @@ object ServeCommand {
           val maxAttempts = cursor.get[Int]("maxAttempts").toOption.getOrElse(
             if (runMode == RunMode.Build) 8 else 5
           )
+          val createWorktree = cursor.get[Boolean]("createWorktree").toOption.getOrElse(true)
 
           val runId = UUID.randomUUID().toString
           val runArtifactRoot = artifactRoot.resolve(runId)
           Files.createDirectories(runArtifactRoot)
 
+          // Create isolated git worktree (matching RunCommand behavior)
+          val agentDisabled = Option(System.getenv("DEMIURGE_AGENT_BACKEND"))
+            .exists(v => v.equalsIgnoreCase("none") || v.equalsIgnoreCase("disabled"))
+          val agentMode = !agentDisabled && CredentialStore.resolveApiKey("ANTHROPIC_API_KEY", "anthropic").isDefined
+
+          val worktreePath = if (createWorktree) {
+            try {
+              val wt = WorktreeManager.create(repoPath, runId, gitRef = Some("HEAD"), agentMode = agentMode)
+              System.err.println(s"[serve] Created worktree at $wt")
+              wt
+            } catch {
+              case e: Exception =>
+                System.err.println(s"[serve] Worktree creation failed: ${e.getMessage}, using repo directly")
+                repoPath
+            }
+          } else repoPath
+
+          // Acquire run lock
+          val lockFilePath = try {
+            LockManager.acquire(repoPath, runId, worktreePath)
+          } catch {
+            case _: Exception =>
+              repoPath.resolve(".demiurge").resolve("run.lock")
+          }
+
+          // Auto-trigger smart init when no demiurge.yaml exists and agent mode is available
+          val manifestPath = worktreePath.resolve("demiurge.yaml")
+          if (!Files.exists(manifestPath) && agentMode) {
+            System.err.println("[serve] No demiurge.yaml found — running smart init automatically...")
+            try {
+              val initResult = AgentInitExecutor.execute(
+                repoRoot = worktreePath,
+                outputPath = manifestPath,
+                force = false,
+                quiet = false,
+              )
+              if (initResult.success) {
+                System.err.println(s"[serve] Smart init: ${initResult.summary}")
+                // Post-process: replace worktree paths with repo root paths
+                val worktreeStr = worktreePath.toAbsolutePath.normalize().toString
+                val repoStr = repoPath.toAbsolutePath.normalize().toString
+                val fixPaths = (yaml: String) => yaml.replace(worktreeStr, repoStr)
+                try {
+                  initResult.demiurgeYaml.foreach(yaml => Files.writeString(manifestPath, fixPaths(yaml)))
+                  val worktreeReqs = worktreePath.resolve("requirements.yaml")
+                  initResult.requirementsYaml.foreach(yaml => Files.writeString(worktreeReqs, fixPaths(yaml)))
+                } catch { case _: Exception => }
+                // Copy to original repo for future runs
+                try {
+                  val repoManifest = repoPath.resolve("demiurge.yaml")
+                  if (!Files.exists(repoManifest))
+                    initResult.demiurgeYaml.foreach(yaml => Files.writeString(repoManifest, fixPaths(yaml)))
+                  val repoReqs = repoPath.resolve("requirements.yaml")
+                  if (!Files.exists(repoReqs))
+                    initResult.requirementsYaml.foreach(yaml => Files.writeString(repoReqs, fixPaths(yaml)))
+                } catch { case _: Exception => }
+              } else {
+                System.err.println(s"[serve] Smart init failed: ${initResult.summary}")
+                System.err.println("[serve] Continuing with inspection-based planning...")
+              }
+            } catch {
+              case e: Exception =>
+                System.err.println(s"[serve] Smart init error: ${e.getMessage}")
+            }
+          }
+
           val run = TaskRun(
             runId = runId,
             repoPath = repoPath,
-            worktreePath = repoPath,
+            worktreePath = worktreePath,
             gitRef = None,
             taskText = task,
             changedFiles = None,
@@ -84,7 +153,7 @@ object ServeCommand {
             finalVerdict = None,
             finalSummary = None,
             policySnapshotId = s"policy-$runId",
-            lockFilePath = repoPath.resolve(".demiurge").resolve("run.lock"),
+            lockFilePath = lockFilePath,
             artifactRootPath = runArtifactRoot,
           )
           TaskRunRepo.insert(run)(apiConn)
@@ -95,15 +164,21 @@ object ServeCommand {
             val threadConn = Database.open(dbPath)
             try {
               System.err.println(s"[serve] Starting orchestration for run $runId (mode=$runMode)")
-              OrchestrationRunner.run(run, orchestrationGlobal, repoPath, threadConn)
+              OrchestrationRunner.run(run, orchestrationGlobal, worktreePath, threadConn)
               System.err.println(s"[serve] Orchestration completed for run $runId")
             } catch {
               case e: Exception =>
                 System.err.println(s"[serve] Orchestration failed for run $runId: ${e.getMessage}")
+                e.printStackTrace(System.err)
                 try {
                   TaskRunRepo.updateStatus(runId, RunStatus.Exhausted, endedAt = Some(Instant.now()))(threadConn)
                 } catch { case _: Exception => }
             } finally {
+              // Clean up worktree on completion
+              if (createWorktree && worktreePath != repoPath) {
+                try { WorktreeManager.remove(repoPath, runId) } catch { case _: Exception => }
+              }
+              try { LockManager.release(repoPath) } catch { case _: Exception => }
               try { threadConn.close() } catch { case _: Exception => }
             }
           }, s"orchestration-$runId")
@@ -114,6 +189,7 @@ object ServeCommand {
         } catch {
           case e: Exception =>
             System.err.println(s"Failed to create run: ${e.getMessage}")
+            e.printStackTrace(System.err)
             None
         }
       }
@@ -125,7 +201,7 @@ object ServeCommand {
         port = cmd.port,
         wsPort = cmd.wsPort,
         dbPath = dbPath,
-        artifactRootResolver = rid => Some(artifactRoot.resolve(rid)),
+        artifactRootResolver = _ => Some(artifactRoot),
       )
     } catch {
       case e: Exception =>

@@ -10,6 +10,7 @@ import { Webhook } from 'svix';
 import { env } from '@/lib/env';
 import { keygen } from '@/lib/keygen';
 import { updateClerkUserMetadata } from '@/lib/clerk-helpers';
+import { sendWelcomeEmail } from '@/lib/email';
 
 interface ClerkWebhookEvent {
   type: string;
@@ -107,4 +108,11 @@ async function handleUserCreated(user: ClerkWebhookEvent['data']) {
   console.log(
     `Created trial license for user ${user.id} (${email}): ${license.attributes.key}`,
   );
+
+  // 4. Send welcome email with license key (best effort — don't fail the webhook)
+  try {
+    await sendWelcomeEmail(email, license.attributes.key);
+  } catch (err) {
+    console.error(`Failed to send welcome email to ${email}:`, err);
+  }
 }

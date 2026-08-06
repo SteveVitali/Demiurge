@@ -79,10 +79,19 @@ object RuntimeSupervisorImpl extends RuntimeSupervisor {
               logTailLines = ServiceProcessManager.getLogLines(spec.serviceId).takeRight(10),
             )
           } else {
+            val tailLines = ServiceProcessManager.getLogLines(spec.serviceId).takeRight(20)
+            System.err.println(s"[boot] Service ${spec.serviceId} readiness FAILED. Process log tail (${tailLines.size} lines):")
+            tailLines.foreach(l => System.err.println(s"[boot]   $l"))
+            // Also check if process is still alive
+            ServiceProcessManager.getService(spec.serviceId).foreach { ms =>
+              ms.process.foreach { p =>
+                System.err.println(s"[boot] Service ${spec.serviceId} process alive=${p.isAlive}, pid=${ms.pid}")
+              }
+            }
             serviceSnapshots(spec.serviceId) = serviceSnapshots(spec.serviceId).copy(
               status = ServiceStatus.Failed,
               lastProbeResult = Some("readiness check failed"),
-              logTailLines = ServiceProcessManager.getLogLines(spec.serviceId).takeRight(10),
+              logTailLines = tailLines,
             )
             if (spec.required) {
               val snapshot = buildSnapshot(plan, serviceSnapshots.toMap, healthyServices.toSet, startTime)
