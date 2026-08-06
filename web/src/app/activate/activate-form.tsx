@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useUser, SignInButton } from '@clerk/nextjs';
+import { CheckCircle } from 'lucide-react';
 
 /**
  * Client-side device code activation form.
@@ -42,19 +43,23 @@ export function ActivateForm() {
 
   if (!isLoaded) {
     return (
-      <div style={containerStyle}>
-        <p>Loading...</p>
+      <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
+        <p className="text-text-secondary">Loading...</p>
       </div>
     );
   }
 
   if (!isSignedIn) {
     return (
-      <div style={containerStyle}>
-        <h1 style={headingStyle}>Activate Demiurge CLI</h1>
-        <p style={subStyle}>Sign in to link your CLI to your account.</p>
+      <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
+        <h1 className="text-2xl font-bold text-text-primary mb-2">Activate Demiurge CLI</h1>
+        <p className="text-text-secondary mb-6 text-center max-w-md">
+          Sign in to link your CLI to your account.
+        </p>
         <SignInButton mode="modal">
-          <button style={buttonStyle}>Sign In</button>
+          <button className="rounded-lg bg-primary px-6 py-2.5 text-sm font-medium text-white hover:bg-primary-dark transition-colors cursor-pointer">
+            Sign In
+          </button>
         </SignInButton>
       </div>
     );
@@ -62,10 +67,11 @@ export function ActivateForm() {
 
   if (status === 'success') {
     return (
-      <div style={containerStyle}>
-        <h1 style={headingStyle}>CLI Activated</h1>
-        <p style={subStyle}>
-          Your CLI is now linked to <strong>{user?.primaryEmailAddress?.emailAddress}</strong>.
+      <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
+        <CheckCircle className="h-12 w-12 text-success mb-4" />
+        <h1 className="text-2xl font-bold text-text-primary mb-2">CLI Activated</h1>
+        <p className="text-text-secondary text-center max-w-md">
+          Your CLI is now linked to <strong className="text-text-primary">{user?.primaryEmailAddress?.emailAddress}</strong>.
           You can close this page and return to your terminal.
         </p>
       </div>
@@ -73,92 +79,33 @@ export function ActivateForm() {
   }
 
   return (
-    <div style={containerStyle}>
-      <h1 style={headingStyle}>Activate Demiurge CLI</h1>
-      <p style={subStyle}>
+    <div className="flex flex-col items-center justify-center min-h-[60vh] p-8">
+      <h1 className="text-2xl font-bold text-text-primary mb-2">Activate Demiurge CLI</h1>
+      <p className="text-text-secondary mb-6 text-center max-w-md">
         Enter the code shown in your terminal to link the CLI to your account.
       </p>
-      <form onSubmit={handleSubmit} style={formStyle}>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-3 w-full max-w-xs">
         <input
           type="text"
           value={code}
           onChange={(e) => setCode(e.target.value)}
           placeholder="XXXX-XXXX"
           maxLength={9}
-          style={inputStyle}
+          className="px-4 py-3 text-2xl text-center tracking-widest font-mono border-2 border-border rounded-lg bg-bg text-text-primary outline-none focus:border-primary uppercase"
           autoFocus
           autoComplete="off"
         />
         <button
           type="submit"
           disabled={status === 'loading' || !code.trim()}
-          style={{
-            ...buttonStyle,
-            opacity: status === 'loading' || !code.trim() ? 0.6 : 1,
-          }}
+          className="rounded-lg bg-primary px-6 py-2.5 text-sm font-medium text-white hover:bg-primary-dark transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {status === 'loading' ? 'Activating...' : 'Activate'}
         </button>
       </form>
       {status === 'error' && (
-        <p style={{ color: '#dc2626', marginTop: '0.5rem', fontSize: '0.875rem' }}>
-          {errorMessage}
-        </p>
+        <p className="text-error text-sm mt-2">{errorMessage}</p>
       )}
     </div>
   );
 }
-
-const containerStyle: React.CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  justifyContent: 'center',
-  alignItems: 'center',
-  minHeight: '100vh',
-  fontFamily: 'system-ui, -apple-system, sans-serif',
-  padding: '2rem',
-};
-
-const headingStyle: React.CSSProperties = {
-  fontSize: '1.5rem',
-  fontWeight: 600,
-  marginBottom: '0.5rem',
-};
-
-const subStyle: React.CSSProperties = {
-  color: '#666',
-  marginBottom: '1.5rem',
-  textAlign: 'center',
-  maxWidth: '400px',
-};
-
-const formStyle: React.CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '0.75rem',
-  width: '100%',
-  maxWidth: '300px',
-};
-
-const inputStyle: React.CSSProperties = {
-  padding: '0.75rem 1rem',
-  fontSize: '1.5rem',
-  textAlign: 'center',
-  letterSpacing: '0.15em',
-  fontFamily: 'monospace',
-  border: '2px solid #e5e7eb',
-  borderRadius: '8px',
-  outline: 'none',
-  textTransform: 'uppercase',
-};
-
-const buttonStyle: React.CSSProperties = {
-  padding: '0.75rem 1.5rem',
-  fontSize: '1rem',
-  fontWeight: 500,
-  backgroundColor: '#000',
-  color: '#fff',
-  border: 'none',
-  borderRadius: '8px',
-  cursor: 'pointer',
-};
